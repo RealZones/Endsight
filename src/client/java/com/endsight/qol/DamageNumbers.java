@@ -3,8 +3,10 @@ package com.endsight.qol;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
@@ -78,8 +80,23 @@ public final class DamageNumbers {
     private static String mode = COMPACT;
     private static boolean onlyNewest = true;
 
-    /** Live popups by entity id. Rebuilt every tick, so it cleans up after itself. */
+    /** Live popups by entity id. Rebuilt every pass, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
+
+    /**
+     * The one popup allowed on screen while Only newest is on, or -1 for none.
+     *
+     * A slot rather than a sort, and that is the whole fix for it. The first version of
+     * this simply kept whichever popup was newest, which meant every hit hid the one
+     * before it - so spam-clicking made each number flash up and vanish in a few
+     * milliseconds, which reads as the popups being deleted rather than as one at a time.
+     *
+     * Whatever holds the slot now keeps it until it dies on its own. Nothing is ever cut
+     * short, so the time a number stays up is the server's and not ours, and the slot
+     * frees the moment it expires - which during a fight is well under a second, so the
+     * number you are looking at is still a recent one.
+     */
+    private static int holder = -1;
 
     /** What floating text has actually said, for the dump. Keyed by the text itself. */
     private static final Map<String, String> sightings = new LinkedHashMap<>();
@@ -111,15 +128,31 @@ public final class DamageNumbers {
                                 "Dump", DamageNumbers::dump)));
     }
 
+    /**
+     * Run every frame as well as every tick, which is not belt and braces.
+     *
+     * Minecraft.tick() ticks the entities BEFORE it flushes the packets that create
+     * them, so a popup can be spawned, drawn and read several frames before the next
+     * tick comes round to it - which is exactly the flip you see when the full number
+     * appears and then turns into the short one in front of you. Catching it on the
+     * frame it arrives closes that gap.
+     *
+     * The tick pass is still needed: HUD elements are not drawn at all with the GUI
+     * hidden, and a module that quietly stops working on F1 is worse than a late rewrite.
+     */
     public static void init() {
-        ClientTickEvents.END_CLIENT_TICK.register(DamageNumbers::onTick);
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> scan());
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "damage"),
+                (g, delta) -> scan());
     }
 
     // -- the scan --------------------------------------------------------------
 
-    private static void onTick(Minecraft mc) {
+    private static void scan() {
+        Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.level == null || mc.player == null) {
             if (!tracked.isEmpty()) tracked = new HashMap<>();
+            holder = -1;
             return;
         }
 
@@ -152,24 +185,26 @@ public final class DamageNumbers {
         }
         tracked = next;
 
-        // Newest first, so the number still worth reading is the one that survives.
+        // Newest first, so a freed slot goes to the most recent hit rather than to
+        // whichever leftover happens to come out of the entity list first.
         live.sort(Comparator.comparingLong((Entity e) -> tracked.get(e.getId()).born).reversed());
 
         boolean hideAll = HIDE.equals(mode);
-        int keep = onlyNewest ? 1 : Integer.MAX_VALUE;
+        if (!tracked.containsKey(holder)) holder = -1;
 
-        for (int i = 0; i < live.size(); i++) {
-            Entity e = live.get(i);
+        for (Entity e : live) {
             Tracked t = tracked.get(e.getId());
 
-            if (hideAll || i >= keep) {
-                if (!t.hidden) {
-                    hide(e);
-                    t.hidden = true;
-                }
-            } else if (!t.shortened) {
-                shorten(e);
-                t.shortened = true;
+            if (hideAll) {
+                hide(e, t);
+            } else if (!onlyNewest) {
+                shorten(e, t);
+            } else {
+                // A popup that has already been hidden cannot be brought back, so the
+                // slot waits for the next new one rather than reviving a half-dead one.
+                if (holder < 0 && !t.hidden) holder = e.getId();
+                if (e.getId() == holder) shorten(e, t);
+                else hide(e, t);
             }
         }
     }
@@ -204,7 +239,9 @@ public final class DamageNumbers {
      * range zero fails the renderer's own distance test at every distance, so the whole
      * entity - text, background and shadow - is skipped.
      */
-    private static void hide(Entity e) {
+    private static void hide(Entity e, Tracked t) {
+        if (t.hidden) return;
+        t.hidden = true;
         if (e instanceof Display.TextDisplay td) {
             td.getEntityData().set(Display.DATA_VIEW_RANGE_ID, 0f);
         } else {
@@ -212,7 +249,9 @@ public final class DamageNumbers {
         }
     }
 
-    private static void shorten(Entity e) {
+    private static void shorten(Entity e, Tracked t) {
+        if (t.shortened) return;
+        t.shortened = true;
         Component original = text(e);
         if (original == null) return;
         String raw = original.getString();

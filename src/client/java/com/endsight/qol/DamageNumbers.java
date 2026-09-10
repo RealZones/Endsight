@@ -68,13 +68,19 @@ public final class DamageNumbers {
      *
      * A popup exists for about a second. A hologram - a shop price, a leaderboard - can
      * be a bare number too, and no amount of reading the text tells the two apart. Age
-     * does: anything still standing there five seconds later was never a popup, so it is
-     * dropped and can no longer be hidden as an older popup. The two-second entry
-     * gate means a hologram is only ever a candidate in the moment it comes into range,
-     * and never again after that.
+     * does: a popup is caught the frame it spawns, and anything still standing there two
+     * seconds later was never one, so it is dropped and stops counting for the Only
+     * newest slot.
+     *
+     * Both numbers were far looser to begin with, and that is what broke Only newest.
+     * Moving around loads and unloads the holograms near you, and every reappearance
+     * restarts an entity's tick count - so a hologram that happens to read as a bare
+     * number kept being taken for a fresh popup, took the slot, and hid every real one
+     * behind it for as long as it held. Catching popups at spawn is what allows the
+     * window to be this narrow, and a narrow window is what keeps the scenery out of it.
      */
-    private static final int NEW_TICKS = 40;
-    private static final int STALE_TICKS = 100;
+    private static final int NEW_TICKS = 5;
+    private static final int STALE_TICKS = 40;
 
     private static boolean enabled = false;
     private static String mode = COMPACT;
@@ -97,6 +103,19 @@ public final class DamageNumbers {
      * number you are looking at is still a recent one.
      */
     private static int holder = -1;
+    private static long holderSince;
+    private static String holderWhat = "";
+
+    /**
+     * What has held the slot and for how long, for the dump.
+     *
+     * Whether the slot is being taken by scenery is the one question a screenshot cannot
+     * answer - a stolen slot looks exactly like the module doing nothing. A line per
+     * holder makes it obvious: real popups hold for well under a second and there is one
+     * per hit, while anything holding for the full two seconds is a hologram.
+     */
+    private static final List<String> slotLog = new ArrayList<>();
+    private static final int SLOT_LOG_CAP = 40;
 
     /** What floating text has actually said, for the dump. Keyed by the text itself. */
     private static final Map<String, String> sightings = new LinkedHashMap<>();
@@ -190,7 +209,7 @@ public final class DamageNumbers {
         live.sort(Comparator.comparingLong((Entity e) -> tracked.get(e.getId()).born).reversed());
 
         boolean hideAll = HIDE.equals(mode);
-        if (!tracked.containsKey(holder)) holder = -1;
+        if (holder >= 0 && !tracked.containsKey(holder)) release(now);
 
         for (Entity e : live) {
             Tracked t = tracked.get(e.getId());
@@ -202,11 +221,24 @@ public final class DamageNumbers {
             } else {
                 // A popup that has already been hidden cannot be brought back, so the
                 // slot waits for the next new one rather than reviving a half-dead one.
-                if (holder < 0 && !t.hidden) holder = e.getId();
+                if (holder < 0 && !t.hidden) take(e, now);
                 if (e.getId() == holder) shorten(e, t);
                 else hide(e, t);
             }
         }
+    }
+
+    private static void take(Entity e, long now) {
+        holder = e.getId();
+        holderSince = now;
+        Component text = text(e);
+        holderWhat = e.getType() + "  \"" + (text == null ? "" : plain(text)) + "\"";
+    }
+
+    private static void release(long now) {
+        slotLog.add(String.format("held %5dms  %s", now - holderSince, holderWhat));
+        while (slotLog.size() > SLOT_LOG_CAP) slotLog.remove(0);
+        holder = -1;
     }
 
     /**
@@ -402,6 +434,12 @@ public final class DamageNumbers {
         for (Map.Entry<String, String> s : sightings.entrySet()) {
             out.add(s.getValue() + "  \"" + s.getKey().replace(SECTION, '&') + "\"");
         }
+
+        out.add("");
+        out.add("# --- what held the Only newest slot, newest last ---");
+        out.add("# a real popup holds for well under a second and there is one per hit;");
+        out.add("# anything holding for the full two seconds is scenery stealing the slot");
+        out.addAll(slotLog);
 
         Path file = mc.gameDirectory.toPath().resolve("endsight-damage-dump.txt");
         try {

@@ -10,10 +10,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -72,8 +68,7 @@ public final class DamageNumbers {
      * A popup exists for about a second. A hologram - a shop price, a leaderboard - can
      * be a bare number too, and no amount of reading the text tells the two apart. Age
      * does: a popup is caught the frame it spawns, and anything still standing there two
-     * seconds later was never one, so it is dropped and stops counting for the Only
-     * newest slot.
+     * seconds later was never one, so it is dropped and left alone from then on.
      *
      * Both numbers were far looser to begin with, and it showed. Moving around loads and
      * unloads the holograms near you, and every reappearance restarts an entity's tick
@@ -86,40 +81,9 @@ public final class DamageNumbers {
 
     private static boolean enabled = false;
     private static String mode = COMPACT;
-    private static double everySeconds = 3;
 
     /** Live popups by entity id. Rebuilt every pass, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
-
-    /**
-     * When a mob last had a popup shown for it, by the mob's entity id.
-     *
-     * Per mob rather than one clock for everything, because hitting three mobs is not
-     * spam - it only looks like it when their numbers land together. A shared clock
-     * would throttle a cleave down to one number for the whole swing, which hides the
-     * thing you actually wanted to see.
-     *
-     * This replaced a single visible slot, and the reason is worth keeping. The slot
-     * could be taken by scenery: a hologram that happened to read as a bare number held
-     * it and hid every real popup behind it, so one wrong guess about what a popup is
-     * silently switched the whole module off. A per-mob clock cannot do that. A
-     * misread hologram burns its own entry and nothing else's, so the same mistake now
-     * costs one throttled number instead of all of them.
-     */
-    private static final Map<Integer, Long> lastShown = new HashMap<>();
-    private static final int NO_TARGET = -1;
-
-    /** How far outside a mob's own box a popup still counts as that mob's. */
-    private static final double TARGET_REACH = 1.5;
-
-    /**
-     * What was shown and what was throttled, for the dump.
-     *
-     * Throttling looks exactly like the module doing nothing, and no screenshot tells
-     * the two apart - so the decision is recorded rather than guessed at afterwards.
-     */
-    private static final List<String> decisions = new ArrayList<>();
-    private static final int DECISION_CAP = 60;
 
     /** What floating text has actually said, for the dump. Keyed by the text itself. */
     private static final Map<String, String> sightings = new LinkedHashMap<>();
@@ -138,9 +102,6 @@ public final class DamageNumbers {
                         new Setting.Choice("Mode",
                                 "Shorten them to 8.49M, or remove them completely.",
                                 List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
-                        new Setting.Slider("One every",
-                                "How long before the same mob shows another. 0 shows every hit.",
-                                0, 10, 0.5, () -> everySeconds, v -> everySeconds = v, "s"),
                         new Setting.Action("Dump popups",
                                 "Writes what the floating text actually said to a file.",
                                 "Dump", DamageNumbers::dump)));
@@ -170,7 +131,6 @@ public final class DamageNumbers {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.level == null || mc.player == null) {
             if (!tracked.isEmpty()) tracked = new HashMap<>();
-            lastShown.clear();
             return;
         }
 
@@ -194,7 +154,8 @@ public final class DamageNumbers {
                 // dead inside a second, so there is no state worth re-deciding - and a
                 // decision that cannot change is one that cannot flicker.
                 known = new Tracked();
-                decide(mc, e, known, plain, now);
+                if (HIDE.equals(mode)) hide(e, known);
+                else shorten(e, known);
 
             } else if (e.tickCount > STALE_TICKS) {
                 // Still here two seconds on, so it was never a damage popup.
@@ -204,72 +165,6 @@ public final class DamageNumbers {
             next.put(e.getId(), known);
         }
         tracked = next;
-    }
-
-    private static void decide(Minecraft mc, Entity popup, Tracked t, String plain, long now) {
-        if (HIDE.equals(mode)) {
-            hide(popup, t);
-            return;
-        }
-
-        long gap = (long) (everySeconds * 1000);
-        if (gap > 0) {
-            int target = targetOf(mc, popup);
-            Long last = lastShown.get(target);
-            if (last != null && now - last < gap) {
-                record("throttled " + (now - last) + "ms into the wait, target="
-                        + target + "  \"" + plain + "\"");
-                hide(popup, t);
-                return;
-            }
-            lastShown.put(target, now);
-            forget(now, gap);
-            record("shown  target=" + target + "  \"" + plain + "\"");
-        }
-        shorten(popup, t);
-    }
-
-    /**
-     * Which mob a popup belongs to, or NO_TARGET.
-     *
-     * Popups carry nothing that names what was hit, so the mob is worked out from where
-     * the number appeared. The mob's own box inflated by a block and a half is what
-     * counts as "on" it - a fixed radius does not work, because a popup over an enderman
-     * sits nearly three blocks above its feet and would be further from the mob it
-     * belongs to than from a shorter one standing next to it.
-     *
-     * Getting this wrong in a crowd costs one throttled number. That is the point of
-     * keying the clock per mob rather than trusting the answer.
-     */
-    private static int targetOf(Minecraft mc, Entity popup) {
-        Vec3 at = popup.position();
-        int best = NO_TARGET;
-        double bestDist = Double.MAX_VALUE;
-
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (!(e instanceof LivingEntity) || e instanceof Player || e instanceof ArmorStand) {
-                continue;
-            }
-            AABB box = e.getBoundingBox().inflate(TARGET_REACH);
-            if (!box.contains(at)) continue;
-            double d = box.getCenter().distanceToSqr(at);
-            if (d < bestDist) {
-                bestDist = d;
-                best = e.getId();
-            }
-        }
-        return best;
-    }
-
-    /** Drops mobs nothing has been shown for in a while, so the map cannot grow. */
-    private static void forget(long now, long gap) {
-        if (lastShown.size() <= 64) return;
-        lastShown.entrySet().removeIf(e -> now - e.getValue() > gap * 4);
-    }
-
-    private static void record(String line) {
-        decisions.add(line);
-        while (decisions.size() > DECISION_CAP) decisions.remove(0);
     }
 
     /**
@@ -466,11 +361,6 @@ public final class DamageNumbers {
             out.add(s.getValue() + "  \"" + s.getKey().replace(SECTION, '&') + "\"");
         }
 
-        out.add("");
-        out.add("# --- shown or throttled, newest last ---");
-        out.add("# target is the entity id of the mob the popup was attributed to;");
-        out.add("# -1 means no mob was found where the number appeared");
-        out.addAll(decisions);
 
         Path file = mc.gameDirectory.toPath().resolve("endsight-damage-dump.txt");
         try {

@@ -78,9 +78,8 @@ right-click, so spam-clicking to place puts one in and immediately pulls it out.
 are ignored for a moment after a placement lands. Duration is adjustable.
 
 **Damage Numbers** — the floating damage popups, shortened to `8.49M` or removed
-outright, switched between with one button. Spam-clicking a boss stacks dozens of
-eight-digit numbers over it, so a mob will only show another after a set gap. The gap
-is per mob, since hitting three things at once is not spam.
+outright, switched between with one button. Colours are kept, so a shortened number
+still looks like the server wrote it.
 
 ---
 

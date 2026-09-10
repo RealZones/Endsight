@@ -141,6 +141,7 @@ public final class StoragePreview {
 
         SNAPSHOTS.put(page, new PageSnapshot(page, count, items, System.currentTimeMillis()));
         lastPage = page;
+        SnapshotStore.markDirty();
     }
 
     private static boolean allEmpty(List<ItemStack> items) {
@@ -256,6 +257,11 @@ public final class StoragePreview {
     /** Rows actually drawn: the page minus the server's furniture row. */
     static int drawnRows(PageSnapshot snap) {
         return snap == null ? Math.max(1, frameRows - SKIP_ROWS) : Math.max(1, snap.rows() - SKIP_ROWS);
+    }
+
+    /** The live map, for SnapshotStore to read on save and fill on load. */
+    static Map<Integer, PageSnapshot> snapshots() {
+        return SNAPSHOTS;
     }
 
     /** The most recent page seen, for the placement screen to show something real. */

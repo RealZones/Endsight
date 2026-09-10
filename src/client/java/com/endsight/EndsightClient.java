@@ -10,6 +10,7 @@ import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
@@ -65,6 +66,7 @@ public class EndsightClient implements ClientModInitializer {
     public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         StoragePreview.init();
+        SnapshotStore.init();
         StorageSearch.init();
         NukubiHighlight.init();
         DragonTimer.init();

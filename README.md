@@ -77,6 +77,11 @@ instead of reported empty.
 right-click, so spam-clicking to place puts one in and immediately pulls it out. Clicks
 are ignored for a moment after a placement lands. Duration is adjustable.
 
+**Damage Numbers** — the floating damage popups, shortened to `8.49M` or removed
+outright, switched between with one button. Spam-clicking a boss stacks dozens of
+eight-digit numbers over it, so older ones can be hidden as new ones land, leaving
+however many you want on screen at a time.
+
 ---
 
 ## Settings
@@ -103,7 +108,6 @@ The jar lands in `build/libs/`.
 
 - **Loot Alerts** — on-screen alerts for drops
 - **Boss Highlight** — marking your own slayer boss
-- **Nametag Cleanup** — hiding the nametags that are only noise
 
 ---
 

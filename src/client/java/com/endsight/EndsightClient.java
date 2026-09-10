@@ -4,6 +4,7 @@ import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.EyeGuard;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
@@ -56,6 +57,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Slayer.killTimerModule());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
+            registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
             Config.load(registry);
         }
@@ -72,6 +74,7 @@ public class EndsightClient implements ClientModInitializer {
         DragonTimer.init();
         Protector.init();
         EyeGuard.init();
+        DamageNumbers.init();
         Beacon.init();
         Slayer.init();
 

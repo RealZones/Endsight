@@ -48,8 +48,6 @@ public final class EndsightDemo {
 
         r.add(Module.placeholder("visual.nukubi", "Nukubi Highlight",
                 "Marks Nukubi so it is not lost in the crowd.", "Visual"));
-        r.add(Module.unimplemented("visual.nametags", "Nametag Cleanup",
-                "Hides the nametags that are just noise.", "Visual"));
 
         r.add(Module.placeholder("alerts", "Alerts",
                 "On-screen calls for the things worth looking up for.", "Alerts"));
@@ -60,6 +58,8 @@ public final class EndsightDemo {
                 "Finds an item across every page at once.", "Quality of Life"));
         r.add(Module.placeholder("qol.eyeguard", "Protect Placed Eyes",
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
+        r.add(Module.placeholder("qol.damage", "Damage Numbers",
+                "Shortens the damage popups, or takes them away.", "Quality of Life"));
 
         cached = r;
         return r;

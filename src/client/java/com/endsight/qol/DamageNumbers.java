@@ -11,12 +11,8 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -85,10 +81,6 @@ public final class DamageNumbers {
     /** Live popups by entity id. Rebuilt every pass, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
 
-    /** What floating text has actually said, for the dump. Keyed by the text itself. */
-    private static final Map<String, String> sightings = new LinkedHashMap<>();
-    private static final int SIGHTING_CAP = 150;
-
     private static final class Tracked {
         boolean shortened;
         boolean hidden;
@@ -101,10 +93,7 @@ public final class DamageNumbers {
                 List.of(
                         new Setting.Choice("Mode",
                                 "Shorten them to 8.49M, or remove them completely.",
-                                List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
-                        new Setting.Action("Dump popups",
-                                "Writes what the floating text actually said to a file.",
-                                "Dump", DamageNumbers::dump)));
+                                List.of(COMPACT, HIDE), () -> mode, v -> mode = v)));
     }
 
     /**
@@ -147,7 +136,6 @@ public final class DamageNumbers {
                 Component text = text(e);
                 String plain = plain(text);
                 if (plain == null || plain.isBlank()) continue;
-                see(e, text, plain);
                 if (!DAMAGE.matcher(plain).matches()) continue;
 
                 // Decided once, on the frame it spawns, and never revisited. A popup is
@@ -320,56 +308,5 @@ public final class DamageNumbers {
 
     private static String plain(Component c) {
         return c == null ? null : c.getString().replaceAll(SECTION + "[0-9A-Fa-fK-Ok-orRxX]", "");
-    }
-
-    // -- the dump --------------------------------------------------------------
-
-    /**
-     * Remembers a piece of floating text the first time it is seen.
-     *
-     * Everything is recorded, not only what matched, because the question this answers
-     * is why something did NOT match. A snapshot dump cannot answer it - a popup is gone
-     * in under a second, so by the time the button is pressed there is nothing left to
-     * look at. Keyed on the text so a room of identical health bars is one line and the
-     * one interesting entry is not buried under forty copies of it.
-     */
-    private static void see(Entity e, Component text, String plain) {
-        String raw = text == null ? "" : text.getString();
-        if (raw.isBlank() || sightings.containsKey(raw)) return;
-
-        Minecraft mc = Minecraft.getInstance();
-        double dist = mc.player == null ? 0 : e.position().distanceTo(mc.player.position());
-        sightings.put(raw, String.format("%-26s d=%5.1f  tick=%-4d %s",
-                e.getType().toString(), dist, e.tickCount,
-                DAMAGE.matcher(plain).matches() ? "MATCH" : "-    "));
-
-        while (sightings.size() > SIGHTING_CAP) {
-            sightings.remove(sightings.keySet().iterator().next());
-        }
-    }
-
-    private static void dump() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
-
-        List<String> out = new ArrayList<>();
-        out.add("# Endsight damage popup dump");
-        out.add("# every piece of floating text seen since the module was switched on");
-        out.add("# section signs are written as & so they survive a text editor");
-        out.add("");
-        for (Map.Entry<String, String> s : sightings.entrySet()) {
-            out.add(s.getValue() + "  \"" + s.getKey().replace(SECTION, '&') + "\"");
-        }
-
-
-        Path file = mc.gameDirectory.toPath().resolve("endsight-damage-dump.txt");
-        try {
-            Files.write(file, out);
-            mc.player.sendSystemMessage(Component.literal(
-                    "[Endsight] wrote " + sightings.size() + " to " + file.getFileName()));
-        } catch (IOException ex) {
-            mc.player.sendSystemMessage(Component.literal(
-                    "[Endsight] dump failed: " + ex.getMessage()));
-        }
     }
 }

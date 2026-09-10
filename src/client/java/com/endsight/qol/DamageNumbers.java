@@ -67,7 +67,7 @@ public final class DamageNumbers {
      * A popup exists for about a second. A hologram - a shop price, a leaderboard - can
      * be a bare number too, and no amount of reading the text tells the two apart. Age
      * does: anything still standing there five seconds later was never a popup, so it is
-     * dropped and can no longer be hidden by the declutter rule. The two-second entry
+     * dropped and can no longer be hidden as an older popup. The two-second entry
      * gate means a hologram is only ever a candidate in the moment it comes into range,
      * and never again after that.
      */
@@ -76,9 +76,7 @@ public final class DamageNumbers {
 
     private static boolean enabled = false;
     private static String mode = COMPACT;
-    private static double decimals = 2;
-    private static boolean declutter = true;
-    private static double keepNewest = 1;
+    private static boolean onlyNewest = true;
 
     /** Live popups by entity id. Rebuilt every tick, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
@@ -105,15 +103,9 @@ public final class DamageNumbers {
                         new Setting.Choice("Mode",
                                 "Shorten them to 8.49M, or remove them completely.",
                                 List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
-                        new Setting.Slider("Decimals",
-                                "How much precision a shortened number keeps.",
-                                0, 2, 1, () -> decimals, v -> decimals = v, ""),
-                        new Setting.Toggle("Declutter",
-                                "Hide the older ones when they start stacking up.",
-                                () -> declutter, v -> declutter = v),
-                        new Setting.Slider("Keep newest",
-                                "How many are left on screen while decluttering.",
-                                1, 8, 1, () -> keepNewest, v -> keepNewest = v, ""),
+                        new Setting.Toggle("Only newest",
+                                "Show one at a time, so they cannot stack up.",
+                                () -> onlyNewest, v -> onlyNewest = v),
                         new Setting.Action("Dump popups",
                                 "Writes what the floating text actually said to a file.",
                                 "Dump", DamageNumbers::dump)));
@@ -151,7 +143,7 @@ public final class DamageNumbers {
 
             } else if (e.tickCount > STALE_TICKS) {
                 // Still here five seconds on, so it was never a damage popup. Dropped
-                // rather than counted among the ones the declutter rule may hide.
+                // rather than counted among the ones a newer popup is allowed to hide.
                 continue;
             }
 
@@ -164,7 +156,7 @@ public final class DamageNumbers {
         live.sort(Comparator.comparingLong((Entity e) -> tracked.get(e.getId()).born).reversed());
 
         boolean hideAll = HIDE.equals(mode);
-        int keep = declutter ? (int) keepNewest : Integer.MAX_VALUE;
+        int keep = onlyNewest ? 1 : Integer.MAX_VALUE;
 
         for (int i = 0; i < live.size(); i++) {
             Entity e = live.get(i);
@@ -289,13 +281,16 @@ public final class DamageNumbers {
         return out.append(trailing).toString();
     }
 
+    private static final String[] UNITS = {"", "K", "M", "B", "T"};
+
     /**
      * "8,486,084" as "8.49M".
      *
-     * Three significant figures, capped by the Decimals setting - so every number comes
-     * out roughly the same width, which is what makes a stack of them readable. Anything
-     * under a thousand is left alone: "847" is already as short as it gets, and "0.85k"
-     * is worse in every way.
+     * Three significant figures, so 8.49M, 17.1M and 847K all come out the same width -
+     * which is the point of shortening them at all, since a number that changes width
+     * every hit is still something you have to re-read. Anything under a thousand is
+     * left alone: "847" is already as short as it gets, and "0.85K" is worse in every
+     * way.
      */
     private static String format(String digits) {
         String bare = digits.replace(",", "");
@@ -307,17 +302,16 @@ public final class DamageNumbers {
             return null;
         }
 
-        String[] units = {"", "k", "M", "B", "T"};
         int unit = 0;
-        while (Math.abs(v) >= 1000 && unit < units.length - 1) {
+        while (Math.abs(v) >= 1000 && unit < UNITS.length - 1) {
             v /= 1000;
             unit++;
         }
         if (unit == 0) return String.format("%.0f", v);
 
         double a = Math.abs(v);
-        int places = (int) Math.min(decimals, a < 10 ? 2 : a < 100 ? 1 : 0);
-        return trimZeros(String.format("%." + places + "f", v)) + units[unit];
+        int places = a < 10 ? 2 : a < 100 ? 1 : 0;
+        return trimZeros(String.format("%." + places + "f", v)) + UNITS[unit];
     }
 
     private static String trimZeros(String s) {

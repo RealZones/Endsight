@@ -1,5 +1,6 @@
 package com.endsight.visual;
 
+import com.endsight.hud.Project;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -104,7 +105,6 @@ public final class NukubiHighlight {
 
         int sw = mc.getWindow().getGuiScaledWidth();
         int sh = mc.getWindow().getGuiScaledHeight();
-        Vec3 eye = player.getEyePosition(1f);
 
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == player || !matches(e)) continue;
@@ -118,12 +118,12 @@ public final class NukubiHighlight {
             double headY = bb.maxY - 0.12;
             Vec3 head = new Vec3((bb.minX + bb.maxX) / 2, headY, (bb.minZ + bb.maxZ) / 2);
 
-            double[] p = project(head, eye, player, sw, sh);
+            double[] p = Project.toScreen(head, sw, sh);
             if (p == null) continue;
 
             // Box scaled by distance, so it frames the head instead of being a fixed
             // square that swallows it up close and vanishes far away.
-            double[] top = project(head.add(0, 0.34, 0), eye, player, sw, sh);
+            double[] top = Project.toScreen(head.add(0, 0.34, 0), sw, sh);
             int half = top == null ? 8 : (int) Math.max(4, Math.abs(p[1] - top[1]));
 
             int cx = (int) p[0], cy = (int) p[1];
@@ -161,63 +161,17 @@ public final class NukubiHighlight {
     }
 
     /**
-     * World point to screen point, or null when it is behind you.
-     *
-     * Built from the player's own yaw and pitch rather than the camera quaternion,
-     * because the two disagree in third person and the yaw/pitch form is the one whose
-     * signs can be reasoned about on paper. Untested against a running game: if the box
-     * tracks Nukubi but mirrored left-to-right, `right` has the wrong sign and that is
-     * the whole fix.
-     */
-    private static double[] project(Vec3 target, Vec3 eye, LocalPlayer player, int sw, int sh) {
-        double yaw = Math.toRadians(player.getYRot());
-        double pitch = Math.toRadians(player.getXRot());
-
-        // MC yaw 0 faces +Z, and positive pitch looks down - hence both minus signs.
-        Vec3 forward = new Vec3(-Math.sin(yaw) * Math.cos(pitch),
-                -Math.sin(pitch),
-                Math.cos(yaw) * Math.cos(pitch));
-        // forward x worldUp, using the horizontal heading so the view never rolls.
-        Vec3 right = new Vec3(-Math.cos(yaw), 0, -Math.sin(yaw));
-        Vec3 up = right.cross(forward);
-
-        Vec3 d = target.subtract(eye);
-        double z = d.dot(forward);
-        if (z < 0.05) return null;                 // behind the camera, or on top of it
-
-        double fov = Minecraft.getInstance().options.fov().get();
-        double f = (sh / 2.0) / Math.tan(Math.toRadians(fov) / 2.0);
-
-        return new double[]{
-                sw / 2.0 + (d.dot(right) / z) * f,
-                sh / 2.0 - (d.dot(up) / z) * f
-        };
-    }
-
-    /**
-     * Whether this is the thing we are looking for.
-     *
-     * Section codes are stripped first. The live dump showed mob names arrive as
-     * "§8[§7Lv55§8] §cZealot Bruiser §a50000§f/§a50000" - literal codes in
-     * the string, not styles - so a name can carry a colour change in the middle of the
-     * word we are matching and a raw contains() would miss it.
-     *
-     * A substring test rather than equality for the same reason: the name has a level
-     * bolted on the front and current health on the end, so it changes every time the
-     * thing takes a hit. There is no stable full name to compare against.
-     */
-    /**
      * Whether this one belongs to you.
      *
      * The live dump settled this: the server writes the owner into the name itself, as
-     * "[Lv100] Voidling Devotee (GodIsAFurry's soul) 18M/40M". So ownership is an exact
-     * string test, not the distance guess we were going to have to make.
+     * "[Lv100] Voidling Devotee (SomePlayer's soul) 18M/40M". So ownership is an exact
+     * string test, not the distance guess it was going to have to be.
      *
      * Not everything carries the tag though - the boss itself comes through as
      * "☠ Voidgloom Seraph IV 2.5B/2.5B❤ Radiation" with no owner at all. An untagged
-     * entity is treated as YOURS rather than hidden: "I cannot tell" must not silently
-     * hide the thing you turned the module on to see. Hiding on uncertainty is the one
-     * failure here you would not notice was happening.
+     * entity is treated as YOURS rather than hidden: "cannot tell" must not silently
+     * hide the thing the module was turned on to see, which is the one failure here
+     * that would go unnoticed.
      */
     private static boolean mine(Entity e) {
         String plain = plainName(e);
@@ -243,13 +197,11 @@ public final class NukubiHighlight {
      *
      * Two passes on purpose. Naming every block in a 41x13x41 box is tens of thousands
      * of lines of end stone, which is not data - it is a haystack. So the first pass
-     * counts block types and the second only prints the ones that are RARE, on the
-     * reasoning that a dragon altar is by definition not what the ground is made of.
-     * The threshold is generous because being told about a few extra blocks costs
-     * nothing and missing the altar costs another round trip.
+     * counts block types and the second only prints the RARE ones, on the reasoning
+     * that a dragon altar is by definition not what the ground is made of.
      *
-     * States are printed whole ("Block{minecraft:end_portal_frame}[eye=true,facing=north]")
-     * rather than just the block name, because for this job the property IS the answer -
+     * States print whole ("Block{minecraft:end_portal_frame}[eye=true,facing=north]")
+     * rather than just the block name, because for this job the property IS the answer:
      * whether a podium holds an eye is a value on the state, not a separate lookup.
      */
     private static void dumpBlocks(Minecraft mc, List<String> out) {

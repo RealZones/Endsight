@@ -69,6 +69,9 @@ public final class EndsightDemo {
                                 "How far out to highlight.", 8, 128, 8, 48, "m"),
                         Setting.demoToggle("Through walls",
                                 "Draw it even when out of sight.", true))));
+        r.add(Module.placeholder("visual.beacon", "Protector Beacon",
+                "Beam over the Endstone Protector, and an arrow when it is off screen.",
+                "Visual"));
         r.add(Module.placeholder("visual.nametags", "Nametag Cleanup",
                 "Hides the nametags that are just noise.", "Visual"));
 

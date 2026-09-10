@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
+import com.endsight.visual.Beacon;
 import com.endsight.visual.NukubiHighlight;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.EndsightScreen;
@@ -54,6 +55,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Slayer.killTimerModule());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
+            registry.replace(Beacon.module());
             Config.load(registry);
         }
         return registry;
@@ -68,6 +70,7 @@ public class EndsightClient implements ClientModInitializer {
         DragonTimer.init();
         Protector.init();
         EyeGuard.init();
+        Beacon.init();
         Slayer.init();
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any

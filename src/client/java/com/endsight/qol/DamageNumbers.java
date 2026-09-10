@@ -10,12 +10,15 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,63 +75,59 @@ public final class DamageNumbers {
      * seconds later was never one, so it is dropped and stops counting for the Only
      * newest slot.
      *
-     * Both numbers were far looser to begin with, and that is what broke Only newest.
-     * Moving around loads and unloads the holograms near you, and every reappearance
-     * restarts an entity's tick count - so a hologram that happens to read as a bare
-     * number kept being taken for a fresh popup, took the slot, and hid every real one
-     * behind it for as long as it held. Catching popups at spawn is what allows the
-     * window to be this narrow, and a narrow window is what keeps the scenery out of it.
+     * Both numbers were far looser to begin with, and it showed. Moving around loads and
+     * unloads the holograms near you, and every reappearance restarts an entity's tick
+     * count - so a hologram that happens to read as a bare number kept being taken for a
+     * fresh popup. Catching popups at spawn is what allows the window to be this narrow,
+     * and a narrow window is what keeps the scenery out of it.
      */
     private static final int NEW_TICKS = 5;
     private static final int STALE_TICKS = 40;
 
     private static boolean enabled = false;
     private static String mode = COMPACT;
-    private static boolean onlyNewest = true;
+    private static double everySeconds = 3;
 
     /** Live popups by entity id. Rebuilt every pass, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
 
     /**
-     * The one popup allowed on screen while Only newest is on, or -1 for none.
+     * When a mob last had a popup shown for it, by the mob's entity id.
      *
-     * A slot rather than a sort, and that is the whole fix for it. The first version of
-     * this simply kept whichever popup was newest, which meant every hit hid the one
-     * before it - so spam-clicking made each number flash up and vanish in a few
-     * milliseconds, which reads as the popups being deleted rather than as one at a time.
+     * Per mob rather than one clock for everything, because hitting three mobs is not
+     * spam - it only looks like it when their numbers land together. A shared clock
+     * would throttle a cleave down to one number for the whole swing, which hides the
+     * thing you actually wanted to see.
      *
-     * Whatever holds the slot now keeps it until it dies on its own. Nothing is ever cut
-     * short, so the time a number stays up is the server's and not ours, and the slot
-     * frees the moment it expires - which during a fight is well under a second, so the
-     * number you are looking at is still a recent one.
+     * This replaced a single visible slot, and the reason is worth keeping. The slot
+     * could be taken by scenery: a hologram that happened to read as a bare number held
+     * it and hid every real popup behind it, so one wrong guess about what a popup is
+     * silently switched the whole module off. A per-mob clock cannot do that. A
+     * misread hologram burns its own entry and nothing else's, so the same mistake now
+     * costs one throttled number instead of all of them.
      */
-    private static int holder = -1;
-    private static long holderSince;
-    private static String holderWhat = "";
+    private static final Map<Integer, Long> lastShown = new HashMap<>();
+    private static final int NO_TARGET = -1;
+
+    /** How far outside a mob's own box a popup still counts as that mob's. */
+    private static final double TARGET_REACH = 1.5;
 
     /**
-     * What has held the slot and for how long, for the dump.
+     * What was shown and what was throttled, for the dump.
      *
-     * Whether the slot is being taken by scenery is the one question a screenshot cannot
-     * answer - a stolen slot looks exactly like the module doing nothing. A line per
-     * holder makes it obvious: real popups hold for well under a second and there is one
-     * per hit, while anything holding for the full two seconds is a hologram.
+     * Throttling looks exactly like the module doing nothing, and no screenshot tells
+     * the two apart - so the decision is recorded rather than guessed at afterwards.
      */
-    private static final List<String> slotLog = new ArrayList<>();
-    private static final int SLOT_LOG_CAP = 40;
+    private static final List<String> decisions = new ArrayList<>();
+    private static final int DECISION_CAP = 60;
 
     /** What floating text has actually said, for the dump. Keyed by the text itself. */
     private static final Map<String, String> sightings = new LinkedHashMap<>();
     private static final int SIGHTING_CAP = 150;
 
     private static final class Tracked {
-        final long born;
         boolean shortened;
         boolean hidden;
-
-        Tracked(long born) {
-            this.born = born;
-        }
     }
 
     public static Module module() {
@@ -139,9 +138,9 @@ public final class DamageNumbers {
                         new Setting.Choice("Mode",
                                 "Shorten them to 8.49M, or remove them completely.",
                                 List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
-                        new Setting.Toggle("Only newest",
-                                "Show one at a time, so they cannot stack up.",
-                                () -> onlyNewest, v -> onlyNewest = v),
+                        new Setting.Slider("One every",
+                                "How long before the same mob shows another. 0 shows every hit.",
+                                0, 10, 0.5, () -> everySeconds, v -> everySeconds = v, "s"),
                         new Setting.Action("Dump popups",
                                 "Writes what the floating text actually said to a file.",
                                 "Dump", DamageNumbers::dump)));
@@ -171,13 +170,12 @@ public final class DamageNumbers {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.level == null || mc.player == null) {
             if (!tracked.isEmpty()) tracked = new HashMap<>();
-            holder = -1;
+            lastShown.clear();
             return;
         }
 
         long now = System.currentTimeMillis();
         Map<Integer, Tracked> next = new HashMap<>();
-        List<Entity> live = new ArrayList<>();
 
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == mc.player) continue;
@@ -191,54 +189,87 @@ public final class DamageNumbers {
                 if (plain == null || plain.isBlank()) continue;
                 see(e, text, plain);
                 if (!DAMAGE.matcher(plain).matches()) continue;
-                known = new Tracked(now);
+
+                // Decided once, on the frame it spawns, and never revisited. A popup is
+                // dead inside a second, so there is no state worth re-deciding - and a
+                // decision that cannot change is one that cannot flicker.
+                known = new Tracked();
+                decide(mc, e, known, plain, now);
 
             } else if (e.tickCount > STALE_TICKS) {
-                // Still here five seconds on, so it was never a damage popup. Dropped
-                // rather than counted among the ones a newer popup is allowed to hide.
+                // Still here two seconds on, so it was never a damage popup.
                 continue;
             }
 
             next.put(e.getId(), known);
-            live.add(e);
         }
         tracked = next;
+    }
 
-        // Newest first, so a freed slot goes to the most recent hit rather than to
-        // whichever leftover happens to come out of the entity list first.
-        live.sort(Comparator.comparingLong((Entity e) -> tracked.get(e.getId()).born).reversed());
+    private static void decide(Minecraft mc, Entity popup, Tracked t, String plain, long now) {
+        if (HIDE.equals(mode)) {
+            hide(popup, t);
+            return;
+        }
 
-        boolean hideAll = HIDE.equals(mode);
-        if (holder >= 0 && !tracked.containsKey(holder)) release(now);
+        long gap = (long) (everySeconds * 1000);
+        if (gap > 0) {
+            int target = targetOf(mc, popup);
+            Long last = lastShown.get(target);
+            if (last != null && now - last < gap) {
+                record("throttled " + (now - last) + "ms into the wait, target="
+                        + target + "  \"" + plain + "\"");
+                hide(popup, t);
+                return;
+            }
+            lastShown.put(target, now);
+            forget(now, gap);
+            record("shown  target=" + target + "  \"" + plain + "\"");
+        }
+        shorten(popup, t);
+    }
 
-        for (Entity e : live) {
-            Tracked t = tracked.get(e.getId());
+    /**
+     * Which mob a popup belongs to, or NO_TARGET.
+     *
+     * Popups carry nothing that names what was hit, so the mob is worked out from where
+     * the number appeared. The mob's own box inflated by a block and a half is what
+     * counts as "on" it - a fixed radius does not work, because a popup over an enderman
+     * sits nearly three blocks above its feet and would be further from the mob it
+     * belongs to than from a shorter one standing next to it.
+     *
+     * Getting this wrong in a crowd costs one throttled number. That is the point of
+     * keying the clock per mob rather than trusting the answer.
+     */
+    private static int targetOf(Minecraft mc, Entity popup) {
+        Vec3 at = popup.position();
+        int best = NO_TARGET;
+        double bestDist = Double.MAX_VALUE;
 
-            if (hideAll) {
-                hide(e, t);
-            } else if (!onlyNewest) {
-                shorten(e, t);
-            } else {
-                // A popup that has already been hidden cannot be brought back, so the
-                // slot waits for the next new one rather than reviving a half-dead one.
-                if (holder < 0 && !t.hidden) take(e, now);
-                if (e.getId() == holder) shorten(e, t);
-                else hide(e, t);
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof LivingEntity) || e instanceof Player || e instanceof ArmorStand) {
+                continue;
+            }
+            AABB box = e.getBoundingBox().inflate(TARGET_REACH);
+            if (!box.contains(at)) continue;
+            double d = box.getCenter().distanceToSqr(at);
+            if (d < bestDist) {
+                bestDist = d;
+                best = e.getId();
             }
         }
+        return best;
     }
 
-    private static void take(Entity e, long now) {
-        holder = e.getId();
-        holderSince = now;
-        Component text = text(e);
-        holderWhat = e.getType() + "  \"" + (text == null ? "" : plain(text)) + "\"";
+    /** Drops mobs nothing has been shown for in a while, so the map cannot grow. */
+    private static void forget(long now, long gap) {
+        if (lastShown.size() <= 64) return;
+        lastShown.entrySet().removeIf(e -> now - e.getValue() > gap * 4);
     }
 
-    private static void release(long now) {
-        slotLog.add(String.format("held %5dms  %s", now - holderSince, holderWhat));
-        while (slotLog.size() > SLOT_LOG_CAP) slotLog.remove(0);
-        holder = -1;
+    private static void record(String line) {
+        decisions.add(line);
+        while (decisions.size() > DECISION_CAP) decisions.remove(0);
     }
 
     /**
@@ -436,10 +467,10 @@ public final class DamageNumbers {
         }
 
         out.add("");
-        out.add("# --- what held the Only newest slot, newest last ---");
-        out.add("# a real popup holds for well under a second and there is one per hit;");
-        out.add("# anything holding for the full two seconds is scenery stealing the slot");
-        out.addAll(slotLog);
+        out.add("# --- shown or throttled, newest last ---");
+        out.add("# target is the entity id of the mob the popup was attributed to;");
+        out.add("# -1 means no mob was found where the number appeared");
+        out.addAll(decisions);
 
         Path file = mc.gameDirectory.toPath().resolve("endsight-damage-dump.txt");
         try {

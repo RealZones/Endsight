@@ -2,6 +2,8 @@ package com.endsight.slayers;
 
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.HudLayout;
+import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -58,7 +60,6 @@ public final class Slayer {
     private static boolean timerOn = true;
     private static boolean killTimeInChat = true;
     private static double hideAfterMin = 3;
-    private static String anchor = "Top left";
 
     // ── tracked ───────────────────────────────────────────────────────────────
     private static long bossSpawnedAt;
@@ -100,10 +101,9 @@ public final class Slayer {
                 "Kills, time spent and rate for the session.", "Slayers",
                 () -> timerOn, v -> timerOn = v,
                 List.of(
-                        new Setting.Choice("Anchor",
-                                "Where the readout sits.",
-                                List.of("Top left", "Top right", "Bottom left", "Bottom right"),
-                                () -> anchor, v -> anchor = v),
+                        new Setting.Action("Move readout",
+                                "Drag it, and every other readout, where you want.",
+                                "Move", HudPlacementScreen::open),
                         new Setting.Slider("Hide when idle",
                                 "Fade out after this long with no slayer activity. 0 keeps it up.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
@@ -129,6 +129,8 @@ public final class Slayer {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "slayer"),
                 (g, delta) -> draw(g));
+        HudLayout.register("slayer.timer", "Slayer Tracker", 0f, 0f,
+                (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
     // ── reading ───────────────────────────────────────────────────────────────
@@ -297,12 +299,33 @@ public final class Slayer {
                 || System.currentTimeMillis() - lastActivity > idleMs())) return;
 
         Font font = mc.font;
+        int[] size = drawAt(null, font, 0, 0, false);
+        drawAt(g, font,
+                HudLayout.x("slayer.timer", size[0], mc.getWindow().getGuiScaledWidth()),
+                HudLayout.y("slayer.timer", size[1], mc.getWindow().getGuiScaledHeight()),
+                false);
+    }
+
+    /**
+     * The tracker block at a given position, returning the size it used.
+     *
+     * Shared by the live HUD and the placement screen. A null target asks for the size
+     * only, since the position cannot be worked out until the size is known.
+     *
+     * Sample values are plausible rather than zeroes so the block is its real width while
+     * being dragged - placing a box that grows once real numbers arrive is how a HUD ends
+     * up overlapping something.
+     */
+    private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         long now = System.currentTimeMillis();
 
-        String topLabel;
-        String topValue;
+        String topLabel, topValue;
         boolean hot;
-        if (bossUp) {
+        if (sample) {
+            topLabel = "Avg kill";
+            topValue = "14s";
+            hot = false;
+        } else if (bossUp) {
             topLabel = "Boss";
             topValue = secs(now - bossSpawnedAt);
             hot = true;
@@ -317,34 +340,32 @@ public final class Slayer {
         }
 
         int rate = perHour();
-        String[][] rows = {
-                {topLabel, topValue},
-                {"Kills", String.valueOf(bossesKilled)},
-                {"Elapsed", sessionStart == 0 ? "-" : secs(elapsedMs())},
-                {"Rate", rate < 0 ? "-" : rate + "/h"},
-        };
+        String[][] rows = sample
+                ? new String[][]{{topLabel, topValue}, {"Kills", "12"},
+                                 {"Elapsed", "8m32s"}, {"Rate", "84/h"}}
+                : new String[][]{{topLabel, topValue},
+                                 {"Kills", String.valueOf(bossesKilled)},
+                                 {"Elapsed", sessionStart == 0 ? "-" : secs(elapsedMs())},
+                                 {"Rate", rate < 0 ? "-" : rate + "/h"}};
 
         String title = "SLAYER TRACKER";
         int w = font.width(title) + 20;
         for (String[] r : rows) w = Math.max(w, Readout.width(font, r[0], r[1]));
-
         int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
-        int x = anchor.endsWith("left") ? 6 : sw - w - 6;
-        int y = anchor.startsWith("Top") ? 6 : sh - h - 34;
-        if (anchor.equals("Top right")) y += Readout.ROW_H + 7;   // under the Dragon Timer
 
-        Draw.rect(g, x, y, 2, Readout.ROW_H - 1, Theme.accent());
-        Draw.text(g, font, title, x + 8, y, Theme.muted());
+        if (g != null) {
+            Draw.rect(g, x, y, 2, Readout.ROW_H - 1, Theme.accent());
+            Draw.text(g, font, title, x + 8, y, Theme.muted());
 
-        int ry = y + Readout.ROW_H + 3;
-        for (int i = 0; i < rows.length; i++) {
-            Draw.text(g, font, rows[i][0], x + 8, ry, Theme.dim());
-            Draw.textRight(g, font, rows[i][1], x + w, ry,
-                    i == 0 && hot ? Theme.accent() : Theme.text());
-            ry += Readout.ROW_H + 2;
+            int ry = y + Readout.ROW_H + 3;
+            for (int i = 0; i < rows.length; i++) {
+                Draw.text(g, font, rows[i][0], x + 8, ry, Theme.dim());
+                Draw.textRight(g, font, rows[i][1], x + w, ry,
+                        i == 0 && hot ? Theme.accent() : Theme.text());
+                ry += Readout.ROW_H + 2;
+            }
         }
+        return new int[]{w, h};
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

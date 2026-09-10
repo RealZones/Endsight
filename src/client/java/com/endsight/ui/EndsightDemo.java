@@ -33,7 +33,7 @@ public final class EndsightDemo {
 
         r.add(Module.placeholder("dragon.timer", "Dragon Timer",
                 "Eye count and dragon state, read from chat.", "Dragons"));
-        r.add(Module.placeholder("dragon.loot", "Loot Alerts",
+        r.add(Module.unimplemented("dragon.loot", "Loot Alerts",
                 "On-screen alerts for drops worth stopping for.", "Dragons"));
 
         r.add(Module.placeholder("dragon.protector", "Protector Stage",
@@ -41,14 +41,14 @@ public final class EndsightDemo {
         r.add(Module.placeholder("visual.beacon", "Protector Beacon",
                 "Beam over the Endstone Protector so it can be found at a glance.", "Golem"));
 
-        r.add(Module.placeholder("slayer.boss", "Boss Highlight",
+        r.add(Module.unimplemented("slayer.boss", "Boss Highlight",
                 "Marks your own boss, ignores everyone else's.", "Slayers"));
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Slayers"));
 
         r.add(Module.placeholder("visual.nukubi", "Nukubi Highlight",
                 "Marks Nukubi so it is not lost in the crowd.", "Visual"));
-        r.add(Module.placeholder("visual.nametags", "Nametag Cleanup",
+        r.add(Module.unimplemented("visual.nametags", "Nametag Cleanup",
                 "Hides the nametags that are just noise.", "Visual"));
 
         r.add(Module.placeholder("alerts", "Alerts",

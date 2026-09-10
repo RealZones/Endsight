@@ -1,0 +1,116 @@
+package com.endsight.hud;
+
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Where each HUD readout sits, and how to draw a sample of it.
+ *
+ * Replaces the four-corner Anchor choice every readout used to carry. Corners were fine
+ * with one element and wrong with three: two things anchored to the same corner had to
+ * know about each other to avoid overlapping, which is exactly the coupling a layout
+ * system exists to remove.
+ *
+ * Positions are stored as a FRACTION of the screen, not pixels. A HUD placed at the
+ * right-hand edge on a 1080p window should still be at the right-hand edge in a small
+ * window or at a different GUI scale, and pixels do not survive either.
+ *
+ * Every element also registers how to draw a sample of itself. The placement screen uses
+ * that rather than inventing its own preview, so what you drag is drawn by the same code
+ * that draws it in game - a separate "preview" would drift from the real thing, and you
+ * would be positioning something that no longer matches.
+ */
+public final class HudLayout {
+
+    private HudLayout() {
+    }
+
+    /** Draws the element at a position and returns {width, height} actually used. */
+    public interface Renderer {
+        int[] draw(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample);
+    }
+
+    private record Element(String id, String label, float defX, float defY, Renderer renderer) {
+    }
+
+    private static final Map<String, Element> ELEMENTS = new LinkedHashMap<>();
+    private static final Map<String, float[]> POS = new LinkedHashMap<>();
+
+    /**
+     * @param defX 0 is the left edge, 1 the right; the element's own width is kept on
+     *             screen when it is resolved, so 1 means "flush right" rather than
+     *             "starting off the edge".
+     */
+    public static void register(String id, String label, float defX, float defY, Renderer r) {
+        ELEMENTS.put(id, new Element(id, label, defX, defY, r));
+    }
+
+    public static List<String> ids() {
+        return new ArrayList<>(ELEMENTS.keySet());
+    }
+
+    public static String label(String id) {
+        Element e = ELEMENTS.get(id);
+        return e == null ? id : e.label();
+    }
+
+    public static Renderer renderer(String id) {
+        Element e = ELEMENTS.get(id);
+        return e == null ? null : e.renderer();
+    }
+
+    // ── position ──────────────────────────────────────────────────────────────
+
+    private static float[] fractions(String id) {
+        float[] f = POS.get(id);
+        if (f != null) return f;
+        Element e = ELEMENTS.get(id);
+        return e == null ? new float[]{0, 0} : new float[]{e.defX(), e.defY()};
+    }
+
+    /**
+     * Top-left corner in pixels, clamped so the element cannot be dragged off screen.
+     *
+     * The clamp is applied on resolve rather than on drag: a window resize can strand an
+     * element outside the viewport without anyone touching it, and a readout you cannot
+     * see is indistinguishable from a broken one.
+     */
+    public static int x(String id, int w, int sw) {
+        int px = Math.round(fractions(id)[0] * Math.max(0, sw - w));
+        return Math.max(0, Math.min(Math.max(0, sw - w), px));
+    }
+
+    public static int y(String id, int h, int sh) {
+        int py = Math.round(fractions(id)[1] * Math.max(0, sh - h));
+        return Math.max(0, Math.min(Math.max(0, sh - h), py));
+    }
+
+    public static void setPixels(String id, int px, int py, int w, int h, int sw, int sh) {
+        float fx = sw - w <= 0 ? 0 : px / (float) (sw - w);
+        float fy = sh - h <= 0 ? 0 : py / (float) (sh - h);
+        POS.put(id, new float[]{clamp01(fx), clamp01(fy)});
+    }
+
+    public static void reset(String id) {
+        POS.remove(id);
+    }
+
+    // ── persistence, driven by Config ─────────────────────────────────────────
+
+    public static float[] saved(String id) {
+        return POS.get(id);
+    }
+
+    public static void restore(String id, float fx, float fy) {
+        POS.put(id, new float[]{clamp01(fx), clamp01(fy)});
+    }
+
+    private static float clamp01(float v) {
+        return Math.max(0f, Math.min(1f, v));
+    }
+}

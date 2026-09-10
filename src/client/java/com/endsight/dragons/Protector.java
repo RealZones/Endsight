@@ -2,6 +2,8 @@ package com.endsight.dragons;
 
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.HudLayout;
+import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -31,31 +33,53 @@ public final class Protector {
     private Protector() {
     }
 
+    /**
+     * The rising announcements, e.g. "(Tier 3/5)".
+     *
+     * The literal "Tier " matters and was dropped when this moved out of DragonTimer,
+     * which silently broke every rising line: the tier stayed at zero, the readout never
+     * drew, and the module looked dead right up until "has spawned" set the tier
+     * directly - so it appeared only at the top of the climb, which is the one point
+     * where you no longer need it.
+     */
     private static final Pattern TIER = Pattern.compile(
-            "Endstone Protector (?:is rising from|has emerged from) the ground! \\((\\d)/(\\d)\\)");
+            "Endstone Protector (?:is rising from|has emerged from) the ground! \\(Tier (\\d)/(\\d)\\)");
     private static final String SPAWNED = "Endstone Protector has spawned";
     private static final String DEAD = "The Endstone Protector has been defeated";
+
+    /**
+     * The golem becomes the Warden when someone uses a catalyst, and the server never
+     * announces the change - there is no "the Warden has spawned" line, only the Warden
+     * suddenly doing things. So the transformation is inferred from its actions, and the
+     * end of the fight from its own death message.
+     *
+     * Without the death line the timer simply never stopped: the Protector was gone, but
+     * nothing matching "The Endstone Protector has been defeated" ever arrived, so the
+     * readout counted upward forever.
+     */
+    private static final String WARDEN_DEAD = "The Warden has been defeated";
+    private static final Pattern WARDEN_ACTIVE = Pattern.compile(
+            "The Warden (?:unleashes|summons)|The Warden's aura");
 
     /** The server's own colour for the Protector, so the popup matches its chat line. */
     private static final int PURPLE = 0xFFAA00AA;
 
     private static boolean enabled = true;
-    private static String anchor = "Top left";
 
     private static int tier;
     private static int tierMax = 5;
     private static long since;
     private static boolean up;
+    private static boolean warden;
 
     public static Module module() {
         return new Module("dragon.protector", "Protector Stage",
                 "Tracks the Endstone Protector rising, tier by tier.", "Golem",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Choice("Anchor",
-                                "Where the readout sits.",
-                                List.of("Top left", "Top right", "Bottom left", "Bottom right"),
-                                () -> anchor, v -> anchor = v)));
+                        new Setting.Action("Move readout",
+                                "Drag it, and every other readout, where you want.",
+                                "Move", HudPlacementScreen::open)));
     }
 
     public static void init() {
@@ -65,6 +89,12 @@ public final class Protector {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "protector"),
                 (g, delta) -> draw(g));
+
+        // Registered with a sample so it can be positioned from the hub. This readout is
+        // invisible until a Protector actually starts rising, which makes it impossible
+        // to place - and easy to mistake for a module that is not working.
+        HudLayout.register("dragon.protector", "Protector Stage", 0f, 0f,
+                (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
     private static void onLine(String line) {
@@ -76,20 +106,29 @@ public final class Protector {
             tierMax = Math.max(1, parse(m.group(2)));
             since = System.currentTimeMillis();
             up = false;
+            warden = false;
             return;
         }
         if (line.contains(SPAWNED)) {
             tier = tierMax;
             up = true;
+            warden = false;
             since = System.currentTimeMillis();
             if (Alerts.protector()) {
                 Alert.show("ENDSTONE PROTECTOR", "has spawned", PURPLE, 1.15f, Alerts.seconds());
             }
             return;
         }
-        if (line.contains(DEAD)) {
+        // Either death ends the fight. Checked before the action pattern so a defeat
+        // cannot be mistaken for the Warden still doing something.
+        if (line.contains(DEAD) || line.contains(WARDEN_DEAD)) {
             tier = 0;
             up = false;
+            warden = false;
+            return;
+        }
+        if (up && WARDEN_ACTIVE.matcher(line).find()) {
+            warden = true;
         }
     }
 
@@ -99,17 +138,39 @@ public final class Protector {
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
 
         Font font = mc.font;
-        String label = "Protector";
-        String value = up ? "up  " + secs(System.currentTimeMillis() - since)
-                : tier + "/" + tierMax;
+        int[] size = drawAt(null, font, 0, 0, false);
+        drawAt(g, font,
+                HudLayout.x("dragon.protector", size[0], mc.getWindow().getGuiScaledWidth()),
+                HudLayout.y("dragon.protector", size[1], mc.getWindow().getGuiScaledHeight()),
+                false);
+    }
+
+    /**
+     * The readout at a position, or - with a null target - just its size.
+     *
+     * Size has to be known before the position can be worked out, and the size depends
+     * on the text. Passing null asks for the measurement without drawing anything, which
+     * is the only version of this that cannot accidentally leave a copy on screen.
+     */
+    private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
+        String label = !sample && warden ? "Warden" : "Protector";
+        String value;
+        float progress;
+        if (sample) {
+            value = "3/5";
+            progress = 0.6f;
+        } else {
+            value = up ? "up  " + secs(System.currentTimeMillis() - since)
+                    : tier + "/" + tierMax;
+            progress = tier / (float) tierMax;
+        }
 
         int w = Readout.width(font, label, value);
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
-        int x = anchor.endsWith("left") ? 6 : sw - w - 6;
-        int y = anchor.startsWith("Top") ? 6 : sh - 40;
-
-        Readout.draw(g, font, x, y, w, label, value, up, tier / (float) tierMax);
+        int h = Readout.height(progress >= 0);
+        if (g != null) {
+            Readout.draw(g, font, x, y, w, label, value, sample || up, progress);
+        }
+        return new int[]{w, h};
     }
 
     private static String secs(long ms) {

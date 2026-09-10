@@ -2,6 +2,8 @@ package com.endsight.dragons;
 
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.HudLayout;
+import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -69,7 +71,6 @@ public final class DragonTimer {
      */
     private static boolean details = false;
 
-    private static String anchor = "Top right";
 
     // ── tracked state ─────────────────────────────────────────────────────────
     private static int eyes;
@@ -120,10 +121,9 @@ public final class DragonTimer {
                         new Setting.Toggle("Show on HUD",
                                 "Keep the readout on screen.",
                                 () -> showHud, v -> showHud = v),
-                        new Setting.Choice("Anchor",
-                                "Where the readout sits.",
-                                List.of("Top left", "Top right", "Bottom left", "Bottom right"),
-                                () -> anchor, v -> anchor = v),
+                        new Setting.Action("Move readout",
+                                "Drag it, and every other readout, where you want.",
+                                "Move", HudPlacementScreen::open),
                         new Setting.Toggle("Details",
                                 "List who placed each eye this cycle.",
                                 () -> details, v -> details = v)));
@@ -136,6 +136,8 @@ public final class DragonTimer {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "dragon_timer"),
                 (g, delta) -> draw(g));
+        HudLayout.register("dragon.timer", "Dragon Timer", 1f, 0f,
+                (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
     // ── reading ───────────────────────────────────────────────────────────────
@@ -236,6 +238,21 @@ public final class DragonTimer {
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
 
         Font font = mc.font;
+        int[] size = drawAt(null, font, 0, 0, false);
+        drawAt(g, font,
+                HudLayout.x("dragon.timer", size[0], mc.getWindow().getGuiScaledWidth()),
+                HudLayout.y("dragon.timer", size[1], mc.getWindow().getGuiScaledHeight()),
+                false);
+    }
+
+    /**
+     * The readout at a position, or - with a null target - just its size.
+     *
+     * Size has to be known before the position can be worked out, and the size depends
+     * on the text. Passing null asks for the measurement without drawing anything, which
+     * is the only version of this that cannot accidentally leave a copy on screen.
+     */
+    private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         long now = System.currentTimeMillis();
         long until = eggAt - now;
 
@@ -243,7 +260,12 @@ public final class DragonTimer {
         boolean hot;
         float progress = -1;
 
-        if (dragon != null) {
+        if (sample) {
+            label = "Egg Respawn";
+            value = "14s";
+            hot = false;
+            progress = 0.55f;
+        } else if (dragon != null) {
             label = dragon;
             value = secs(now - dragonSince);
             hot = true;
@@ -268,23 +290,26 @@ public final class DragonTimer {
         }
 
         int w = Readout.width(font, label, value);
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
-        int x = anchor.endsWith("left") ? 6 : sw - w - 6;
-        int y = anchor.startsWith("Top") ? 6 : sh - 40;
+        int h = Readout.height(progress >= 0);
+        if (g != null) {
+            Readout.draw(g, font, x, y, w, label, value, hot, progress);
+        }
 
-        int used = Readout.draw(g, font, x, y, w, label, value, hot, progress);
-
-        int ry = y + used + 3;
-        if (details) {
+        if (details && !sample) {
+            int ry = y + h + 3;
             for (Map.Entry<String, Integer> e : placers.entrySet()) {
                 // Names are whatever anyone is called, so they are cut to fit rather
                 // than allowed to run past the readout and into the game behind it.
-                String who = Draw.fit(font, e.getKey(), w - 34);
-                ry += Readout.draw(g, font, x, ry, w, who,
-                        String.valueOf(e.getValue()), false, -1) + 2;
+                if (g != null) {
+                    String who = Draw.fit(font, e.getKey(), w - 34);
+                    Readout.draw(g, font, x, ry, w, who,
+                            String.valueOf(e.getValue()), false, -1);
+                }
+                ry += Readout.height(false) + 2;
+                h += Readout.height(false) + 2;
             }
         }
+        return new int[]{w, h};
     }
 
     /**

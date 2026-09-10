@@ -56,6 +56,19 @@ public final class Readout {
     }
 
     /**
+     * Height of one row, with or without its progress bar.
+     *
+     * Exists so a caller can know its own size without rendering itself first. The
+     * alternative - drawing once off screen to measure - wastes a full pass every frame
+     * and, worse, puts a real copy on screen the moment someone gets the off-screen
+     * coordinate wrong. That happened: one readout measured at 0,0 and drew a permanent
+     * ghost in the corner.
+     */
+    public static int height(boolean withBar) {
+        return withBar ? ROW_H + 1 + BAR_H : ROW_H;
+    }
+
+    /**
      * Width for a label/value pair, so callers can right-align against a screen edge.
      *
      * A minimum keeps a readout from jumping in size every time its value ticks from

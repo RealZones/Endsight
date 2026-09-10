@@ -903,12 +903,30 @@ public class EndsightScreen extends Screen {
         if (p.y + p.h - 22 >= clipTop
                 && p.y + p.h - 12 < clip) {
 
-            drawToggle(
-                    g,
-                    p.x + 16,
-                    p.y + p.h - 22,
-                    t
-            );
+            /*
+             * A module with nothing behind it gets a label instead of a switch.
+             *
+             * Drawing a toggle that does nothing is the worse option: it invites a
+             * click, accepts it, and leaves you wondering which of the two of you is
+             * broken. Saying so costs one line of text.
+             */
+            if (!m.implemented()) {
+                Draw.text(
+                        g,
+                        font,
+                        "Not implemented",
+                        p.x + 16,
+                        p.y + p.h - 22,
+                        Theme.dim()
+                );
+            } else {
+                drawToggle(
+                        g,
+                        p.x + 16,
+                        p.y + p.h - 22,
+                        t
+                );
+            }
         }
 
         /*
@@ -1120,7 +1138,11 @@ public class EndsightScreen extends Screen {
                     mx,
                     my
             )) {
-                p.module.toggle();
+                // Swallowed rather than passed on: the card is still a card, it just has
+                // nothing to switch.
+                if (p.module.implemented()) {
+                    p.module.toggle();
+                }
                 return true;
             }
         }

@@ -14,25 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-/**
- * Everything you set, written to disk and read back at startup.
- *
- * Walks the registry rather than listing what to save. A module describes what it has -
- * a name, an on/off flag and a list of settings, each with a getter and a setter - and
- * that is already everything persistence needs. So this file knows nothing about
- * storage pages or dragons and never needs touching when a module is added; a new
- * setting is saved the day it is written, without anyone remembering to come here.
- *
- * The key is the module id plus the setting's label, e.g.
- * {@code module.storage.preview.set.Preview delay}. Labels rather than indices, because
- * an index silently reassigns every saved value the moment a setting is inserted in the
- * middle of a list, and the value that comes back is then wrong rather than missing -
- * which is much harder to notice.
- *
- * Deliberately java.util.Properties and not JSON: it is in the JDK, it escapes the
- * spaces and colons that setting labels contain, and this file has no business pulling
- * in a parser to store forty key-value pairs.
- */
 public final class Config {
 
     private Config() {
@@ -65,6 +46,17 @@ public final class Config {
                     Theme.set(candidate);
                     break;
                 }
+            }
+        }
+
+        for (String id : com.endsight.hud.HudLayout.ids()) {
+            String sx = p.getProperty("hud." + id + ".x");
+            String sy = p.getProperty("hud." + id + ".y");
+            if (sx == null || sy == null) continue;
+            try {
+                com.endsight.hud.HudLayout.restore(id, Float.parseFloat(sx), Float.parseFloat(sy));
+            } catch (NumberFormatException ignored) {
+                // Hand-edited or from an older build: the default position stands.
             }
         }
 
@@ -114,6 +106,13 @@ public final class Config {
     public static void save(ModuleRegistry registry) {
         Properties p = new Properties();
         p.setProperty("palette", Theme.palette().name());
+
+        for (String id : com.endsight.hud.HudLayout.ids()) {
+            float[] f = com.endsight.hud.HudLayout.saved(id);
+            if (f == null) continue;            // never moved, so nothing to pin down
+            p.setProperty("hud." + id + ".x", String.valueOf(f[0]));
+            p.setProperty("hud." + id + ".y", String.valueOf(f[1]));
+        }
 
         for (Module m : registry.all()) {
             String base = "module." + m.id();

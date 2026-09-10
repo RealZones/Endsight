@@ -223,6 +223,11 @@ public class SettingsScreen extends Screen {
         Draw.text(g, font, "MODULE", x, y - 6, Theme.dim());
 
         boolean on = module.isEnabled();
+        if (!module.implemented()) {
+            Draw.roundedRect(g, x - 6, y + 10, w + 12, 22, Theme.RADIUS, Theme.bg());
+            Draw.text(g, font, "Not implemented", x, y + 17, Theme.dim());
+            return;
+        }
         boolean hovered = contains(x, y + 10, w, 22, mouseX, mouseY);
         float a = anim("state").to(hovered ? 1f : 0f, Theme.EASE_FAST);
         float t = anim("state:on").to(on ? 1f : 0f, Theme.EASE_FAST);
@@ -290,7 +295,7 @@ public class SettingsScreen extends Screen {
 
         int sx = panelX() + 16, sy = panelY() + Theme.HEADER_H + 72;
         if (contains(sx - 6, sy, Theme.SIDEBAR_W - 20, 22, mx, my)) {
-            module.toggle();
+            if (module.implemented()) module.toggle();
             return true;
         }
 

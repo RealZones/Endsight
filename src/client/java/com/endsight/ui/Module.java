@@ -37,6 +37,18 @@ public record Module(String id,
         if (setEnabled != null) setEnabled.accept(!isEnabled());
     }
 
+    /**
+     * Whether this module actually does anything yet.
+     *
+     * A module with no setter cannot be switched on, which is already the truth about a
+     * feature that has not been written - so the UI reads that rather than carrying a
+     * separate flag that could disagree with it. A card people can toggle, that then
+     * does nothing, is worse than one that says so.
+     */
+    public boolean implemented() {
+        return setEnabled != null;
+    }
+
     public boolean hasSettings() {
         return settings != null && !settings.isEmpty();
     }
@@ -49,6 +61,17 @@ public record Module(String id,
      */
     public static Module placeholder(String id, String title, String description, String category) {
         return placeholder(id, title, description, category, List.of());
+    }
+
+    /**
+     * A module that is planned but not written.
+     *
+     * Deliberately given no accessors at all, so it cannot be switched on by the UI, by
+     * a saved config, or by anything else that gets hold of it. The greying out is then
+     * a description of the module rather than a rule the UI has to remember to apply.
+     */
+    public static Module unimplemented(String id, String title, String description, String category) {
+        return new Module(id, title, description, category, null, null, List.of());
     }
 
     public static Module placeholder(String id, String title, String description, String category,

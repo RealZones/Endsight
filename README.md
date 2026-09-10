@@ -18,7 +18,7 @@ looking up for. Press **Right Shift** in game to open the module browser.
 
 ## Install
 
-1. Download `endsight-0.2.0.jar` from [Releases](../../releases).
+1. Download `endsight-0.2.1.jar` from [Releases](../../releases).
 2. Drop it in your `mods` folder alongside Fabric API.
 3. Launch, join DragSim, press **Right Shift**.
 

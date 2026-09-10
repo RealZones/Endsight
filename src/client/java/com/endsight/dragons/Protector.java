@@ -49,7 +49,7 @@ public final class Protector {
 
     public static Module module() {
         return new Module("dragon.protector", "Protector Stage",
-                "Tracks the Endstone Protector rising, tier by tier.", "Dragons",
+                "Tracks the Endstone Protector rising, tier by tier.", "Golem",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Anchor",

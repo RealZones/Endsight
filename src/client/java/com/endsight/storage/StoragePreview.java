@@ -81,7 +81,7 @@ public final class StoragePreview {
 
     public static Module module() {
         return new Module("storage.preview", "Storage Preview",
-                "Hover a storage page to see inside it.", "Storage",
+                "Hover a storage page to see inside it.", "Quality of Life",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Snapshot on close",

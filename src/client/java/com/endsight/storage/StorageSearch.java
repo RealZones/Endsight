@@ -54,7 +54,7 @@ public final class StorageSearch {
 
     public static Module module() {
         return new Module("storage.search", "Item Search",
-                "Finds an item across every page at once.", "Storage",
+                "Finds an item across every page at once.", "Quality of Life",
                 () -> enabled, v -> {
                     enabled = v;
                     // The box is a real widget on a screen that is already open, so

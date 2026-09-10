@@ -45,7 +45,7 @@ public final class Beacon {
     public static Module module() {
         return new Module("visual.beacon", "Protector Beacon",
                 "Beam over the Endstone Protector so it can be found at a glance.",
-                "Visual",
+                "Golem",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Slider("Range",

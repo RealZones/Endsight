@@ -26,25 +26,19 @@ looking up for. Press **Right Shift** in game to open the module browser.
 
 ## Features
 
-### Storage
-
-**Storage Preview** — snapshots each storage page as you leave it, then shows that page
-above the item when you hover it in the Storage menu. Snapshots are saved to disk, so
-they survive a restart, and are kept per server.
-
-**Item Search** — a search box in the Storage window. Matches are ringed where they
-already are rather than listed: pages holding a match light up with a count, items in an
-open page light up individually, and pages you have never opened are marked as unknown
-instead of reported empty.
-
 ### Dragons
 
 **Dragon Timer** — one line. Counts the eight eyes going in, then counts down to the egg
 respawning. The countdown is anchored to the server's own announcements, so it cannot
 drift.
 
+### Golem
+
 **Protector Stage** — tracks the Endstone Protector climbing tier 2 through 5, and how
 long it has been up once it spawns.
+
+**Protector Beacon** — a beam over the Endstone Protector so it can be found at a
+glance, with adjustable height and brightness.
 
 ### Slayers
 
@@ -53,9 +47,6 @@ session. Breaks are subtracted rather than counted, and the readout hides itself
 you stop slaying. Each boss's own time is printed to chat as it dies.
 
 ### Visual
-
-**Protector Beacon** — a beam over the Endstone Protector so it can be found at a
-glance, with adjustable height and brightness.
 
 **Nukubi Highlight** — box and tracer marking Nukubi, with an option to ignore ones
 tagged as another player's.
@@ -72,6 +63,15 @@ Shown mid-screen where Minecraft puts its own titles, with size, opacity and dur
 sliders shared across all of them.
 
 ### Quality of Life
+
+**Storage Preview** — snapshots each storage page as you leave it, then shows that page
+above the item when you hover it in the Storage menu. Snapshots are saved to disk, so
+they survive a restart, and are kept per server.
+
+**Item Search** — a search box in the Storage window. Matches are ringed where they
+already are rather than listed: pages holding a match light up with a count, items in an
+open page light up individually, and pages you have never opened are marked as unknown
+instead of reported empty.
 
 **Protect Placed Eyes** — placing an eye and taking one back out are the same
 right-click, so spam-clicking to place puts one in and immediately pulls it out. Clicks

@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "endsight",
+	"version": "${version}",
+	"name": "Endsight",
+	"description": "Module UI for the End Simulator server.",
+	"authors": ["Fear"],
+	"license": "ARR",
+	"environment": "client",
+	"accessWidener": "endsight.accesswidener",
+	"entrypoints": {
+		"client": [
+			"com.endsight.EndsightClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

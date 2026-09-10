@@ -1,0 +1,372 @@
+package com.endsight.ui;
+
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * One module's settings, laid out from its {@link Setting} list.
+ *
+ * Deliberately the same panel, sidebar width, header height and palette as the
+ * module browser, so opening settings feels like moving within one thing rather than
+ * arriving somewhere else. The sidebar is kept - empty of nav but carrying the brand
+ * and a back target - because a panel that changes shape between screens is the
+ * cheapest way to make a UI feel unfinished.
+ */
+public class SettingsScreen extends Screen {
+
+    private final Screen parent;
+    private final String brand;
+    private final Module module;
+
+    private int scroll;
+    private int contentHeight;
+    private Setting.Slider dragging;
+
+    private final Map<String, Anim> anims = new HashMap<>();
+    private final List<Row> rows = new ArrayList<>();
+
+    private record Row(Setting setting, int x, int y, int w, int h) {
+    }
+
+    private static final int ROW_H = 46;
+    private static final int SECTION_ROW_H = 30;
+    private static final int TRACK_H = 4;
+    private static final int KNOB = 10;
+
+    public SettingsScreen(Screen parent, String brand, Module module) {
+        super(Component.literal(module.title()));
+        this.parent = parent;
+        this.brand = brand;
+        this.module = module;
+    }
+
+    private final ThemeRow themeRow = new ThemeRow();
+
+    private int panelX() { return Theme.panelX(width); }
+    private int panelY() { return Theme.panelY(height); }
+    private int panelW() { return Theme.panelW(width); }
+    private int panelH() { return Theme.panelH(height); }
+    private int contentX() { return panelX() + Theme.SIDEBAR_W; }
+    private int contentW() { return panelW() - Theme.SIDEBAR_W; }
+    private int contentTop() { return panelY() + Theme.HEADER_H; }
+    private int contentBottom() { return panelY() + panelH() - Theme.PAD; }
+
+    private void layout() {
+        rows.clear();
+        int x = contentX() + Theme.PAD;
+        int w = contentW() - Theme.PAD * 2;
+        int y = contentTop() + Theme.PAD - scroll;
+
+        for (Setting s : module.settings()) {
+            int h = s instanceof Setting.Section ? SECTION_ROW_H : ROW_H;
+            rows.add(new Row(s, x, y, w, h));
+            y += h + 4;
+        }
+        contentHeight = (y + scroll) - (contentTop() + Theme.PAD) + Theme.PAD;
+    }
+
+    private int maxScroll() {
+        return Math.max(0, contentHeight - (contentBottom() - contentTop()));
+    }
+
+    private Anim anim(String key) {
+        return anims.computeIfAbsent(key, k -> new Anim(0f));
+    }
+
+    /** Where a slider's track runs. Shared by drawing and dragging so they cannot disagree. */
+    private static int trackX(Row r) {
+        return r.x;
+    }
+
+    private static int trackW(Row r) {
+        return r.w - 60;
+    }
+
+    private static int trackY(Row r) {
+        return r.y + r.h - 16;
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(g, mouseX, mouseY, partialTick);
+        scroll = Math.max(0, Math.min(scroll, maxScroll()));
+        layout();
+
+        Font font = this.font;
+        g.fill(0, 0, width, height, Theme.scrim());
+
+        int px = panelX(), py = panelY();
+        Draw.roundedOutline(g, px - 1, py - 1, panelW() + 2, panelH() + 2,
+                Theme.RADIUS_LG + 1, Theme.line(), Theme.bg());
+
+        // sidebar, matching the browser so the panel does not change shape
+        Draw.roundedRect(g, px, py, Theme.SIDEBAR_W, panelH(), Theme.RADIUS_LG,
+                Theme.surface(), true, false, true, false);
+        Draw.rect(g, px + Theme.SIDEBAR_W - 1, py + Theme.RADIUS_LG, 1,
+                panelH() - Theme.RADIUS_LG * 2, Theme.line());
+        int by = py + Theme.HEADER_H / 2 - 4;
+        Draw.roundedRect(g, px + 16, by + 1, 5, 5, 2, Theme.accent());
+        Draw.text(g, font, brand, px + 27, by, Theme.text());
+        Draw.rect(g, px, py + Theme.HEADER_H - 1, Theme.SIDEBAR_W, 1, Theme.line());
+
+        drawBack(g, font, mouseX, mouseY);
+        drawModuleState(g, font, mouseX, mouseY);
+        themeRow.layout(px, py, panelH());
+        themeRow.draw(g, font, px, mouseX, mouseY);
+        drawRows(g, font, mouseX, mouseY);
+
+        // header last, so a scrolled row slides under it
+        Draw.roundedRect(g, contentX(), py, contentW(), Theme.HEADER_H, Theme.RADIUS_LG,
+                Theme.bg(), false, true, false, false);
+        Draw.rect(g, contentX(), py + Theme.HEADER_H - 1, contentW(), 1, Theme.line());
+        Draw.text(g, font, module.title(), contentX() + Theme.PAD, py + 20, Theme.text());
+        int titleW = font.width(module.title());
+        Draw.text(g, font, module.category(), contentX() + Theme.PAD + titleW + 10, py + 20, Theme.dim());
+    }
+
+    private void drawBack(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
+        int x = panelX() + 10, y = panelY() + Theme.HEADER_H + 22, w = Theme.SIDEBAR_W - 20, h = 22;
+        boolean hovered = contains(x, y, w, h, mouseX, mouseY);
+        float a = anim("back").to(hovered ? 1f : 0f, Theme.EASE_FAST);
+        if (a > 0.01f) {
+            Draw.roundedRect(g, x, y, w, h, Theme.RADIUS, Draw.alpha(Theme.accent(), 0.16f * a));
+        }
+        Draw.text(g, font, "< Back", x + 12, y + 7, Draw.lerp(Theme.muted(), Theme.text(), a));
+    }
+
+    private void drawRows(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
+        int top = contentTop(), bottom = contentBottom();
+        Draw.roundedRect(g, contentX(), top, contentW(), bottom - top, Theme.RADIUS_LG,
+                Theme.bg(), false, false, false, true);
+
+        if (rows.isEmpty()) {
+            Draw.textCentered(g, font, "This module has nothing to configure.",
+                    contentX() + contentW() / 2, top + 60, Theme.dim());
+            return;
+        }
+
+        for (Row r : rows) {
+            if (r.y + r.h < top || r.y + r.h > bottom || r.y < top) continue;
+
+            if (r.setting instanceof Setting.Section sec) {
+                Draw.text(g, font, sec.label().toUpperCase(), r.x, r.y + 14, Theme.muted());
+                int lx = r.x + font.width(sec.label().toUpperCase()) + 10;
+                Draw.rect(g, lx, r.y + 17, r.x + r.w - lx, 1, Theme.hair());
+                continue;
+            }
+
+            boolean hovered = contains(r.x, r.y, r.w, r.h, mouseX, mouseY);
+            float h = anim("row:" + r.setting.label()).to(hovered ? 1f : 0f, Theme.EASE_FAST);
+            Draw.roundedRect(g, r.x - 8, r.y, r.w + 16, r.h, Theme.RADIUS,
+                    Draw.lerp(Theme.bg(), Theme.surface(), h));
+
+            Draw.text(g, font, r.setting.label(), r.x, r.y + 8, Theme.text());
+            if (!r.setting.description().isBlank()) {
+                Draw.text(g, font, Draw.fit(font, r.setting.description(), r.w - 70),
+                        r.x, r.y + 20, Theme.dim());
+            }
+
+            if (r.setting instanceof Setting.Toggle t) {
+                float on = anim("val:" + t.label()).to(t.get().getAsBoolean() ? 1f : 0f, Theme.EASE_FAST);
+                drawToggle(g, r.x + r.w - 22, r.y + r.h / 2 - 5, on);
+            } else if (r.setting instanceof Setting.Slider s) {
+                drawSlider(g, font, r, s, mouseX, mouseY);
+            } else if (r.setting instanceof Setting.Choice c) {
+                String v = c.get().get();
+                int w = font.width(v) + 20;
+                int cx = r.x + r.w - w;
+                float a = anim("val:" + c.label())
+                        .to(contains(cx, r.y + r.h / 2 - 10, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
+                Draw.roundedRect(g, cx, r.y + r.h / 2 - 10, w, 20, Theme.RADIUS - 2,
+                        Draw.lerp(Theme.raised(), Theme.hover(), a));
+                Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
+                        Draw.lerp(Theme.muted(), Theme.text(), a));
+            } else if (r.setting instanceof Setting.Action act) {
+                // Same shape as a Choice so the right-hand column stays one column, but
+                // accent-lettered at rest: a Choice shows a value you can change, this
+                // shows a verb you can press, and only the colour says which.
+                String v = act.button();
+                int w = font.width(v) + 20;
+                int cx = r.x + r.w - w;
+                float a = anim("val:" + act.label())
+                        .to(contains(cx, r.y + r.h / 2 - 10, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
+                Draw.roundedRect(g, cx, r.y + r.h / 2 - 10, w, 20, Theme.RADIUS - 2,
+                        Draw.lerp(Draw.alpha(Theme.accent(), 0.18f), Theme.accent(), a));
+                Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
+                        Draw.lerp(Theme.accent(), Theme.bg(), a));
+            }
+        }
+
+        Draw.roundedRect(g, contentX(), bottom, contentW(), panelY() + panelH() - bottom,
+                Theme.RADIUS_LG, Theme.bg(), false, false, false, true);
+    }
+
+    /**
+     * The module's own on/off switch, in the sidebar.
+     *
+     * A settings page for something that is switched off elsewhere is a page you have
+     * to leave to act on. It also gives an otherwise empty sidebar something worth
+     * having, which is the honest reason it went here first.
+     */
+    private void drawModuleState(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
+        int x = panelX() + 16, y = panelY() + Theme.HEADER_H + 62, w = Theme.SIDEBAR_W - 32;
+        Draw.rect(g, panelX(), y - 14, Theme.SIDEBAR_W, 1, Theme.hair());
+        Draw.text(g, font, "MODULE", x, y - 6, Theme.dim());
+
+        boolean on = module.isEnabled();
+        boolean hovered = contains(x, y + 10, w, 22, mouseX, mouseY);
+        float a = anim("state").to(hovered ? 1f : 0f, Theme.EASE_FAST);
+        float t = anim("state:on").to(on ? 1f : 0f, Theme.EASE_FAST);
+
+        Draw.roundedRect(g, x - 6, y + 10, w + 12, 22, Theme.RADIUS,
+                Draw.lerp(Theme.bg(), Theme.raised(), a));
+        Draw.text(g, font, on ? "Enabled" : "Disabled", x, y + 17,
+                on ? Theme.pos() : Theme.muted());
+        drawToggle(g, x + w - 20, y + 16, t);
+    }
+
+    /**
+     * Track, filled portion, knob.
+     *
+     * The knob grows under the cursor and while dragging rather than changing colour,
+     * because the fill already carries the accent and a second accent-coloured thing
+     * moving next to it reads as two controls instead of one.
+     */
+    private void drawSlider(GuiGraphicsExtractor g, Font font, Row r, Setting.Slider s,
+                            int mouseX, int mouseY) {
+        int tx = trackX(r), tw = trackW(r), ty = trackY(r);
+        double f = s.fraction();
+        int fill = (int) Math.round(tw * f);
+
+        boolean over = contains(tx - 4, ty - 8, tw + 8, 16, mouseX, mouseY);
+        float a = anim("val:" + s.label()).to(over || dragging == s ? 1f : 0f, Theme.EASE_FAST);
+
+        Draw.roundedRect(g, tx, ty, tw, TRACK_H, TRACK_H / 2, Theme.line());
+        if (fill > 0) {
+            Draw.roundedRect(g, tx, ty, Math.max(TRACK_H, fill), TRACK_H, TRACK_H / 2, Theme.accent());
+        }
+
+        int size = KNOB + Math.round(3 * a);
+        int kx = tx + fill - size / 2;
+        int ky = ty + TRACK_H / 2 - size / 2;
+        Draw.roundedRect(g, kx, ky, size, size, size / 2, Theme.bg());
+        Draw.roundedRect(g, kx + 1, ky + 1, size - 2, size - 2, (size - 2) / 2, Theme.accent());
+
+        Draw.textRight(g, font, s.display(), r.x + r.w, ty - 3,
+                Draw.lerp(Theme.muted(), Theme.text(), a));
+    }
+
+    private void drawToggle(GuiGraphicsExtractor g, int x, int y, float t) {
+        int w = 20, h = 10;
+        Draw.roundedRect(g, x, y, w, h, h / 2, Draw.lerp(Theme.line(), Theme.pos(), t));
+        int knobX = x + 1 + (int) ((w - h) * t);
+        Draw.roundedRect(g, knobX, y + 1, h - 2, h - 2, (h - 2) / 2,
+                Draw.lerp(Theme.dim(), Theme.text(), t));
+    }
+
+    // ── input ─────────────────────────────────────────────────────────────────
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        int mx = (int) event.x(), my = (int) event.y();
+        layout();
+
+        if (themeRow.click(mx, my)) return true;
+
+        int bx = panelX() + 10, by = panelY() + Theme.HEADER_H + 22;
+        if (contains(bx, by, Theme.SIDEBAR_W - 20, 22, mx, my)) {
+            minecraft.setScreen(parent);
+            return true;
+        }
+
+        int sx = panelX() + 16, sy = panelY() + Theme.HEADER_H + 72;
+        if (contains(sx - 6, sy, Theme.SIDEBAR_W - 20, 22, mx, my)) {
+            module.toggle();
+            return true;
+        }
+
+        for (Row r : rows) {
+            if (r.y + r.h < contentTop() || r.y > contentBottom()) continue;
+            if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
+
+            if (r.setting instanceof Setting.Toggle t) {
+                t.set().accept(!t.get().getAsBoolean());
+                return true;
+            }
+            if (r.setting instanceof Setting.Slider s) {
+                dragging = s;
+                applyDrag(r, s, mx);
+                return true;
+            }
+            if (r.setting instanceof Setting.Choice c) {
+                c.next(event.button() == 1 ? -1 : 1);
+                return true;
+            }
+            if (r.setting instanceof Setting.Action a) {
+                a.run().run();
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (dragging != null) {
+            layout();
+            for (Row r : rows) {
+                if (r.setting == dragging) {
+                    applyDrag(r, dragging, (int) event.x());
+                    return true;
+                }
+            }
+        }
+        return super.mouseDragged(event, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        dragging = null;
+        return super.mouseReleased(event);
+    }
+
+    private void applyDrag(Row r, Setting.Slider s, int mx) {
+        int tx = trackX(r), tw = trackW(r);
+        double f = tw <= 0 ? 0 : (mx - tx) / (double) tw;
+        f = Math.max(0, Math.min(1, f));
+        s.set().accept(s.clamp(s.min() + f * (s.max() - s.min())));
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        scroll = Math.max(0, Math.min(scroll + (int) (-scrollY * 26), maxScroll()));
+        return true;
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (event.key() == 256) {                 // escape goes back, not out
+            minecraft.setScreen(parent);
+            return true;
+        }
+        return super.keyPressed(event);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    private static boolean contains(int x, int y, int w, int h, int px, int py) {
+        return px >= x && px < x + w && py >= y && py < y + h;
+    }
+}

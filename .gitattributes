@@ -1,0 +1,14 @@
+# Normalise text so a Windows checkout does not commit CRLF.
+* text=auto eol=lf
+
+# gradlew MUST stay LF. The GitHub runner executes it with bash, and a CR at the end
+# of the shebang line makes Linux fail with a confusing "/bin/sh^M: bad interpreter".
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows-only, so it keeps CRLF.
+gradlew.bat text eol=crlf
+
+# Binary: never touch the wrapper jar's bytes.
+*.jar binary
+*.png binary

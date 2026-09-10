@@ -1,0 +1,10 @@
+accessWidener	v2	official
+
+# Storage Preview has to know where a container screen's slots sit on screen and
+# which one the mouse is over. All three are protected on AbstractContainerScreen and
+# Fabric API exposes no accessor for them. Widened rather than mixed in: a mixin would
+# be an interface, three accessor methods and a mixins.json for the same three reads,
+# and mixins into vanilla render classes are the first thing to break on a MC update.
+accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	leftPos	I
+accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	topPos	I
+accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	hoveredSlot	Lnet/minecraft/world/inventory/Slot;

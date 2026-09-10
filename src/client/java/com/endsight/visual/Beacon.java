@@ -6,7 +6,6 @@ import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
@@ -37,17 +36,15 @@ public final class Beacon {
     }
 
     private static final String MATCH = "Endstone Protector";
-    /** The server's own colour for the Protector, matching its chat announcements. */
-    private static final int PURPLE = 0xFFAA00AA;
 
     private static boolean enabled = true;
     private static double range = 128;
     private static double beamBlocks = 40;
-    private static boolean edgeMarker = true;
+    private static double brightness = 100;
 
     public static Module module() {
         return new Module("visual.beacon", "Protector Beacon",
-                "Beam over the Endstone Protector, and an arrow when it is off screen.",
+                "Beam over the Endstone Protector so it can be found at a glance.",
                 "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
@@ -57,9 +54,9 @@ public final class Beacon {
                         new Setting.Slider("Beam height",
                                 "How far the beam rises.",
                                 8, 96, 4, () -> beamBlocks, v -> beamBlocks = v, "m"),
-                        new Setting.Toggle("Off-screen arrow",
-                                "Point to it when it is not in view.",
-                                () -> edgeMarker, v -> edgeMarker = v)));
+                        new Setting.Slider("Brightness",
+                                "How strongly the beam burns.",
+                                30, 130, 5, () -> brightness, v -> brightness = v, "%")));
     }
 
     public static void init() {
@@ -86,108 +83,83 @@ public final class Beacon {
 
         g.nextStratum();
 
+        // Drawn whenever the golem is in front of the camera, not only when its base is
+        // on screen: the base can be below the viewport while the shaft still rises
+        // through it, and that is exactly the case where a beacon earns its keep.
         double[] baseP = Project.viewToScreen(baseView, sw, sh);
-        boolean onScreen = baseP != null
-                && baseP[0] > -40 && baseP[0] < sw + 40
-                && baseP[1] > -40 && baseP[1] < sh + 40;
-
-        if (onScreen) {
-            drawBeam(g, baseView, baseP, sw, sh);
-        } else if (edgeMarker) {
-            drawEdgeArrow(g, mc.font, baseView, sw, sh,
-                    (int) Math.round(player.position().distanceTo(target.position())));
-        }
+        if (baseP != null) drawBeam(g, baseView, baseP, sw, sh);
     }
 
+    private static final int CORE = 0xFFF3D6FF;      // near-white heart of the beam
+    private static final int GLOW = 0xFFC24BFF;      // saturated purple around it
+
     /**
-     * The shaft: a column of one-pixel rows, tapering and fading upward.
+     * The shaft: three layers per step - a wide soft glow, a mid body, a near-white core.
      *
-     * Drawn row by row because there is no quad primitive here, only fill - the same
-     * answer the rounded corners and the tracer arrived at. A few hundred fills is
-     * nothing next to a frame, and it survives the render API changing under it.
+     * One flat column read as a stray magenta thread rather than as light. What makes
+     * something look like a beam is the falloff: bright and narrow in the middle, dimmer
+     * and wider outside it. Three layers is the cheapest thing that reads that way with
+     * only fill to draw with.
      *
-     * Width comes from the projection rather than a constant, so the beam is thick when
-     * the golem is on top of you and a thread when it is across the arena. A fixed width
-     * reads as a UI element pasted over the world; one that shrinks with distance reads
-     * as something standing in it.
+     * Stepped along whichever screen axis is LONGER, one pixel at a time. The first
+     * version walked a fixed count of steps capped at 1600, which is fine at range and
+     * became a ladder up close: a 40-block beam seen from a few metres away spans several
+     * thousand screen pixels, so consecutive steps landed two or three pixels apart and
+     * left gaps between them. Iterating the dominant axis guarantees exactly one step per
+     * pixel at any distance and any angle, and costs nothing extra because rows outside
+     * the viewport are skipped rather than drawn.
      */
     private static void drawBeam(GuiGraphicsExtractor g, Vec3 baseView, double[] baseP,
                                  int sw, int sh) {
         Vec3 topView = baseView.add(0, beamBlocks, 0);
         double[] topP = Project.viewToScreen(topView, sw, sh);
 
-        double topX = topP != null ? topP[0] : baseP[0];
+        double x0 = baseP[0], y0 = baseP[1];
+        double x1 = topP != null ? topP[0] : x0;
         // Behind the camera means you are underneath it looking up, and the beam still
-        // rises: send it straight off the top of the screen rather than dropping it.
-        double topY = topP != null ? topP[1] : -60;
+        // rises: send it off the top of the screen rather than dropping it downward.
+        double y1 = topP != null ? topP[1] : -sh;
 
-        double wide = Project.pixelsPerBlock(baseView.z, sh) * 0.55;
-        wide = Math.max(1.5, Math.min(90, wide));
+        double dx = x1 - x0, dy = y1 - y0;
+        boolean vertical = Math.abs(dy) >= Math.abs(dx);
+        int span = (int) Math.round(Math.abs(vertical ? dy : dx));
+        if (span <= 0) return;
 
-        int steps = (int) Math.min(1600, Math.abs(baseP[1] - topY));
-        if (steps <= 0) return;
+        double wide = Project.pixelsPerBlock(baseView.z, sh) * 0.5;
+        wide = Math.max(4, Math.min(70, wide));
+        float bright = (float) (brightness / 100.0);
 
-        for (int i = 0; i <= steps; i++) {
-            float t = i / (float) steps;
-            int x = (int) Math.round(baseP[0] + (topX - baseP[0]) * t);
-            int y = (int) Math.round(baseP[1] + (topY - baseP[1]) * t);
-            double w = wide * (1 - 0.65 * t);
-            float a = 0.75f * (1 - t) * (1 - t);          // fades fast, so the top is a wisp
-            if (a < 0.02f) continue;
+        for (int i = 0; i <= span; i++) {
+            double t = i / (double) span;
+            int x = (int) Math.round(x0 + dx * t);
+            int y = (int) Math.round(y0 + dy * t);
+            if (x < -80 || x > sw + 80 || y < -2 || y > sh + 2) continue;
 
-            int half = (int) Math.max(1, Math.round(w / 2));
-            Draw.rect(g, x - half, y, half * 2, 1, Draw.alpha(PURPLE, a));
-            // A brighter core keeps the beam readable once the outer width fades out.
-            Draw.rect(g, x - 1, y, 2, 1, Draw.alpha(0xFFE9B3FF, a * 0.9f));
+            double w = wide * (1 - 0.25 * t);
+            float fade = (1 - (float) (t * t) * 0.85f) * bright;
+            if (fade <= 0.01f) continue;
+
+            if (vertical) {
+                span(g, x, y, w, Draw.alpha(GLOW, Math.min(1f, 0.20f * fade)));
+                span(g, x, y, w * 0.45, Draw.alpha(GLOW, Math.min(1f, 0.55f * fade)));
+                span(g, x, y, Math.max(2, w * 0.16), Draw.alpha(CORE, Math.min(1f, 0.95f * fade)));
+            } else {
+                // Looking almost along the beam, so its thickness runs vertically.
+                vspan(g, x, y, w, Draw.alpha(GLOW, Math.min(1f, 0.20f * fade)));
+                vspan(g, x, y, w * 0.45, Draw.alpha(GLOW, Math.min(1f, 0.55f * fade)));
+                vspan(g, x, y, Math.max(2, w * 0.16), Draw.alpha(CORE, Math.min(1f, 0.95f * fade)));
+            }
         }
     }
 
-    /**
-     * An arrow pinned to the screen edge, pointing at something you cannot see.
-     *
-     * The direction is taken in view space, not from a projected point: a target behind
-     * the camera projects to a mirrored position on the wrong side of the screen, so an
-     * arrow built from that points confidently in exactly the wrong direction. Negating
-     * the view vector when depth is negative is what fixes it, and it is the one piece
-     * of this that is easy to get subtly and unnoticeably wrong.
-     */
-    private static void drawEdgeArrow(GuiGraphicsExtractor g, Font font, Vec3 view,
-                                      int sw, int sh, int distance) {
-        double vx = view.x;
-        double vy = view.y;
-        if (view.z < 0) {                 // behind: mirror it back to the correct side
-            vx = -vx;
-            vy = -vy;
-        }
-        double len = Math.hypot(vx, vy);
-        if (len < 1e-4) return;
+    private static void span(GuiGraphicsExtractor g, int cx, int y, double w, int color) {
+        int half = (int) Math.max(1, Math.round(w / 2));
+        Draw.rect(g, cx - half, y, half * 2, 1, color);
+    }
 
-        double dirX = vx / len;
-        double dirY = -vy / len;          // screen y grows downward
-
-        int cx = sw / 2, cy = sh / 2;
-        int marginX = sw / 2 - 30, marginY = sh / 2 - 30;
-        // Push out along the direction until it meets whichever edge comes first.
-        double scale = Math.min(
-                Math.abs(dirX) < 1e-4 ? Double.MAX_VALUE : marginX / Math.abs(dirX),
-                Math.abs(dirY) < 1e-4 ? Double.MAX_VALUE : marginY / Math.abs(dirY));
-        int ax = (int) Math.round(cx + dirX * scale);
-        int ay = (int) Math.round(cy + dirY * scale);
-
-        // A triangle from stacked rows, pointing along the direction.
-        int size = 7;
-        for (int i = 0; i < size; i++) {
-            int w = size - i;
-            int px = (int) Math.round(ax + dirX * i);
-            int py = (int) Math.round(ay + dirY * i);
-            Draw.rect(g, px - w / 2, py - w / 2, Math.max(1, w), Math.max(1, w),
-                    Draw.alpha(PURPLE, 0.85f));
-        }
-
-        String label = distance + "m";
-        Draw.textCentered(g, font, label,
-                (int) Math.round(ax - dirX * 12), (int) Math.round(ay - dirY * 12) - 4,
-                Draw.alpha(0xFFE9B3FF, 0.9f));
+    private static void vspan(GuiGraphicsExtractor g, int x, int cy, double h, int color) {
+        int half = (int) Math.max(1, Math.round(h / 2));
+        Draw.rect(g, x, cy - half, 1, half * 2, color);
     }
 
     /** Nearest Endstone Protector in range, or null. */

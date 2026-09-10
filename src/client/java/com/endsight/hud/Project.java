@@ -1,7 +1,7 @@
 package com.endsight.hud;
 
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -12,9 +12,10 @@ import net.minecraft.world.phys.Vec3;
  * the world. Anything that marks a thing in 3D has to be projected to 2D and drawn on
  * the HUD, and more than one module needs to do it.
  *
- * Built from the player's own yaw and pitch rather than the camera quaternion, because
- * the two disagree in third person and the yaw/pitch form is the one whose signs can be
- * reasoned about on paper.
+ * Everything comes from Camera - position, rotation and field of view - because that is
+ * the state the renderer itself projects with. An earlier version used the player's yaw
+ * and pitch and the FOV slider, which disagree with the camera whenever you sprint, are
+ * in third person, or have any speed effect running.
  */
 public final class Project {
 
@@ -30,12 +31,11 @@ public final class Project {
      * exists to handle. Collapsing straight to pixels throws both away.
      */
     public static Vec3 toView(Vec3 target) {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer player = mc.player;
-        if (player == null) return null;
+        Camera cam = Minecraft.getInstance().gameRenderer.getMainCamera();
+        if (cam == null) return null;
 
-        double yaw = Math.toRadians(player.getYRot());
-        double pitch = Math.toRadians(player.getXRot());
+        double yaw = Math.toRadians(cam.yRot());
+        double pitch = Math.toRadians(cam.xRot());
 
         // MC yaw 0 faces +Z and positive pitch looks down - hence both minus signs.
         Vec3 forward = new Vec3(-Math.sin(yaw) * Math.cos(pitch),
@@ -45,7 +45,7 @@ public final class Project {
         Vec3 right = new Vec3(-Math.cos(yaw), 0, -Math.sin(yaw));
         Vec3 up = right.cross(forward);
 
-        Vec3 d = target.subtract(player.getEyePosition(1f));
+        Vec3 d = target.subtract(cam.position());
         return new Vec3(d.dot(right), d.dot(up), d.dot(forward));
     }
 
@@ -71,12 +71,27 @@ public final class Project {
     }
 
     /**
-     * Minecraft's fov option is the VERTICAL field of view, so the focal length is
-     * derived from screen height. Using width here is the classic way to get a
-     * projection that is subtly wrong on every aspect ratio but 16:9.
+     * Focal length in pixels, from the camera's ACTUAL field of view.
+     *
+     * The first version read Options.fov(), which is the slider value and not what the
+     * renderer uses: sprinting, speed effects and the fov-effect-scale option all widen
+     * the real view. Projecting with the slider value put everything systematically too
+     * close to the centre of the screen, which is what made the beacon miss the golem it
+     * was standing on. Camera.getFov() is the number the projection matrix is built from,
+     * so it cannot disagree.
+     *
+     * The vertical FOV pairs with screen height. Using width here is the classic way to
+     * get a projection that is subtly wrong on every aspect ratio except 16:9.
+     *
+     * Units are not guaranteed across versions - some releases hand this back in radians
+     * - so anything too small to be a sane degree value is treated as radians rather than
+     * trusted blindly. A 0.5 here would otherwise mean a focal length of roughly nothing
+     * and put every marker in the corner.
      */
     private static double focal(int screenH) {
-        double fov = Minecraft.getInstance().options.fov().get();
-        return (screenH / 2.0) / Math.tan(Math.toRadians(fov) / 2.0);
+        double fov = Minecraft.getInstance().gameRenderer.getMainCamera().getFov();
+        double radians = fov < 3.2 ? fov : Math.toRadians(fov);
+        if (radians < 0.05) radians = Math.toRadians(70);      // nonsense: fall back
+        return (screenH / 2.0) / Math.tan(radians / 2.0);
     }
 }

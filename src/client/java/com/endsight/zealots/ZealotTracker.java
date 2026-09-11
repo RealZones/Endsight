@@ -45,12 +45,17 @@ import java.util.Set;
  * in chat when it fires - but a right-click while the ability is cooling down is not,
  * and one evening's log had 3,912 of those from the clicks between casts. The server
  * answers each of them with "This ability is on cooldown", so a click is provisional
- * until that line does or does not arrive. The Giant's Sword is the other way round:
- * it says nothing on the click and "You hear something falling from the sky." when
- * the cast lands, so that line is its trigger. A death is counted when it follows one
- * of those closely enough in time and space that nothing else explains it. The windows
- * are short on purpose; someone else's kill landing in the same spot in the same moment
- * is possible, but rare enough not to move an hourly rate.
+ * until that line does or does not arrive. At a fifth of a second the cooldown is short
+ * enough that a held click fires several times a second anyway, so this matters less
+ * for the scythe than for keeping a stray click from opening a zone on nothing.
+ *
+ * The Giant's Sword is the other way round: it says nothing on the click and "You hear
+ * something falling from the sky." when the cast lands, so that line is its trigger.
+ *
+ * A death is counted when it follows one of those closely enough in time and space
+ * that nothing else explains it. The windows are short on purpose; someone else's kill
+ * landing in the same spot in the same moment is possible, but rare enough not to move
+ * an hourly rate.
  *
  * A death is a death animation or a removal at close range. Range matters: a zealot
  * unloading forty blocks away is you walking off, not it dying.
@@ -77,9 +82,16 @@ public final class ZealotTracker {
     private static final double SWEEP = 6.0;
     private static final long SWEEP_MS = 1_500;
     /**
-     * The ability drops something on the point you were looking at. Anything dying this
-     * close to that point, this soon after, is yours. Longer than the swing window
-     * because the thing has to fall first.
+     * The scythe's bolts fly down the line you are looking and hit the first thing they
+     * meet, so its kill zone is that line - anything dying this close to any point of
+     * it, this soon after. The cooldown is a fifth of a second, so under a held click
+     * there is a fresh line every few frames and the zone simply follows your aim.
+     */
+    private static final double BOLT = 6.0;
+    private static final long BOLT_MS = 1_500;
+    /**
+     * The sword drops something on the point you were looking at, and it has to fall
+     * first: a wider zone at the far end of the line only, and a longer window.
      */
     private static final double IMPACT = 10.0;
     private static final long IMPACT_MS = 3_000;
@@ -96,8 +108,20 @@ public final class ZealotTracker {
     private static long sessionStart;
     private static long lastActivity;
 
-    /** One of your actions that could have killed something. */
-    private record Strike(long at, Vec3 pos, double radius, long window, int targetId) {
+    /**
+     * One of your actions that could have killed something: a zone in the world, for a
+     * while. The zone is a capsule from one point to another - a swing or a sword drop
+     * is a sphere (both ends the same), a bolt is the whole line it flew along.
+     */
+    private record Strike(long at, Vec3 from, Vec3 to, double radius, long window, int targetId) {
+
+        double distanceTo(Vec3 p) {
+            Vec3 d = to.subtract(from);
+            double len2 = d.lengthSqr();
+            if (len2 < 1e-9) return p.distanceTo(from);
+            double t = Math.max(0, Math.min(1, p.subtract(from).dot(d) / len2));
+            return p.distanceTo(from.add(d.scale(t)));
+        }
     }
 
     private static final List<Strike> strikes = new ArrayList<>();
@@ -132,7 +156,8 @@ public final class ZealotTracker {
     public static void init() {
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
             if (enabled && isZealot(entity)) {
-                strikes.add(new Strike(System.currentTimeMillis(), entity.position(), SWEEP, SWEEP_MS, entity.getId()));
+                Vec3 at = entity.position();
+                strikes.add(new Strike(System.currentTimeMillis(), at, at, SWEEP, SWEEP_MS, entity.getId()));
             }
             return InteractionResult.PASS;
         });
@@ -140,7 +165,7 @@ public final class ZealotTracker {
             // Main hand only: vanilla tries the off hand too when the main hand passes,
             // which would make every click two strikes.
             if (enabled && hand == InteractionHand.MAIN_HAND && holdingScythe(player)) {
-                provisional = cast(player);
+                provisional = bolt(player);
             }
             return InteractionResult.PASS;
         });
@@ -173,7 +198,7 @@ public final class ZealotTracker {
             provisional = null;
         } else if (line.contains(SWORD_CAST)) {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null) cast(mc.player);
+            if (mc.player != null) drop(mc.player);
         } else if (line.contains(EYE)) {
             eyes++;
             touch();
@@ -183,19 +208,24 @@ public final class ZealotTracker {
         }
     }
 
-    /**
-     * A cast, aimed where you are looking.
-     *
-     * The thing lands where the look ray does, so the strike is centred there rather
-     * than on you: a zealot beside you is not in the blast, one at the far end of your
-     * aim is. For the sword the confirming line arrives within a few frames of the
-     * click, so the look direction at that moment is still the one that aimed it.
-     */
-    private static Strike cast(Player player) {
+    /** A scythe bolt: the line from your eyes to whatever your aim lands on. */
+    private static Strike bolt(Player player) {
         Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
-        Strike s = new Strike(System.currentTimeMillis(), impact, IMPACT, IMPACT_MS, -1);
+        Strike s = new Strike(System.currentTimeMillis(), player.getEyePosition(), impact, BOLT, BOLT_MS, -1);
         strikes.add(s);
         return s;
+    }
+
+    /**
+     * A sword drop: a sphere at the far end of your aim, and nothing along the way.
+     *
+     * Centred there rather than on you, so a zealot beside you is not in the blast and
+     * one at the far end of your aim is. The confirming line arrives within a few frames
+     * of the click, so the look direction at that moment is still the one that aimed it.
+     */
+    private static void drop(Player player) {
+        Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
+        strikes.add(new Strike(System.currentTimeMillis(), impact, impact, IMPACT, IMPACT_MS, -1));
     }
 
     private static boolean holdingScythe(Player player) {
@@ -236,7 +266,7 @@ public final class ZealotTracker {
         for (Strike s : strikes) {
             if (now - s.at() > s.window()) continue;
             if (s.targetId() == id) return true;
-            if (at.distanceTo(s.pos()) <= s.radius()) return true;
+            if (s.distanceTo(at) <= s.radius()) return true;
         }
         return false;
     }

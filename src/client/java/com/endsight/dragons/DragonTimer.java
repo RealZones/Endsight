@@ -320,7 +320,7 @@ public final class DragonTimer {
      * typing an announcement's wording sets the parser off. Checked against every log:
      * 1437 player lines ignored, 823 announcements kept, none wrongly blocked.
      */
-    static boolean isPlayerChat(String line) {
+    public static boolean isPlayerChat(String line) {
         int colon = line.indexOf(": ");
         if (colon <= 0) return false;
 

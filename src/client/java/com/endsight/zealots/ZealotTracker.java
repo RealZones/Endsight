@@ -1,5 +1,6 @@
 package com.endsight.zealots;
 
+import com.endsight.dragons.DragonTimer;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
@@ -9,9 +10,9 @@ import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -30,24 +31,23 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Zealot kills this session, and the rate.
+ * Zealot kills and eye drops this session, with rates.
  *
- * The hard part is not seeing a zealot die - it is knowing it was YOURS. A dozen people
- * farm the same nest, and every zealot that dies near you looks the same whoever swung.
- * The server does not announce common kills, so there is no chat line to read the way
- * the slayer tracker does.
+ * Drops are easy: the server tells you, and only you, in chat. Kills are the hard part -
+ * it announces nothing when a zealot dies, and a dozen people farm the same nest, so a
+ * death near you looks the same whoever caused it.
  *
- * What the client does know is what you did. It sees every swing you make and which
- * entity it landed on, and every right-click of the scythe's ability. So a death is
- * counted when it follows one of your own actions closely enough in time and space
- * that nothing else explains it: the thing you hit, or something standing within a
- * scythe's sweep of it, dying inside a second and a half of the swing. The window is
- * short on purpose - a false kill from someone else's swing landing in the same second
- * on the same pack is possible, but rare enough not to move an hourly rate.
+ * What the client does know is what YOU did. A melee swing reports the exact entity it
+ * landed on. The scythe's ability is confirmed by the server with its own line - "You
+ * hear something falling from the sky." - which is the cast and not the click: a log of
+ * one evening's farming had 152 of those five seconds apart and 3,912 "on cooldown"
+ * lines from the clicks in between. A death is counted when it follows one of those
+ * closely enough in time and space that nothing else explains it. The windows are short
+ * on purpose; someone else's kill landing in the same spot in the same moment is
+ * possible, but rare enough not to move an hourly rate.
  *
  * A death is a death animation or a removal at close range. Range matters: a zealot
- * unloading forty blocks away is you walking off, not it dying, and only a removal
- * well inside tracking range is trusted.
+ * unloading forty blocks away is you walking off, not it dying.
  */
 public final class ZealotTracker {
 
@@ -58,14 +58,22 @@ public final class ZealotTracker {
     /** Bruisers live in the layer below; nobody farming eyes is counting them. */
     private static final String EXCLUDE = "Bruiser";
 
-    /** How long after one of your actions a death can still be blamed on it. */
-    private static final long ATTRIBUTE_MS = 1_500;
-    /** A swing kills what it hit and what stood within this of it. */
+    // Verified against a full evening's log, section codes stripped.
+    private static final String CAST = "You hear something falling from the sky";
+    private static final String EYE = "RARE DROP! (Summoning Eye)";
+    private static final String GOLDEN = "EPIC DROP! Golden Eye";
+
+    /** A swing kills what it hit and what stood within this of it, inside this long. */
     private static final double SWEEP = 6.0;
-    /** The ability reaches this far down the line you were looking... */
-    private static final double BOLT_RANGE = 24.0;
-    /** ...within this many degrees of it. */
-    private static final double BOLT_CONE = 35.0;
+    private static final long SWEEP_MS = 1_500;
+    /**
+     * The ability drops something on the point you were looking at. Anything dying this
+     * close to that point, this soon after, is yours. Longer than the swing window
+     * because the thing has to fall first.
+     */
+    private static final double IMPACT = 10.0;
+    private static final long IMPACT_MS = 3_000;
+    private static final double PICK_RANGE = 30.0;
     /** A removal closer than this is a death, not you leaving. */
     private static final double DEATH_RANGE = 24.0;
 
@@ -73,14 +81,13 @@ public final class ZealotTracker {
     private static double hideAfterMin = 3;
 
     private static int kills;
+    private static int eyes;
+    private static int golden;
     private static long sessionStart;
     private static long lastActivity;
 
     /** One of your actions that could have killed something. */
-    private record Strike(long at, Vec3 pos, Vec3 look, int targetId) {
-        boolean melee() {
-            return look == null;
-        }
+    private record Strike(long at, Vec3 pos, double radius, long window, int targetId) {
     }
 
     private static final List<Strike> strikes = new ArrayList<>();
@@ -88,22 +95,24 @@ public final class ZealotTracker {
 
     public static Module module() {
         return new Module("zealot.tracker", "Zealot Tracker",
-                "Your zealot kills and rate for the session.", "Zealots",
+                "Your zealot kills, eye drops and rates for the session.", "Zealots",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Action("Move readout",
                                 "Drag it, and every other readout, where you want.",
                                 "Move", HudPlacementScreen::open),
                         new Setting.Slider("Hide when idle",
-                                "Fade out after this long without a kill. 0 keeps it up.",
+                                "Fade out after this long without a kill or drop. 0 keeps it up.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Action("Reset session",
-                                "Zero the kill count and the clock.",
+                                "Zero the counts and the clock.",
                                 "Reset", ZealotTracker::resetSession)));
     }
 
     private static void resetSession() {
         kills = 0;
+        eyes = 0;
+        golden = 0;
         sessionStart = 0;
         lastActivity = 0;
     }
@@ -111,16 +120,12 @@ public final class ZealotTracker {
     public static void init() {
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
             if (enabled && isZealot(entity)) {
-                strikes.add(new Strike(System.currentTimeMillis(), entity.position(), null, entity.getId()));
+                strikes.add(new Strike(System.currentTimeMillis(), entity.position(), SWEEP, SWEEP_MS, entity.getId()));
             }
             return InteractionResult.PASS;
         });
-        UseItemCallback.EVENT.register((player, level, hand) -> {
-            if (enabled && holdingScythe(player)) {
-                strikes.add(new Strike(System.currentTimeMillis(), player.getEyePosition(),
-                        player.getLookAngle(), -1));
-            }
-            return InteractionResult.PASS;
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!overlay && enabled) onLine(plain(message));
         });
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
             Minecraft mc = Minecraft.getInstance();
@@ -135,6 +140,26 @@ public final class ZealotTracker {
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
+    // ── reading ───────────────────────────────────────────────────────────────
+
+    private static void onLine(String line) {
+        if (DragonTimer.isPlayerChat(line)) return;
+        if (line.contains(CAST)) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) return;
+            // Where it lands is where you were looking; the line arrives within a few
+            // frames of the click, so the look direction now is the one that aimed it.
+            Vec3 impact = mc.player.pick(PICK_RANGE, 1f, false).getLocation();
+            strikes.add(new Strike(System.currentTimeMillis(), impact, IMPACT, IMPACT_MS, -1));
+        } else if (line.contains(EYE)) {
+            eyes++;
+            touch();
+        } else if (line.contains(GOLDEN)) {
+            golden++;
+            touch();
+        }
+    }
+
     // ── counting ──────────────────────────────────────────────────────────────
 
     private static void tick(Minecraft mc) {
@@ -143,7 +168,7 @@ public final class ZealotTracker {
             if (e instanceof LivingEntity le && le.isDeadOrDying() && isZealot(e)) died(e);
         }
         long now = System.currentTimeMillis();
-        strikes.removeIf(s -> now - s.at() > ATTRIBUTE_MS * 2);
+        strikes.removeIf(s -> now - s.at() > s.window());
     }
 
     /**
@@ -167,16 +192,9 @@ public final class ZealotTracker {
 
     private static boolean ours(int id, Vec3 at, long now) {
         for (Strike s : strikes) {
-            if (now - s.at() > ATTRIBUTE_MS) continue;
-            if (s.melee()) {
-                if (s.targetId() == id) return true;
-                if (at.distanceTo(s.pos()) <= SWEEP) return true;
-            } else {
-                Vec3 d = at.subtract(s.pos());
-                double dist = d.length();
-                if (dist > BOLT_RANGE || dist < 1e-6) continue;
-                if (d.scale(1 / dist).dot(s.look()) >= Math.cos(Math.toRadians(BOLT_CONE))) return true;
-            }
+            if (now - s.at() > s.window()) continue;
+            if (s.targetId() == id) return true;
+            if (at.distanceTo(s.pos()) <= s.radius()) return true;
         }
         return false;
     }
@@ -187,10 +205,6 @@ public final class ZealotTracker {
         if (name == null) return false;
         String plain = name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
         return plain.contains(MATCH) && !plain.contains(EXCLUDE);
-    }
-
-    private static boolean holdingScythe(net.minecraft.world.entity.player.Player player) {
-        return player.getMainHandItem().getHoverName().getString().contains("Scythe");
     }
 
     // ── session clock, same rules as the slayer tracker ───────────────────────
@@ -214,11 +228,12 @@ public final class ZealotTracker {
         return sessionStart == 0 ? 0 : System.currentTimeMillis() - sessionStart;
     }
 
-    /** Kills per hour, or -1 while the sample is too short to mean anything. */
-    private static int perHour() {
+    /** Per hour, or "-" while the sample is too short to mean anything. */
+    private static String perHour(int count) {
         long elapsed = elapsedMs();
-        if (elapsed < 60_000) return -1;
-        return (int) Math.round(kills / (elapsed / 3_600_000.0));
+        if (elapsed < 60_000) return "-";
+        double rate = count / (elapsed / 3_600_000.0);
+        return (rate < 10 ? String.format("%.1f", rate) : String.valueOf(Math.round(rate))) + "/h";
     }
 
     // ── drawing ───────────────────────────────────────────────────────────────
@@ -238,17 +253,30 @@ public final class ZealotTracker {
                 false);
     }
 
+    /**
+     * Three counters, each with its rate beside it, and the clock.
+     *
+     * Rate on the same row as its count rather than in rows of its own, as the slayer
+     * tracker does: that one has one thing to count, this has three, and six rows of
+     * numbers stops being a glance.
+     */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        int rate = perHour();
         String[][] rows = sample
-                ? new String[][]{{"Kills", "148"}, {"Elapsed", "12m04s"}, {"Rate", "736/h"}}
-                : new String[][]{{"Kills", String.valueOf(kills)},
-                                 {"Elapsed", sessionStart == 0 ? "-" : secs(elapsedMs())},
-                                 {"Rate", rate < 0 ? "-" : rate + "/h"}};
+                ? new String[][]{{"Kills", "736/h", "148"}, {"Eyes", "458/h", "92"},
+                                 {"Golden", "14.9/h", "3"}, {"Elapsed", "", "12m04s"}}
+                : new String[][]{{"Kills", perHour(kills), String.valueOf(kills)},
+                                 {"Eyes", perHour(eyes), String.valueOf(eyes)},
+                                 {"Golden", perHour(golden), String.valueOf(golden)},
+                                 {"Elapsed", "", sessionStart == 0 ? "-" : secs(elapsedMs())}};
 
         String title = "ZEALOT TRACKER";
-        int w = font.width(title) + 20;
-        for (String[] r : rows) w = Math.max(w, Readout.width(font, r[0], r[1]));
+        int labelW = 0, rateW = 0, valueW = 0;
+        for (String[] r : rows) {
+            labelW = Math.max(labelW, font.width(r[0]));
+            rateW = Math.max(rateW, font.width(r[1]));
+            valueW = Math.max(valueW, font.width(r[2]));
+        }
+        int w = Math.max(font.width(title) + 20, 8 + labelW + 12 + rateW + 10 + valueW);
         int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
 
         if (g != null) {
@@ -257,7 +285,8 @@ public final class ZealotTracker {
             int ry = y + Readout.ROW_H + 3;
             for (String[] r : rows) {
                 Draw.text(g, font, r[0], x + 8, ry, Theme.dim());
-                Draw.textRight(g, font, r[1], x + w, ry, Theme.text());
+                Draw.textRight(g, font, r[1], x + w - valueW - 10, ry, Theme.muted());
+                Draw.textRight(g, font, r[2], x + w, ry, Theme.text());
                 ry += Readout.ROW_H + 2;
             }
         }
@@ -267,5 +296,9 @@ public final class ZealotTracker {
     private static String secs(long ms) {
         long s = Math.max(0, ms / 1000);
         return s < 60 ? s + "s" : (s / 60) + "m" + String.format("%02d", s % 60) + "s";
+    }
+
+    private static String plain(Component c) {
+        return c == null ? "" : c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim();
     }
 }

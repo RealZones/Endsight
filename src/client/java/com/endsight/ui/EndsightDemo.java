@@ -46,6 +46,9 @@ public final class EndsightDemo {
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Slayers"));
 
+        r.add(Module.placeholder("zealot.tracker", "Zealot Tracker",
+                "Your zealot kills and rate for the session.", "Zealots"));
+
         r.add(Module.placeholder("visual.nukubi", "Nukubi Highlight",
                 "Marks Nukubi so it is not lost in the crowd.", "Visual"));
 

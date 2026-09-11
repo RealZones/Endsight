@@ -16,6 +16,7 @@ import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
 import com.endsight.visual.NukubiHighlight;
+import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.EndsightScreen;
 import com.endsight.ui.SettingsScreen;
@@ -55,6 +56,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(Slayer.killTimerModule());
+            registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
             registry.replace(DamageNumbers.module());
@@ -77,6 +79,7 @@ public class EndsightClient implements ClientModInitializer {
         DamageNumbers.init();
         Beacon.init();
         Slayer.init();
+        ZealotTracker.init();
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any
         // module can raise it; only one shows at a time, because two things shouting

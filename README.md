@@ -46,6 +46,13 @@ glance, with adjustable height and brightness.
 session. Breaks are subtracted rather than counted, and the readout hides itself when
 you stop slaying. Each boss's own time is printed to chat as it dies.
 
+### Zealots
+
+**Zealot Tracker** — your kills, time spent and kills per hour for the session. A death
+is only counted when one of your own swings or scythe bolts explains it, so other
+people farming the same nest do not inflate your number. Breaks are subtracted, and the
+readout hides itself when you stop.
+
 ### Visual
 
 **Nukubi Highlight** — box and tracer marking Nukubi, with an option to ignore ones

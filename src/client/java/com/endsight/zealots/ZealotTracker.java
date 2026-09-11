@@ -13,15 +13,18 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -38,13 +41,16 @@ import java.util.Set;
  * death near you looks the same whoever caused it.
  *
  * What the client does know is what YOU did. A melee swing reports the exact entity it
- * landed on. The scythe's ability is confirmed by the server with its own line - "You
- * hear something falling from the sky." - which is the cast and not the click: a log of
- * one evening's farming had 152 of those five seconds apart and 3,912 "on cooldown"
- * lines from the clicks in between. A death is counted when it follows one of those
- * closely enough in time and space that nothing else explains it. The windows are short
- * on purpose; someone else's kill landing in the same spot in the same moment is
- * possible, but rare enough not to move an hourly rate.
+ * landed on. A right-click of the scythe is the cast - the Frozen Scythe says nothing
+ * in chat when it fires - but a right-click while the ability is cooling down is not,
+ * and one evening's log had 3,912 of those from the clicks between casts. The server
+ * answers each of them with "This ability is on cooldown", so a click is provisional
+ * until that line does or does not arrive. The Giant's Sword is the other way round:
+ * it says nothing on the click and "You hear something falling from the sky." when
+ * the cast lands, so that line is its trigger. A death is counted when it follows one
+ * of those closely enough in time and space that nothing else explains it. The windows
+ * are short on purpose; someone else's kill landing in the same spot in the same moment
+ * is possible, but rare enough not to move an hourly rate.
  *
  * A death is a death animation or a removal at close range. Range matters: a zealot
  * unloading forty blocks away is you walking off, not it dying.
@@ -59,7 +65,11 @@ public final class ZealotTracker {
     private static final String EXCLUDE = "Bruiser";
 
     // Verified against a full evening's log, section codes stripped.
-    private static final String CAST = "You hear something falling from the sky";
+    private static final String SWORD_CAST = "You hear something falling from the sky";
+    private static final String COOLDOWN = "This ability is on cooldown";
+    private static final String SCYTHE = "Scythe";
+    /** How long the server gets to refuse a click before the click is trusted. */
+    private static final long REFUSE_MS = 400;
     private static final String EYE = "RARE DROP! (Summoning Eye)";
     private static final String GOLDEN = "EPIC DROP! Golden Eye";
 
@@ -92,6 +102,8 @@ public final class ZealotTracker {
 
     private static final List<Strike> strikes = new ArrayList<>();
     private static final Set<Integer> counted = new LinkedHashSet<>();
+    /** The last scythe click, until the server has had its say about it. */
+    private static Strike provisional;
 
     public static Module module() {
         return new Module("zealot.tracker", "Zealot Tracker",
@@ -124,6 +136,14 @@ public final class ZealotTracker {
             }
             return InteractionResult.PASS;
         });
+        UseItemCallback.EVENT.register((player, level, hand) -> {
+            // Main hand only: vanilla tries the off hand too when the main hand passes,
+            // which would make every click two strikes.
+            if (enabled && hand == InteractionHand.MAIN_HAND && holdingScythe(player)) {
+                provisional = cast(player);
+            }
+            return InteractionResult.PASS;
+        });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay && enabled) onLine(plain(message));
         });
@@ -144,13 +164,16 @@ public final class ZealotTracker {
 
     private static void onLine(String line) {
         if (DragonTimer.isPlayerChat(line)) return;
-        if (line.contains(CAST)) {
+        if (line.startsWith(COOLDOWN)) {
+            // The click the server just refused did not fire. Withdrawn, so nothing that
+            // dies in front of you in the next three seconds gets pinned on it.
+            if (provisional != null && System.currentTimeMillis() - provisional.at() <= REFUSE_MS) {
+                strikes.remove(provisional);
+            }
+            provisional = null;
+        } else if (line.contains(SWORD_CAST)) {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.player == null) return;
-            // Where it lands is where you were looking; the line arrives within a few
-            // frames of the click, so the look direction now is the one that aimed it.
-            Vec3 impact = mc.player.pick(PICK_RANGE, 1f, false).getLocation();
-            strikes.add(new Strike(System.currentTimeMillis(), impact, IMPACT, IMPACT_MS, -1));
+            if (mc.player != null) cast(mc.player);
         } else if (line.contains(EYE)) {
             eyes++;
             touch();
@@ -158,6 +181,25 @@ public final class ZealotTracker {
             golden++;
             touch();
         }
+    }
+
+    /**
+     * A cast, aimed where you are looking.
+     *
+     * The thing lands where the look ray does, so the strike is centred there rather
+     * than on you: a zealot beside you is not in the blast, one at the far end of your
+     * aim is. For the sword the confirming line arrives within a few frames of the
+     * click, so the look direction at that moment is still the one that aimed it.
+     */
+    private static Strike cast(Player player) {
+        Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
+        Strike s = new Strike(System.currentTimeMillis(), impact, IMPACT, IMPACT_MS, -1);
+        strikes.add(s);
+        return s;
+    }
+
+    private static boolean holdingScythe(Player player) {
+        return player.getMainHandItem().getHoverName().getString().contains(SCYTHE);
     }
 
     // ── counting ──────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ package com.endsight.qol;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;
 
 import java.util.List;
@@ -33,10 +34,21 @@ public final class EyeGuard {
     private static double guardSeconds = 0.9;
 
     private static long guardUntil;
+    /**
+     * The frame the guard covers - the one you just put an eye in - and nothing else.
+     *
+     * The first version swallowed every right-click in the window, which also swallowed
+     * the click that would have put the NEXT eye in the frame beside it, so a fast run
+     * down the altar stalled at every frame. The only click worth stopping is the one on
+     * the frame that already has your eye; the block position tells those apart.
+     */
+    private static BlockPos guardPos;
+    private static BlockPos lastClick;
+    private static long lastClickMs;
 
     public static Module module() {
         return new Module("qol.eyeguard", "Protect Placed Eyes",
-                "Ignores right-clicks briefly after you place an eye.", "Quality of Life",
+                "Ignores clicks on an eye you just placed, so it stays in.", "Quality of Life",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) guardUntil = 0;          // never leave a guard armed behind you
@@ -48,16 +60,26 @@ public final class EyeGuard {
     }
 
     public static void init() {
-        UseBlockCallback.EVENT.register((player, level, hand, hit) ->
-                isGuarding() ? InteractionResult.FAIL : InteractionResult.PASS);
+        UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+            if (isGuarding() && hit.getBlockPos().equals(guardPos)) return InteractionResult.FAIL;
+            lastClick = hit.getBlockPos();
+            lastClickMs = System.currentTimeMillis();
+            return InteractionResult.PASS;
+        });
     }
 
     /** Called when the server confirms an eye placed by YOU, not by anyone else. */
     public static void armed() {
-        if (enabled) guardUntil = System.currentTimeMillis() + (long) (guardSeconds * 1000);
+        if (!enabled) return;
+        long now = System.currentTimeMillis();
+        // The frame is the block you clicked just before the server said so. A confirmation
+        // with no recent click behind it - someone else's, misread - guards nothing.
+        if (lastClick == null || now - lastClickMs > 2_000) return;
+        guardPos = lastClick;
+        guardUntil = now + (long) (guardSeconds * 1000);
     }
 
     private static boolean isGuarding() {
-        return enabled && System.currentTimeMillis() < guardUntil;
+        return enabled && guardPos != null && System.currentTimeMillis() < guardUntil;
     }
 }

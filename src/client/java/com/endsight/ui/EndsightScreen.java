@@ -34,6 +34,8 @@ public class EndsightScreen extends Screen {
     private static String category;
     private static String query = "";
     private static int scroll;
+    /** The module id waiting for a key, or null. Not static: a half-armed chip should not outlive the screen. */
+    private String binding;
 
     private int contentHeight;
 
@@ -723,6 +725,20 @@ public class EndsightScreen extends Screen {
         drawScrollbar(g);
     }
 
+    /** The key chip sits at the card's bottom right, centred on the switch's row. */
+    private static int chipX(Placed p) {
+        return p.x + p.w - 16 - Keybinds.CHIP_W;
+    }
+
+    private static int chipY(Placed p) {
+        return p.y + p.h - 17 - Keybinds.CHIP_H / 2;
+    }
+
+    private static boolean overChip(Placed p, int mx, int my) {
+        return p.module.implemented()
+                && contains(chipX(p), chipY(p), Keybinds.CHIP_W, Keybinds.CHIP_H, mx, my);
+    }
+
     private void drawCard(
             GuiGraphicsExtractor g,
             Font font,
@@ -925,6 +941,34 @@ public class EndsightScreen extends Screen {
                         p.x + 16,
                         p.y + p.h - 22,
                         t
+                );
+
+                /*
+                 * The module's key, on the switch's row at the other end of the card.
+                 *
+                 * Here and not only on the settings page, because a module with no
+                 * settings has no gear, so no settings page, so - until this - no way
+                 * to give it a key. Several modules are exactly that shape.
+                 */
+                float bh =
+                        anim(
+                                hoverAnims,
+                                m.id() + ":bind",
+                                0f
+                        ).to(
+                                overChip(p, mouseX, mouseY) || Keybinds.moduleId(m).equals(binding)
+                                        ? 1f : 0f,
+                                Theme.EASE_FAST
+                        );
+
+                Keybinds.chip(
+                        g,
+                        font,
+                        Keybinds.moduleId(m),
+                        chipX(p),
+                        chipY(p),
+                        bh,
+                        Keybinds.moduleId(m).equals(binding)
                 );
             }
         }
@@ -1130,6 +1174,19 @@ public class EndsightScreen extends Screen {
                 return true;
             }
 
+            if (overChip(p, mx, my)) {
+                // Left arms the chip for the next key; right clears it. Same as the
+                // settings page, so a chip means one thing wherever it is.
+                String id = Keybinds.moduleId(p.module);
+                if (event.button() == 1) {
+                    Keybinds.clear(id);
+                    binding = null;
+                } else {
+                    binding = id.equals(binding) ? null : id;
+                }
+                return true;
+            }
+
             if (contains(
                     p.x,
                     p.y,
@@ -1157,6 +1214,11 @@ public class EndsightScreen extends Screen {
     public boolean charTyped(
             CharacterEvent event
     ) {
+        // A key being bound must not also land in the search box.
+        if (binding != null) {
+            return true;
+        }
+
         if (event.isAllowedChatCharacter()) {
             query +=
                     event.codepointAsString();
@@ -1173,6 +1235,15 @@ public class EndsightScreen extends Screen {
     public boolean keyPressed(
             KeyEvent event
     ) {
+        if (binding != null) {
+            // Escape cancels; anything else binds, modifiers included.
+            if (event.key() != 256) {
+                Keybinds.set(binding, event.key());
+            }
+            binding = null;
+            return true;
+        }
+
         if (event.key() == 259
                 && !query.isEmpty()) {
 

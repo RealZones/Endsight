@@ -8,6 +8,7 @@
 	"license": "ARR",
 	"environment": "client",
 	"accessWidener": "endsight.accesswidener",
+	"mixins": ${mixins},
 	"entrypoints": {
 		"client": [
 			"com.endsight.EndsightClient"

@@ -23,7 +23,6 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
@@ -41,13 +40,13 @@ import java.util.Set;
  * death near you looks the same whoever caused it.
  *
  * What the client does know is what YOU did. A melee swing reports the exact entity it
- * landed on. A right-click of the scythe is the cast - the Frozen Scythe says nothing
- * in chat when it fires - but a right-click while the ability is cooling down is not,
- * and one evening's log had 3,912 of those from the clicks between casts. The server
- * answers each of them with "This ability is on cooldown", so a click is provisional
- * until that line does or does not arrive. At a fifth of a second the cooldown is short
- * enough that a held click fires several times a second anyway, so this matters less
- * for the scythe than for keeping a stray click from opening a zone on nothing.
+ * landed on. A right-click of the scythe is the cast - the Frozen Scythe says nothing in
+ * chat either way. An earlier version here treated a click as provisional until the
+ * server had a chance to refuse it with "This ability is on cooldown"; a twelve-minute
+ * chat log settled that: 1,953 scythe casts, none refused, a median 200ms apart, which
+ * is simply the rate a held right-click repeats at. All 168 refusals in that session
+ * were the Giant's Sword. So a scythe click is a cast, and the provisional step only
+ * still earns its place for the sword.
  *
  * The Giant's Sword is the other way round: it says nothing on the click and "You hear
  * something falling from the sky." when the cast lands, so that line is its trigger.
@@ -65,14 +64,9 @@ public final class ZealotTracker {
     private ZealotTracker() {
     }
 
-    private static final String MATCH = "Zealot";
-    /** Bruisers live in the layer below; nobody farming eyes is counting them. */
-    private static final String EXCLUDE = "Bruiser";
-
     // Verified against a full evening's log, section codes stripped.
     private static final String SWORD_CAST = "You hear something falling from the sky";
     private static final String COOLDOWN = "This ability is on cooldown";
-    private static final String SCYTHE = "Scythe";
     /** How long the server gets to refuse a click before the click is trusted. */
     private static final long REFUSE_MS = 400;
     private static final String EYE = "RARE DROP! (Summoning Eye)";
@@ -155,7 +149,7 @@ public final class ZealotTracker {
 
     public static void init() {
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-            if (enabled && isZealot(entity)) {
+            if (enabled && Zealots.isZealot(entity)) {
                 Vec3 at = entity.position();
                 strikes.add(new Strike(System.currentTimeMillis(), at, at, SWEEP, SWEEP_MS, entity.getId()));
             }
@@ -164,7 +158,7 @@ public final class ZealotTracker {
         UseItemCallback.EVENT.register((player, level, hand) -> {
             // Main hand only: vanilla tries the off hand too when the main hand passes,
             // which would make every click two strikes.
-            if (enabled && hand == InteractionHand.MAIN_HAND && holdingScythe(player)) {
+            if (enabled && hand == InteractionHand.MAIN_HAND && Zealots.holdingScythe(player)) {
                 provisional = bolt(player);
             }
             return InteractionResult.PASS;
@@ -174,7 +168,7 @@ public final class ZealotTracker {
         });
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
             Minecraft mc = Minecraft.getInstance();
-            if (!enabled || mc.player == null || !isZealot(entity)) return;
+            if (!enabled || mc.player == null || !Zealots.isZealot(entity)) return;
             if (entity.position().distanceTo(mc.player.position()) <= DEATH_RANGE) died(entity);
         });
         ClientTickEvents.END_CLIENT_TICK.register(ZealotTracker::tick);
@@ -228,16 +222,12 @@ public final class ZealotTracker {
         strikes.add(new Strike(System.currentTimeMillis(), impact, impact, IMPACT, IMPACT_MS, -1));
     }
 
-    private static boolean holdingScythe(Player player) {
-        return player.getMainHandItem().getHoverName().getString().contains(SCYTHE);
-    }
-
     // ── counting ──────────────────────────────────────────────────────────────
 
     private static void tick(Minecraft mc) {
         if (!enabled || mc.level == null || mc.player == null) return;
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e instanceof LivingEntity le && le.isDeadOrDying() && isZealot(e)) died(e);
+            if (e instanceof LivingEntity le && le.isDeadOrDying() && Zealots.isZealot(e)) died(e);
         }
         long now = System.currentTimeMillis();
         strikes.removeIf(s -> now - s.at() > s.window());
@@ -256,7 +246,8 @@ public final class ZealotTracker {
             old.next();
             old.remove();
         }
-        if (ours(e.getId(), e.position(), System.currentTimeMillis())) {
+        boolean mine = ours(e.getId(), e.position(), System.currentTimeMillis());
+        if (mine) {
             kills++;
             touch();
         }
@@ -271,15 +262,19 @@ public final class ZealotTracker {
         return false;
     }
 
-    private static boolean isZealot(Entity e) {
-        if (!(e instanceof EnderMan)) return false;
-        Component name = e.getCustomName();
-        if (name == null) return false;
-        String plain = name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
-        return plain.contains(MATCH) && !plain.contains(EXCLUDE);
-    }
-
     // ── session clock, same rules as the slayer tracker ───────────────────────
+
+    /**
+     * A gap longer than this is not farming, and comes off the clock.
+     *
+     * Thirty seconds, and deliberately not the "Hide when idle" slider it used to share:
+     * that is in minutes, so a stop for a dragon or a trip to the bank counted as farming
+     * time and quietly dragged the hourly rate down. Thirty is short enough to catch
+     * those and still long enough never to fire mid-nest - the same log ran at about
+     * 0.8 zealot deaths a second, and the longest gap between two of your own kills in
+     * twelve minutes was nowhere near it.
+     */
+    private static final long AFK_MS = 30_000;
 
     private static void touch() {
         long now = System.currentTimeMillis();
@@ -287,7 +282,7 @@ public final class ZealotTracker {
             sessionStart = now;
         } else if (lastActivity != 0) {
             long gap = now - lastActivity;
-            if (gap > idleMs()) sessionStart += gap;    // a break is not farming time
+            if (gap > AFK_MS) sessionStart += gap;      // a break is not farming time
         }
         lastActivity = now;
     }
@@ -296,8 +291,19 @@ public final class ZealotTracker {
         return (long) (Math.max(1, hideAfterMin) * 60_000);
     }
 
+    /**
+     * Time farming, with the break you are in right now already taken off.
+     *
+     * The correction in touch() only lands when the next kill arrives, so on its own the
+     * readout would keep climbing all the way through a break and then jump back. This
+     * makes the clock stop as the break passes thirty seconds, which is what someone
+     * watching the rate expects to see.
+     */
     private static long elapsedMs() {
-        return sessionStart == 0 ? 0 : System.currentTimeMillis() - sessionStart;
+        if (sessionStart == 0) return 0;
+        long now = System.currentTimeMillis();
+        long gap = lastActivity == 0 ? 0 : now - lastActivity;
+        return (gap > AFK_MS ? lastActivity : now) - sessionStart;
     }
 
     /** Per hour, or "-" while the sample is too short to mean anything. */

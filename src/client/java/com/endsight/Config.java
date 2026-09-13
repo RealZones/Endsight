@@ -2,6 +2,7 @@ package com.endsight;
 
 import com.endsight.ui.Module;
 import com.endsight.ui.ModuleRegistry;
+import com.endsight.ui.Keybinds;
 import com.endsight.ui.Palette;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
@@ -60,6 +61,15 @@ public final class Config {
             }
         }
 
+        for (String name : p.stringPropertyNames()) {
+            if (!name.startsWith("bind.")) continue;
+            try {
+                Keybinds.set(name.substring(5), Integer.parseInt(p.getProperty(name)));
+            } catch (NumberFormatException ignored) {
+                // Hand-edited: the action stays unbound rather than bound to nonsense.
+            }
+        }
+
         for (Module m : registry.all()) {
             String base = "module." + m.id();
 
@@ -113,6 +123,8 @@ public final class Config {
             p.setProperty("hud." + id + ".x", String.valueOf(f[0]));
             p.setProperty("hud." + id + ".y", String.valueOf(f[1]));
         }
+
+        Keybinds.all().forEach((id, key) -> p.setProperty("bind." + id, String.valueOf(key)));
 
         for (Module m : registry.all()) {
             String base = "module." + m.id();

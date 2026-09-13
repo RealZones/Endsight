@@ -11,6 +11,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.core.BlockPos;
@@ -277,6 +278,15 @@ public final class NukubiHighlight {
                     ? "-" : e.getDisplayName().getString()).append("\"");
             sb.append("  nameVisible=").append(e.isCustomNameVisible());
             sb.append("  bb=").append(String.format("%.2f", e.getBoundingBox().getYsize()));
+
+            // A text_display carries no custom name at all - its text is a separate
+            // synched field - so without this it dumps as the useless "Text Display"
+            // and every floating hologram on the server looks identical in the file.
+            if (e instanceof Display.TextDisplay td) {
+                sb.append("  text=\"")
+                        .append(td.getEntityData().get(Display.TextDisplay.DATA_TEXT_ID).getString())
+                        .append("\"");
+            }
 
             if (e instanceof LivingEntity le) {
                 ItemStack head = le.getItemBySlot(EquipmentSlot.HEAD);

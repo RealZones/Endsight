@@ -8,3 +8,10 @@ accessWidener	v2	official
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	leftPos	I
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	topPos	I
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	hoveredSlot	Lnet/minecraft/world/inventory/Slot;
+
+# Damage Numbers rewrites a text_display's text on this client and switches one off by
+# zeroing its view range. Both live in Display's synched data behind private accessors,
+# and there is no public setter for either - Display exposes only a read-only render
+# state, which is a snapshot the renderer builds and not the value it is built from.
+accessible	field	net/minecraft/world/entity/Display$TextDisplay	DATA_TEXT_ID	Lnet/minecraft/network/syncher/EntityDataAccessor;
+accessible	field	net/minecraft/world/entity/Display	DATA_VIEW_RANGE_ID	Lnet/minecraft/network/syncher/EntityDataAccessor;

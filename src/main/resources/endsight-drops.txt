@@ -1,0 +1,79 @@
+# Endsight drop tiers. Copied to config/endsight/drops.txt on first run; edit that one.
+#
+# One item per line: tier, a tab or spaces, then the item's name as it appears in chat.
+# The name matches anywhere in the drop's name, longest match first, so "Dragon Fragment"
+# covers every dragon's fragment and "Ender Dragon" the pet at any level. Case does not
+# matter. Tiers: common, rare, epic, legendary. Anything not listed falls back to the
+# server's own tier word, or the item's colour on a /debug line.
+#
+# These are set by rarity AND value, not the game's rarity colour - Aspect of the
+# Dragons is gold in game and a 1/14 drop, so it is common here.
+
+# ── legendary: the ones worth stopping for ────────────────────────────────────
+legendary	Golden Egg
+legendary	Golden Droplet
+legendary	Recombobulator 3000
+legendary	Golden Gun
+legendary	Lucky Clover
+legendary	Necron Aegis
+legendary	Necron's Aegis
+legendary	Storm's Wand
+legendary	Maxor's Wand
+legendary	Ender Dragon
+legendary	InfiniEye
+legendary	Giant's Core
+legendary	Warden Core
+legendary	Precursor Gear
+legendary	Lament
+legendary	Warden
+
+# ── epic ──────────────────────────────────────────────────────────────────────
+epic	Mythic Carrot
+epic	Mysterious Handle
+epic	Midas Jewel
+epic	Golden Hot Potato Book
+epic	Dragon Horn
+epic	Suspicious Vial
+epic	Black Cat
+epic	Textbook
+epic	Tier Boost Core
+epic	Livid Dagger
+epic	Golem
+epic	Warped Stone
+epic	Spicy Wart
+epic	Fierce Feather
+epic	Rapid Cannon
+epic	Golden Eye
+epic	Warden Catalyst
+epic	Enderman
+epic	Wolf
+
+# ── rare ──────────────────────────────────────────────────────────────────────
+rare	Spirit Stone
+rare	Optical Lens
+rare	Pure Seeds
+rare	Tiger
+rare	Sheep
+rare	Crown of Greed
+rare	Iron Claws
+rare	Hardened Scales
+rare	Hardened Scale
+rare	Dwarf Turtle Shelmet
+rare	Null Ovoid
+rare	Endstone Rose Bush
+rare	Hot Potato Book
+rare	Dragon Chestplate
+rare	Dragon Leggings
+rare	Dragon Helmet
+rare	Dragon Boots
+
+# ── common: fodder, tracked but not worth a line ──────────────────────────────
+common	Aspect of the Dragons
+common	Dragon Claw
+common	Dragon Scale
+common	Sharpened Claws
+common	Necromancer's Brooch
+common	Crystal Fragment
+common	Dragon Fragment
+common	Travel Scroll
+common	Summoning Eye

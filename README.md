@@ -46,6 +46,13 @@ glance, with adjustable height and brightness.
 session. Breaks are subtracted rather than counted, and the readout hides itself when
 you stop slaying. Each boss's own time is printed to chat as it dies.
 
+### Zealots
+
+**Zealot Tracker** — kills, Summoning Eyes and Golden Eyes for the session, each with
+its hourly rate. Drops are read from your own chat. A kill is only counted when one of
+your own swings or scythe casts explains it, so other people farming the same nest do
+not inflate your number. Breaks are subtracted, and the readout hides when you stop.
+
 ### Visual
 
 **Nukubi Highlight** — box and tracer marking Nukubi, with an option to ignore ones
@@ -77,6 +84,10 @@ instead of reported empty.
 right-click, so spam-clicking to place puts one in and immediately pulls it out. Clicks
 are ignored for a moment after a placement lands. Duration is adjustable.
 
+**Damage Numbers** — the floating damage popups, shortened to `8.49M` or removed
+outright, switched between with one button. Colours are kept, so a shortened number
+still looks like the server wrote it.
+
 ---
 
 ## Settings
@@ -103,7 +114,6 @@ The jar lands in `build/libs/`.
 
 - **Loot Alerts** — on-screen alerts for drops
 - **Boss Highlight** — marking your own slayer boss
-- **Nametag Cleanup** — hiding the nametags that are only noise
 
 ---
 

@@ -3,6 +3,7 @@ package com.endsight.qol;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;
 
 import java.util.List;
@@ -32,14 +33,23 @@ public final class EyeGuard {
     private static boolean enabled = true;
     private static double guardSeconds = 0.9;
 
-    private static long guardUntil;
+    /**
+     * The frame the guard covers - the one you just put an eye in - and nothing else.
+     *
+     * The first version swallowed every right-click in the window, which also swallowed
+     * the click that would have put the NEXT eye in the frame beside it, so a fast run
+     * down the altar stalled at every frame. The only click worth stopping is the one on
+     * the frame that already has your eye; the block position tells those apart.
+     */
+    private static BlockPos lastClick;
+    private static long lastClickMs;
 
     public static Module module() {
         return new Module("qol.eyeguard", "Protect Placed Eyes",
-                "Ignores right-clicks briefly after you place an eye.", "Quality of Life",
+                "Ignores clicks on an eye you just placed, so it stays in.", "Quality of Life",
                 () -> enabled, v -> {
                     enabled = v;
-                    if (!v) guardUntil = 0;          // never leave a guard armed behind you
+                    if (!v) lastClick = null;        // never leave a guard armed behind you
                 },
                 List.of(
                         new Setting.Slider("Guard time",
@@ -48,16 +58,28 @@ public final class EyeGuard {
     }
 
     public static void init() {
-        UseBlockCallback.EVENT.register((player, level, hand, hit) ->
-                isGuarding() ? InteractionResult.FAIL : InteractionResult.PASS);
+        UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+            if (!enabled) return InteractionResult.PASS;
+            long now = System.currentTimeMillis();
+            BlockPos pos = hit.getBlockPos();
+            // The same block again inside the window is the click that takes the eye
+            // back out. Guarded from the click itself, not from the server's confirmation:
+            // that arrives a tenth of a second later, and a spam-click gets its second
+            // press in before it. There is no reason to click one frame twice that fast,
+            // so nothing legitimate is lost. The window restarts on each blocked press,
+            // so holding the button on a frame keeps it safe rather than timing out.
+            if (pos.equals(lastClick) && now - lastClickMs < guardSeconds * 1000) {
+                lastClickMs = now;
+                return InteractionResult.FAIL;
+            }
+            lastClick = pos;
+            lastClickMs = now;
+            return InteractionResult.PASS;
+        });
     }
 
-    /** Called when the server confirms an eye placed by YOU, not by anyone else. */
+    /** The server confirmed an eye placed by YOU: keep the frame guarded a full window from now. */
     public static void armed() {
-        if (enabled) guardUntil = System.currentTimeMillis() + (long) (guardSeconds * 1000);
-    }
-
-    private static boolean isGuarding() {
-        return enabled && System.currentTimeMillis() < guardUntil;
+        if (enabled && lastClick != null) lastClickMs = System.currentTimeMillis();
     }
 }

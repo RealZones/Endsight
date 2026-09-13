@@ -30,6 +30,8 @@ public class SettingsScreen extends Screen {
     private int scroll;
     private int contentHeight;
     private Setting.Slider dragging;
+    /** The id waiting for a key, or null. One at a time - two would race for the press. */
+    private String binding;
 
     private final Map<String, Anim> anims = new HashMap<>();
     private final List<Row> rows = new ArrayList<>();
@@ -237,6 +239,12 @@ public class SettingsScreen extends Screen {
         Draw.text(g, font, on ? "Enabled" : "Disabled", x, y + 17,
                 on ? Theme.pos() : Theme.muted());
         drawToggle(g, x + w - 20, y + 16, t);
+
+        // The module's own key, under its switch. This is the one that matters for a
+        // module you turn on and off mid-fight, and it is the only chip on a page whose
+        // settings are all sliders.
+        Draw.text(g, font, "KEY", x, y + 44, Theme.dim());
+        drawChip(g, font, Keybinds.moduleId(module), x + w - CHIP_W, y + 40, mouseX, mouseY);
     }
 
     /**
@@ -270,6 +278,18 @@ public class SettingsScreen extends Screen {
                 Draw.lerp(Theme.muted(), Theme.text(), a));
     }
 
+    /** The module's key chip. Modules only - a key per setting was clutter, and said so. */
+    private static final int CHIP_W = Keybinds.CHIP_W;
+    private static final int CHIP_H = Keybinds.CHIP_H;
+
+    private void drawChip(GuiGraphicsExtractor g, Font font, String id, int x, int y,
+                          int mouseX, int mouseY) {
+        boolean listening = id.equals(binding);
+        boolean hovered = contains(x, y, CHIP_W, CHIP_H, mouseX, mouseY);
+        float a = anim("bind:" + id).to(hovered || listening ? 1f : 0f, Theme.EASE_FAST);
+        Keybinds.chip(g, font, id, x, y, a, listening);
+    }
+
     private void drawToggle(GuiGraphicsExtractor g, int x, int y, float t) {
         int w = 20, h = 10;
         Draw.roundedRect(g, x, y, w, h, h / 2, Draw.lerp(Theme.line(), Theme.pos(), t));
@@ -294,9 +314,15 @@ public class SettingsScreen extends Screen {
         }
 
         int sx = panelX() + 16, sy = panelY() + Theme.HEADER_H + 72;
-        if (contains(sx - 6, sy, Theme.SIDEBAR_W - 20, 22, mx, my)) {
-            if (module.implemented()) module.toggle();
-            return true;
+        if (module.implemented()) {
+            int cw = Theme.SIDEBAR_W - 32;
+            if (contains(sx + cw - CHIP_W, sy + 30, CHIP_W, CHIP_H, mx, my)) {
+                return listen(Keybinds.moduleId(module), event);
+            }
+            if (contains(sx - 6, sy, Theme.SIDEBAR_W - 20, 22, mx, my)) {
+                module.toggle();
+                return true;
+            }
         }
 
         for (Row r : rows) {
@@ -357,8 +383,33 @@ public class SettingsScreen extends Screen {
         return true;
     }
 
+    /**
+     * Start waiting for a key for {@code id} - or, on a right-click, unbind it.
+     *
+     * Unbinding is on the right button rather than a second chip because there is no
+     * room for one, and because a chip you have to click twice to clear (once to arm,
+     * once with a key that means "none") is a worse guess than the one every launcher
+     * already uses.
+     */
+    private boolean listen(String id, MouseButtonEvent event) {
+        if (event.button() == 1) {
+            Keybinds.clear(id);
+            binding = null;
+        } else {
+            binding = id.equals(binding) ? null : id;
+        }
+        return true;
+    }
+
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (binding != null) {
+            // Escape cancels rather than binding, so there is a way out of a chip you
+            // armed by accident; anything else, including a modifier on its own, binds.
+            if (event.key() != 256) Keybinds.set(binding, event.key());
+            binding = null;
+            return true;
+        }
         if (event.key() == 256) {                 // escape goes back, not out
             minecraft.setScreen(parent);
             return true;

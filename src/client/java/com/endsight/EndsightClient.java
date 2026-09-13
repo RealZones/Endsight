@@ -3,8 +3,15 @@ package com.endsight;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.hud.Alert;
+import com.endsight.hud.Toast;
 import com.endsight.hud.Alerts;
+import com.endsight.qol.DamageNumbers;
+import com.endsight.qol.DebugOnJoin;
+import com.endsight.qol.DropClipboard;
+import com.endsight.qol.DropTracker;
 import com.endsight.qol.EyeGuard;
+import com.endsight.qol.LootAlerts;
+import com.endsight.qol.MathSolver;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
@@ -15,7 +22,10 @@ import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
 import com.endsight.visual.NukubiHighlight;
+import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
+import com.endsight.ui.Keybinds;
+import com.endsight.ui.Module;
 import com.endsight.ui.EndsightScreen;
 import com.endsight.ui.SettingsScreen;
 import com.endsight.ui.ModuleRegistry;
@@ -41,6 +51,8 @@ public class EndsightClient implements ClientModInitializer {
 
     private static ModuleRegistry registry;
     private boolean keyWasDown = false;
+    /** Which bound keys were down last tick, so a held key fires once. */
+    private final java.util.Set<Integer> heldBinds = new java.util.HashSet<>();
 
     /** Built once so a toggle survives closing and reopening the screen. */
     public static ModuleRegistry registry() {
@@ -54,12 +66,37 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(Slayer.killTimerModule());
+            registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
+            registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
+            registry.replace(LootAlerts.module());
+            registry.add(DebugOnJoin.module());
+            registry.add(DropClipboard.module());
+            registry.add(DropTracker.module());
+            registry.add(MathSolver.module());
+            extra("register", registry);
             Config.load(registry);
         }
         return registry;
+    }
+
+    /**
+     * A second set of modules may be compiled in from outside the repository; if it is,
+     * it registers and initialises itself through a class of this name. Looked up by
+     * name on purpose: this file must compile without it, so nothing here may refer to
+     * it directly, and when it is absent the lookup fails quietly and the mod is simply
+     * what is in the repository.
+     */
+    private static void extra(String method, ModuleRegistry registry) {
+        try {
+            Class<?> hook = Class.forName("com.endsight.dev.Dev");
+            if (registry != null) hook.getMethod(method, ModuleRegistry.class).invoke(null, registry);
+            else hook.getMethod(method).invoke(null);
+        } catch (ReflectiveOperationException ignored) {
+            // Not built in.
+        }
     }
 
     @Override
@@ -72,14 +109,26 @@ public class EndsightClient implements ClientModInitializer {
         DragonTimer.init();
         Protector.init();
         EyeGuard.init();
+        DamageNumbers.init();
+        DebugOnJoin.init();
+        DropClipboard.init();
+        DropTracker.init();
+        LootAlerts.init();
+        MathSolver.init();
         Beacon.init();
         Slayer.init();
+        ZealotTracker.init();
+        extra("init", null);
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any
         // module can raise it; only one shows at a time, because two things shouting
         // at once is the same as neither.
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "alert"),
                 (g, delta) -> Alert.draw(g));
+
+        // Last of all, so a toast sits over every readout including the popup above.
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "toast"),
+                (g, delta) -> Toast.draw(g));
 
         // Saved on exit, and again whenever an Endsight screen closes - quitting the
         // game is not the only way a session ends, and a crash after an hour of tuning
@@ -90,6 +139,13 @@ public class EndsightClient implements ClientModInitializer {
                 ScreenEvents.remove(screen).register(s -> Config.save(registry()));
             }
         });
+
+        // Build the registry now rather than on the first Right Shift, because building
+        // it is what loads the config. Left lazy, every saved toggle and slider sat at
+        // its default until the menu was first opened - a module saved on stayed off
+        // all session and then came alive the moment the menu closed. After the inits
+        // above, since restoring HUD positions needs the readouts registered first.
+        registry();
     }
 
     private void onTick(Minecraft client) {
@@ -103,5 +159,37 @@ public class EndsightClient implements ClientModInitializer {
             client.setScreen(new EndsightScreen("Endsight", registry()));
         }
         keyWasDown = down;
+
+        // Bound keys are polled here too, and only with no screen open - otherwise the
+        // press that binds a key would also fire whatever it was just bound to.
+        if (client.screen == null && client.level != null) fireBinds(client);
     }
+
+    /**
+     * Run whatever the bound keys are for, once per press.
+     *
+     * Walks the registry rather than keeping a second map of id to action: the ids are
+     * built from the modules themselves, so a module renamed or removed cannot leave a
+     * key pointing at something that is no longer there.
+     */
+    private void fireBinds(Minecraft client) {
+        if (Keybinds.all().isEmpty()) return;
+        java.util.Set<Integer> down = new java.util.HashSet<>();
+        for (int key : Keybinds.all().values()) {
+            if (InputConstants.isKeyDown(client.getWindow(), key)) down.add(key);
+        }
+        for (Module m : registry().all()) {
+            if (pressed(down, Keybinds.get(Keybinds.moduleId(m))) && m.implemented()) {
+                m.toggle();
+                Toast.toggled(m.title(), m.isEnabled());
+            }
+        }
+        heldBinds.clear();
+        heldBinds.addAll(down);
+    }
+
+    private boolean pressed(java.util.Set<Integer> down, int key) {
+        return key != Keybinds.NONE && down.contains(key) && !heldBinds.contains(key);
+    }
+
 }

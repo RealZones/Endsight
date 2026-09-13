@@ -36,6 +36,12 @@ public final class ModuleRegistry {
         return add(module);
     }
 
+    /** Take a module out by id. The browser rebuilds its categories from what is left. */
+    public ModuleRegistry remove(String id) {
+        modules.removeIf(m -> m.id().equals(id));
+        return this;
+    }
+
     public List<Module> all() {
         return List.copyOf(modules);
     }

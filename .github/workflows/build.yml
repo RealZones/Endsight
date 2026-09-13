@@ -103,7 +103,11 @@ jobs:
             }'
           )"
 
+          # From a file, not inline: curl reads ';' and ',' in a -F value as option
+          # separators, so a commit message with a semicolon in it truncated the
+          # JSON at that point and Discord refused the post. A file has no such rule.
+          printf '%s' "$PAYLOAD" > payload.json
           curl -sS --fail-with-body \
-            -F "payload_json=${PAYLOAD};type=application/json" \
+            -F "payload_json=<payload.json;type=application/json" \
             -F "file1=@${MAIN_JAR}" \
             "$WEBHOOK"

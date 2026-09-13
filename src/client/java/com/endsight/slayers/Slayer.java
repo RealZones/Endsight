@@ -63,6 +63,11 @@ public final class Slayer {
 
     // ── tracked ───────────────────────────────────────────────────────────────
     private static long bossSpawnedAt;
+
+    /** Whether a slayer boss is up right now - spawned and not yet slain. */
+    public static boolean bossUp() {
+        return bossUp;
+    }
     private static boolean bossUp;
     private static long lastKillMs;
     /**

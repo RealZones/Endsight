@@ -116,7 +116,9 @@ public final class VoidgloomHelper {
      */
     private static void scanBeacons(Minecraft mc) {
         beacons.clear();
-        if (!enabled || !glyph || mc.player == null || mc.level == null) return;
+        // Only while a boss is up. The dragon leaves a beacon on its loot too, and the
+        // first version marched the glyph box over to that instead.
+        if (!enabled || !glyph || !Slayer.bossUp() || mc.player == null || mc.level == null) return;
         BlockPos at = mc.player.blockPosition();
         for (BlockPos b : BlockPos.betweenClosed(at.offset(-GLYPH_RANGE, -6, -GLYPH_RANGE),
                 at.offset(GLYPH_RANGE, 6, GLYPH_RANGE))) {
@@ -160,18 +162,32 @@ public final class VoidgloomHelper {
             if (tracer) drawTracer(g, sw / 2, sh, cx, cy + half);
         }
 
-        // The glyph: a box round the whole block and always a tracer, because the whole
-        // point is getting to it in time.
+        // The glyph: the block's own outline, and always a tracer, because the whole
+        // point is getting to it in time. The eight corners are projected and the twelve
+        // edges drawn between them, so it sits on the block and turns with it rather
+        // than being a square hung in the air where the block roughly is.
         for (BlockPos b : beacons) {
-            Vec3 c = new Vec3(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
-            double[] p = Project.toScreen(c, sw, sh);
-            if (p == null) continue;
-            double[] top = Project.toScreen(c.add(0, 0.5, 0), sw, sh);
-            int half = top == null ? 10 : (int) Math.max(6, Math.abs(p[1] - top[1]));
-            int cx = (int) p[0], cy = (int) p[1];
-            drawBox(g, cx - half, cy - half, half * 2, half * 2);
-            drawTracer(g, sw / 2, sh, cx, cy + half);
+            double[][] c = new double[8][];
+            boolean whole = true;
+            for (int i = 0; i < 8; i++) {
+                Vec3 corner = new Vec3(b.getX() + (i & 1), b.getY() + ((i >> 1) & 1), b.getZ() + ((i >> 2) & 1));
+                c[i] = Project.toScreen(corner, sw, sh);
+                if (c[i] == null) whole = false;
+            }
+            if (!whole) continue;                    // a corner behind the camera: skip this frame
+            for (int i = 0; i < 8; i++) {
+                for (int bit = 1; bit < 8; bit <<= 1) {
+                    int j = i | bit;
+                    if (j != i && j > i) line(g, c[i], c[j]);
+                }
+            }
+            double[] centre = Project.toScreen(new Vec3(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5), sw, sh);
+            if (centre != null) drawTracer(g, sw / 2, sh, (int) centre[0], (int) centre[1]);
         }
+    }
+
+    private static void line(GuiGraphicsExtractor g, double[] a, double[] b) {
+        drawTracer(g, (int) a[0], (int) a[1], (int) b[0], (int) b[1]);
     }
 
     private static void drawBox(GuiGraphicsExtractor g, int x, int y, int w, int h) {

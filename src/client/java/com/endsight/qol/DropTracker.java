@@ -9,22 +9,32 @@ import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * What has dropped this session, on screen.
+ * What has dropped, on screen: this session, or ever.
  *
  * One row per item with its count, newest at the top, so a haul reads at a glance -
  * "12 Summoning Eye, 2 Golden Eye" - rather than as a scroll of identical lines. Sits
  * with the other readouts and moves with them.
+ *
+ * Two counts are kept. The session's starts empty each launch. The total lives in
+ * {@code config/endsight/drops-total.txt} and is written on every drop - drops are rare
+ * enough that a write each is nothing, and a crash an hour later then costs nothing.
+ * One mode button switches the readout between them, as Damage Numbers does.
  */
 public final class DropTracker {
 
@@ -32,17 +42,23 @@ public final class DropTracker {
     }
 
     private static final int MAX_ROWS = 8;
+    private static final String SESSION = "Session", TOTAL = "Total";
 
     private static boolean enabled = false;
     private static String minTier = "Rare and up";
+    private static String mode = SESSION;
     /** Item -> count, in first-seen order; drawn newest first. */
-    private static final Map<String, Integer> counts = new LinkedHashMap<>();
+    private static final Map<String, Integer> session = new LinkedHashMap<>();
+    private static final Map<String, Integer> total = new LinkedHashMap<>();
 
     public static Module module() {
         return new Module("qol.droptracker", "Drop Tracker",
-                "Every drop this session, counted, on screen.", "Quality of Life",
+                "Every drop, counted, on screen - this session or ever.", "Quality of Life",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Choice("Mode",
+                                "This session's drops, or every drop since you started keeping count.",
+                                List.of(SESSION, TOTAL), () -> mode, v -> mode = v),
                         new Setting.Choice("Show from",
                                 "Lowest tier worth a row. Crazy rare and RNGesus count as legendary.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v),
@@ -50,19 +66,22 @@ public final class DropTracker {
                                 "Drag it, and every other readout, where you want.",
                                 "Move", HudPlacementScreen::open),
                         new Setting.Action("Reset",
-                                "Clear the list.",
-                                "Reset", counts::clear),
+                                "Clear whichever count is showing.",
+                                "Reset", DropTracker::reset),
                         new Setting.Action("Reload tiers",
                                 "Re-read config/endsight/drops.txt after editing it.",
                                 "Reload", Drops::reload)));
     }
 
     public static void init() {
+        load();
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!enabled || overlay) return;
             Drops.Drop d = Drops.parse(message.getString());
             if (d == null || !Drops.passes(d, minTier)) return;
-            counts.merge(d.item(), 1, Integer::sum);
+            session.merge(d.item(), 1, Integer::sum);
+            total.merge(d.item(), 1, Integer::sum);
+            save();
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "drops"),
                 (g, delta) -> draw(g));
@@ -70,8 +89,53 @@ public final class DropTracker {
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
+    private static void reset() {
+        if (mode.equals(TOTAL)) {
+            total.clear();
+            save();
+        } else {
+            session.clear();
+        }
+    }
+
+    // ── the total, on disk ────────────────────────────────────────────────────
+
+    private static Path file() {
+        return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("drops-total.txt");
+    }
+
+    private static void load() {
+        try {
+            if (!Files.exists(file())) return;
+            for (String line : Files.readAllLines(file(), StandardCharsets.UTF_8)) {
+                int tab = line.lastIndexOf('\t');
+                if (tab <= 0) continue;
+                try {
+                    total.put(line.substring(0, tab), Integer.parseInt(line.substring(tab + 1).trim()));
+                } catch (NumberFormatException ignored) {
+                    // A hand-edited line that is not a number: skipped, not fatal.
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not read drops-total.txt: " + e);
+        }
+    }
+
+    private static void save() {
+        try {
+            Files.createDirectories(file().getParent());
+            List<String> lines = new ArrayList<>();
+            total.forEach((item, n) -> lines.add(item + "\t" + n));
+            Files.write(file(), lines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not write drops-total.txt: " + e);
+        }
+    }
+
+    // ── drawing ───────────────────────────────────────────────────────────────
+
     private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled || counts.isEmpty()) return;
+        if (!enabled || (mode.equals(TOTAL) ? total : session).isEmpty()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         Font font = mc.font;
@@ -88,12 +152,12 @@ public final class DropTracker {
             rows.add(new String[]{"Golden Eye", "2"});
             rows.add(new String[]{"Summoning Eye", "12"});
         } else {
-            List<Map.Entry<String, Integer>> all = new ArrayList<>(counts.entrySet());
+            List<Map.Entry<String, Integer>> all = new ArrayList<>((mode.equals(TOTAL) ? total : session).entrySet());
             for (int i = all.size() - 1; i >= 0 && rows.size() < MAX_ROWS; i--) {
                 rows.add(new String[]{all.get(i).getKey(), String.valueOf(all.get(i).getValue())});
             }
         }
-        String title = "DROPS";
+        String title = mode.equals(TOTAL) ? "DROPS  TOTAL" : "DROPS";
         int labelW = 0, valueW = 0;
         for (String[] r : rows) {
             labelW = Math.max(labelW, font.width(r[0]));

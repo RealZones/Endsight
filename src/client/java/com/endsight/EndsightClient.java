@@ -11,6 +11,7 @@ import com.endsight.qol.DropClipboard;
 import com.endsight.qol.DropTracker;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
+import com.endsight.qol.MathSolver;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
@@ -74,6 +75,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.add(DebugOnJoin.module());
             registry.add(DropClipboard.module());
             registry.add(DropTracker.module());
+            registry.add(MathSolver.module());
             extra("register", registry);
             Config.load(registry);
         }
@@ -112,6 +114,7 @@ public class EndsightClient implements ClientModInitializer {
         DropClipboard.init();
         DropTracker.init();
         LootAlerts.init();
+        MathSolver.init();
         Beacon.init();
         Slayer.init();
         ZealotTracker.init();

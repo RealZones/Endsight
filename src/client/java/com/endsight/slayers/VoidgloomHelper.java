@@ -1,10 +1,11 @@
-package com.endsight.visual;
+package com.endsight.slayers;
 
 import com.endsight.hud.Project;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -17,6 +18,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -48,9 +50,9 @@ import java.util.List;
  * makes "just the head" a choice of which point to project rather than a bounding box
  * we are stuck with.
  */
-public final class NukubiHighlight {
+public final class VoidgloomHelper {
 
-    private NukubiHighlight() {
+    private VoidgloomHelper() {
     }
 
     /**
@@ -69,31 +71,57 @@ public final class NukubiHighlight {
     private static boolean tracer = true;
     private static boolean fillBox = true;
 
+    /** Yang Glyph: the beacon the boss drops at your feet from tier 2, with five seconds to reach it. */
+    private static boolean glyph = true;
+    private static final int GLYPH_RANGE = 12;
+    private static final List<BlockPos> beacons = new ArrayList<>();
+
     public static Module module() {
-        return new Module("visual.nukubi", "Nukubi Highlight",
-                "Marks Nukubi so it is not lost in the crowd.", "Visual",
+        return new Module("slayer.boss", "Voidgloom Helper",
+                "Marks the Nukekubi heads and the Yang Glyph beacon.", "Slayers",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Yang Glyph"),
+                        new Setting.Toggle("Beacon",
+                                "Box and tracer to the beacon, so you reach it inside the five seconds.",
+                                () -> glyph, v -> glyph = v),
+                        new Setting.Section("Nukekubi"),
                         new Setting.Slider("Range",
-                                "How far out to highlight.",
+                                "How far out to highlight heads.",
                                 8, 256, 8, () -> range, v -> range = v, "m"),
                         new Setting.Toggle("Only mine",
-                                "Ignore ones tagged as another player's.",
+                                "Ignore heads tagged as another player's.",
                                 () -> onlyMine, v -> onlyMine = v),
                         new Setting.Toggle("Tracer",
-                                "Line from the bottom of the screen to it.",
+                                "Line from the bottom of the screen to each.",
                                 () -> tracer, v -> tracer = v),
                         new Setting.Toggle("Fill box",
                                 "Tint the inside of the box, not just its edges.",
                                 () -> fillBox, v -> fillBox = v),
                         new Setting.Action("Dump nearby entities",
                                 "Writes nearby entities and unusual blocks to a file.",
-                                "Dump", NukubiHighlight::dumpNearby)));
+                                "Dump", VoidgloomHelper::dumpNearby)));
     }
 
     public static void init() {
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "nukubi"),
                 (g, delta) -> draw(g));
+        ClientTickEvents.END_CLIENT_TICK.register(VoidgloomHelper::scanBeacons);
+    }
+
+    /**
+     * Beacons within a dozen blocks, once a tick. The glyph lands at your feet and is
+     * a plain beacon block; scanning a small cube each tick is cheap, and once a frame
+     * would not be.
+     */
+    private static void scanBeacons(Minecraft mc) {
+        beacons.clear();
+        if (!enabled || !glyph || mc.player == null || mc.level == null) return;
+        BlockPos at = mc.player.blockPosition();
+        for (BlockPos b : BlockPos.betweenClosed(at.offset(-GLYPH_RANGE, -6, -GLYPH_RANGE),
+                at.offset(GLYPH_RANGE, 6, GLYPH_RANGE))) {
+            if (mc.level.getBlockState(b).is(Blocks.BEACON)) beacons.add(b.immutable());
+        }
     }
 
     // ── drawing ───────────────────────────────────────────────────────────────
@@ -130,6 +158,19 @@ public final class NukubiHighlight {
             int cx = (int) p[0], cy = (int) p[1];
             drawBox(g, cx - half, cy - half, half * 2, half * 2);
             if (tracer) drawTracer(g, sw / 2, sh, cx, cy + half);
+        }
+
+        // The glyph: a box round the whole block and always a tracer, because the whole
+        // point is getting to it in time.
+        for (BlockPos b : beacons) {
+            Vec3 c = new Vec3(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
+            double[] p = Project.toScreen(c, sw, sh);
+            if (p == null) continue;
+            double[] top = Project.toScreen(c.add(0, 0.5, 0), sw, sh);
+            int half = top == null ? 10 : (int) Math.max(6, Math.abs(p[1] - top[1]));
+            int cx = (int) p[0], cy = (int) p[1];
+            drawBox(g, cx - half, cy - half, half * 2, half * 2);
+            drawTracer(g, sw / 2, sh, cx, cy + half);
         }
     }
 

@@ -15,13 +15,13 @@ import com.endsight.qol.MathSolver;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
+import com.endsight.slayers.VoidgloomHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
-import com.endsight.visual.NukubiHighlight;
 import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.Keybinds;
@@ -62,7 +62,7 @@ public class EndsightClient implements ClientModInitializer {
             // registry, so EndsightDemo stays a pure list of things that do nothing.
             registry.replace(StoragePreview.module());
             registry.replace(StorageSearch.module());
-            registry.replace(NukubiHighlight.module());
+            registry.replace(VoidgloomHelper.module());
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(Slayer.killTimerModule());
@@ -104,7 +104,7 @@ public class EndsightClient implements ClientModInitializer {
         StoragePreview.init();
         SnapshotStore.init();
         StorageSearch.init();
-        NukubiHighlight.init();
+        VoidgloomHelper.init();
         DragonTimer.init();
         Protector.init();
         EyeGuard.init();

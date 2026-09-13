@@ -41,16 +41,14 @@ public final class EndsightDemo {
         r.add(Module.placeholder("visual.beacon", "Protector Beacon",
                 "Beam over the Endstone Protector so it can be found at a glance.", "Golem"));
 
-        r.add(Module.unimplemented("slayer.boss", "Boss Highlight",
-                "Marks your own boss, ignores everyone else's.", "Slayers"));
+        r.add(Module.placeholder("slayer.boss", "Voidgloom Helper",
+                "Marks the Nukekubi heads and the Yang Glyph beacon.", "Slayers"));
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Slayers"));
 
         r.add(Module.placeholder("zealot.tracker", "Zealot Tracker",
                 "Your zealot kills and rate for the session.", "Visual"));
 
-        r.add(Module.placeholder("visual.nukubi", "Nukubi Highlight",
-                "Marks Nukubi so it is not lost in the crowd.", "Visual"));
 
         r.add(Module.placeholder("alerts", "Alerts",
                 "On-screen calls for the things worth looking up for.", "Alerts"));

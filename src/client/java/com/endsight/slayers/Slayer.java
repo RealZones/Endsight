@@ -129,7 +129,7 @@ public final class Slayer {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "slayer"),
                 (g, delta) -> draw(g));
-        HudLayout.register("slayer.timer", "Slayer Tracker", 0f, 0f,
+        HudLayout.register("slayer.timer", "Slayer Tracker", 0f, 0.009f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 

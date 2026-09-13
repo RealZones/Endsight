@@ -92,7 +92,7 @@ public final class DropTracker {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "drops"),
                 (g, delta) -> draw(g));
-        HudLayout.register("qol.droptracker", "Drop Tracker", 1f, 0.72f,
+        HudLayout.register("qol.droptracker", "Drop Tracker", 0.011f, 0.201f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 

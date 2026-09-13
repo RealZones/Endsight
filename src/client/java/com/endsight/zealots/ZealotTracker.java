@@ -175,7 +175,7 @@ public final class ZealotTracker {
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "zealots"),
                 (g, delta) -> draw(g));
-        HudLayout.register("zealot.tracker", "Zealot Tracker", 0f, 0.5f,
+        HudLayout.register("zealot.tracker", "Zealot Tracker", 0.006f, 0.489f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 

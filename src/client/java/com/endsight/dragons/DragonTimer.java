@@ -138,7 +138,7 @@ public final class DragonTimer {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "dragon_timer"),
                 (g, delta) -> draw(g));
-        HudLayout.register("dragon.timer", "Dragon Timer", 1f, 0f,
+        HudLayout.register("dragon.timer", "Dragon Timer", 0.589f, 0.045f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 

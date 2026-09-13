@@ -93,7 +93,7 @@ public final class Protector {
         // Registered with a sample so it can be positioned from the hub. This readout is
         // invisible until a Protector actually starts rising, which makes it impossible
         // to place - and easy to mistake for a module that is not working.
-        HudLayout.register("dragon.protector", "Protector Stage", 0f, 0f,
+        HudLayout.register("dragon.protector", "Protector Stage", 0.429f, 0.047f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 

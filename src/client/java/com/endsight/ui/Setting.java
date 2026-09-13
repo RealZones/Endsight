@@ -100,6 +100,19 @@ public sealed interface Setting {
         }
     }
 
+    /**
+     * Not a control - a heading and a paragraph, wrapped to as many lines as it needs.
+     * For telling the reader something a one-line description cannot, like what a
+     * choice on the same page actually contains. The text is supplied live, so a list
+     * that changes on disk reads right without reopening the page.
+     */
+    record Note(String label, java.util.function.Supplier<String> text) implements Setting {
+        @Override
+        public String description() {
+            return text.get();
+        }
+    }
+
     // ── convenience builders for settings backed by nothing, for layout work ──
 
     static Setting.Toggle demoToggle(String label, String description, boolean initial) {

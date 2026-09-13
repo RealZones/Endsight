@@ -25,10 +25,17 @@ public final class DropClipboard {
         return new Module("qol.drops", "Copy drops",
                 "Each drop goes to your clipboard as it lands.", "Quality of Life",
                 () -> enabled, v -> enabled = v,
-                List.of(
+                concat(List.of(
                         new Setting.Choice("Copy from",
                                 "Lowest tier worth copying. Crazy rare and RNGesus count as legendary.",
-                                Drops.TIERS, () -> minTier, v -> minTier = v)));
+                                Drops.TIERS, () -> minTier, v -> minTier = v)),
+                        Drops.tierNotes()));
+    }
+
+    private static List<Setting> concat(List<Setting> a, List<Setting> b) {
+        List<Setting> out = new java.util.ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     public static void init() {

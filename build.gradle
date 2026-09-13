@@ -2,13 +2,7 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
-// Work-in-progress modules live in src/dev, which is git-ignored, and are compiled in only when
-// the build is asked for them: `gradlew build -Pdev`. A plain build never sees them,
-// and because public code cannot reference what is not on its classpath, a public
-// build that touched anything private would fail to compile rather than ship it.
-def dev = project.hasProperty('dev')
-
-version = project.mod_version + (dev ? '-dev' : '')
+version = project.mod_version
 group = project.maven_group
 
 loom {
@@ -25,12 +19,6 @@ loom {
 	}
 }
 
-// After the loom block: splitEnvironmentSourceSets() is what creates the client set.
-if (dev) {
-	sourceSets.client.java.srcDir 'src/dev/java'
-	sourceSets.client.resources.srcDir 'src/dev/resources'
-}
-
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -39,14 +27,9 @@ dependencies {
 
 processResources {
 	def version = project.version
-	// The mixin config only exists in the private source set, and a manifest that names
-	// a config the jar does not carry crashes Fabric at startup - so the public manifest
-	// declares none.
-	def mixins = dev ? '[ { "config": "endsight.client.mixins.json", "environment": "client" } ]' : '[]'
 	inputs.property "version", version
-	inputs.property "mixins", mixins
 	filesMatching("fabric.mod.json") {
-		expand "version": version, "mixins": mixins
+		expand "version": version
 	}
 }
 

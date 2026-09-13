@@ -26,5 +26,3 @@ bin/
 .DS_Store
 Thumbs.db
 
-# Work in progress: compiled in with -Pdev, not part of the repository.
-src/dev/

@@ -77,6 +77,8 @@ public final class DragonTimer {
     private static int eyesNeeded = 8;
     /** Who placed how many this cycle, in the order they first placed. */
     private static final Map<String, Integer> placers = new LinkedHashMap<>();
+    /** How many of each placer's eyes were Golden Eyes, marked on their row. */
+    private static final Map<String, Integer> golden = new LinkedHashMap<>();
     private static int myEyes;
     /**
      * Eye indices already counted this cycle.
@@ -161,6 +163,7 @@ public final class DragonTimer {
             if (who.equalsIgnoreCase("You") && me != null) who = me;
 
             placers.merge(who, 1, Integer::sum);
+            if (m.group(2).startsWith("Golden")) golden.merge(who, 1, Integer::sum);
             if (me != null && who.equalsIgnoreCase(me)) {
                 myEyes++;
                 EyeGuard.armed();
@@ -203,6 +206,7 @@ public final class DragonTimer {
         eyes = 0;
         myEyes = 0;
         placers.clear();
+        golden.clear();
         countedEyes.clear();
     }
 
@@ -301,9 +305,12 @@ public final class DragonTimer {
                 // Names are whatever anyone is called, so they are cut to fit rather
                 // than allowed to run past the readout and into the game behind it.
                 if (g != null) {
-                    String who = Draw.fit(font, e.getKey(), w - 34);
+                    // A ✦ per Golden Eye after the count, and the row lit, so the one
+                    // that matters for the dragon reads at a glance.
+                    int gold = golden.getOrDefault(e.getKey(), 0);
+                    String who = Draw.fit(font, e.getKey(), w - 34 - gold * 8);
                     Readout.draw(g, font, x, ry, w, who,
-                            String.valueOf(e.getValue()), false, -1);
+                            e.getValue() + (gold > 0 ? " " + "✦".repeat(gold) : ""), gold > 0, -1);
                 }
                 ry += Readout.height(false) + 2;
                 h += Readout.height(false) + 2;

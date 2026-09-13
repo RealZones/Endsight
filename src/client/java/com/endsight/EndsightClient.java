@@ -83,11 +83,10 @@ public class EndsightClient implements ClientModInitializer {
     }
 
     /**
-     * A second set of modules may be compiled in from outside the repository; if it is,
-     * it registers and initialises itself through a class of this name. Looked up by
-     * name on purpose: this file must compile without it, so nothing here may refer to
-     * it directly, and when it is absent the lookup fails quietly and the mod is simply
-     * what is in the repository.
+     * Another mod may add modules to this browser: if a class of this name is on the
+     * classpath it is asked to register and initialise them. Looked up by name so this
+     * compiles without it, and with it absent the lookup fails quietly and the mod is
+     * simply what is in the repository.
      */
     private static void extra(String method, ModuleRegistry registry) {
         try {

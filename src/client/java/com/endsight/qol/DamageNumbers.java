@@ -88,7 +88,7 @@ public final class DamageNumbers {
 
     public static Module module() {
         return new Module("qol.damage", "Damage Numbers",
-                "Shortens the damage popups, or takes them away.", "Quality of Life",
+                "Shortens the damage popups, or takes them away.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",

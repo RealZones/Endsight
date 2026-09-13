@@ -47,7 +47,7 @@ public final class EndsightDemo {
                 "Kills, time spent and rate for the session.", "Slayers"));
 
         r.add(Module.placeholder("zealot.tracker", "Zealot Tracker",
-                "Your zealot kills and rate for the session.", "Zealots"));
+                "Your zealot kills and rate for the session.", "Visual"));
 
         r.add(Module.placeholder("visual.nukubi", "Nukubi Highlight",
                 "Marks Nukubi so it is not lost in the crowd.", "Visual"));
@@ -56,13 +56,13 @@ public final class EndsightDemo {
                 "On-screen calls for the things worth looking up for.", "Alerts"));
 
         r.add(Module.placeholder("storage.preview", "Storage Preview",
-                "Hover a storage page to see inside it.", "Quality of Life"));
+                "Hover a storage page to see inside it.", "Visual"));
         r.add(Module.placeholder("storage.search", "Item Search",
                 "Finds an item across every page at once.", "Quality of Life"));
         r.add(Module.placeholder("qol.eyeguard", "Protect Placed Eyes",
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
         r.add(Module.placeholder("qol.damage", "Damage Numbers",
-                "Shortens the damage popups, or takes them away.", "Quality of Life"));
+                "Shortens the damage popups, or takes them away.", "Visual"));
 
         cached = r;
         return r;

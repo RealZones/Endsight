@@ -26,6 +26,7 @@ legendary	Warden Core
 legendary	Precursor Gear
 legendary	Lament
 legendary	Warden
+legendary	Dwarf Turtle Shelmet
 
 # ── epic ──────────────────────────────────────────────────────────────────────
 epic	Mythic Carrot
@@ -58,7 +59,6 @@ rare	Crown of Greed
 rare	Iron Claws
 rare	Hardened Scales
 rare	Hardened Scale
-rare	Dwarf Turtle Shelmet
 rare	Null Ovoid
 rare	Endstone Rose Bush
 rare	Hot Potato Book

@@ -46,7 +46,9 @@ import java.util.Set;
  * chat log settled that: 1,953 scythe casts, none refused, a median 200ms apart, which
  * is simply the rate a held right-click repeats at. All 168 refusals in that session
  * were the Giant's Sword. So a scythe click is a cast, and the provisional step only
- * still earns its place for the sword.
+ * still earns its place for the sword - and for the roses: the Flower of Truth and the
+ * Bouquet of Lies are casts too, but with a real one-second cooldown, so under a held
+ * click most clicks ARE refused, and each refusal withdraws the strike it belongs to.
  *
  * The Giant's Sword is the other way round: it says nothing on the click and "You hear
  * something falling from the sky." when the cast lands, so that line is its trigger.
@@ -83,6 +85,13 @@ public final class ZealotTracker {
      */
     private static final double BOLT = 6.0;
     private static final long BOLT_MS = 1_500;
+    /**
+     * A rose homes: it leaves along your aim and bends to the nearest enemy near it, so
+     * its zone is the same line, wider, and open longer because the rose has to fly
+     * there. The Bouquet throws three at once - the same zone with more deaths in it.
+     */
+    private static final double ROSE = 9.0;
+    private static final long ROSE_MS = 2_500;
     /**
      * The sword drops something on the point you were looking at, and it has to fall
      * first: a wider zone at the far end of the line only, and a longer window.
@@ -158,8 +167,9 @@ public final class ZealotTracker {
         UseItemCallback.EVENT.register((player, level, hand) -> {
             // Main hand only: vanilla tries the off hand too when the main hand passes,
             // which would make every click two strikes.
-            if (enabled && hand == InteractionHand.MAIN_HAND && Zealots.holdingScythe(player)) {
-                provisional = bolt(player);
+            if (enabled && hand == InteractionHand.MAIN_HAND) {
+                if (Zealots.holdingScythe(player)) provisional = bolt(player, BOLT, BOLT_MS);
+                else if (Zealots.holdingRose(player)) provisional = bolt(player, ROSE, ROSE_MS);
             }
             return InteractionResult.PASS;
         });
@@ -202,10 +212,10 @@ public final class ZealotTracker {
         }
     }
 
-    /** A scythe bolt: the line from your eyes to whatever your aim lands on. */
-    private static Strike bolt(Player player) {
+    /** A cast down your aim - a scythe bolt or a rose: the line from your eyes to whatever it lands on. */
+    private static Strike bolt(Player player, double radius, long window) {
         Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
-        Strike s = new Strike(System.currentTimeMillis(), player.getEyePosition(), impact, BOLT, BOLT_MS, -1);
+        Strike s = new Strike(System.currentTimeMillis(), player.getEyePosition(), impact, radius, window, -1);
         strikes.add(s);
         return s;
     }

@@ -20,6 +20,8 @@ public final class Zealots {
     /** Bruisers live in the layer below; nobody farming eyes is counting them. */
     private static final String EXCLUDE = "Bruiser";
     private static final String SCYTHE = "Scythe";
+    /** The Flower of Truth and the Bouquet of Lies: a right-click throws a homing rose. */
+    private static final String[] ROSES = {"Flower of Truth", "Bouquet of Lies"};
 
     public static boolean isZealot(Entity e) {
         if (!(e instanceof EnderMan)) return false;
@@ -31,6 +33,12 @@ public final class Zealots {
 
     public static boolean holdingScythe(Player player) {
         return player.getMainHandItem().getHoverName().getString().contains(SCYTHE);
+    }
+
+    public static boolean holdingRose(Player player) {
+        String name = player.getMainHandItem().getHoverName().getString();
+        for (String rose : ROSES) if (name.contains(rose)) return true;
+        return false;
     }
 
     public static String strip(String s) {

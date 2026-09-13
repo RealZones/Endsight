@@ -70,6 +70,10 @@ beacon, drawn in the world. Your own boss only.
 **Debug on join** — turns `/debug` on for you after every join, so kills show their
 loot number.
 
+**Loot Number Filter** — hides `loot number:` lines except the close calls: rolls under
+a number you set (2.5 to start) and, with *Both ends* on, the same distance from 100 —
+a 99.98 is as rare as a 0.02. Lines that dropped something always show.
+
 **Copy drops** — the last drop's name goes to your clipboard as it lands.
 
 **Math Solver** — answers the Golden Dragon's math question under the question, or

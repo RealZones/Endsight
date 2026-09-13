@@ -65,6 +65,8 @@ public final class EndsightDemo {
         // Quality of Life: drops and chat first, then the eyes and storage, then keys.
         r.add(Module.placeholder("qol.debug", "Debug on join",
                 "Runs /debug for you two seconds after every join.", "Quality of Life"));
+        r.add(Module.placeholder("qol.lootfilter", "Loot Number Filter",
+                "Hides loot numbers except the close calls at either end.", "Quality of Life"));
         r.add(Module.placeholder("qol.drops", "Copy drops",
                 "Each drop goes to your clipboard as it lands.", "Quality of Life"));
         r.add(Module.placeholder("qol.math", "Math Solver",

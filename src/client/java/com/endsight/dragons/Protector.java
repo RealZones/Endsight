@@ -74,7 +74,7 @@ public final class Protector {
 
     public static Module module() {
         return new Module("dragon.protector", "Protector Stage",
-                "Tracks the Endstone Protector rising, tier by tier.", "Golem",
+                "The Protector's tier and how long it has been up.", "Golem",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Action("Move readout",
@@ -83,6 +83,14 @@ public final class Protector {
     }
 
     public static void init() {
+        // A backend switch is a join; a golem left behind in the End is not rising here.
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> {
+                    tier = 0;
+                    since = 0;
+                    up = false;
+                    warden = false;
+                });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             onLine(plain(message));

@@ -30,7 +30,7 @@ public final class LootAlerts {
 
     public static Module module() {
         return new Module("dragon.loot", "Loot Alerts",
-                "On-screen call and a ping for drops worth stopping for.", "Alerts",
+                "Mid-screen alert and a ping for the drops you pick.", "Alerts",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Choice("Alert from",

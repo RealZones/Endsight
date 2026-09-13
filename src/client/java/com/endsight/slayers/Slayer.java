@@ -12,7 +12,9 @@ import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.ChatFormatting;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
@@ -32,7 +34,10 @@ import java.util.regex.Pattern;
  * Patterns verified against real logs rather than guessed - three complete quests with
  * every stage present, and the minibosses that actually announced themselves were
  * Revenant Champion, Deformed Revenant and Revenant Sycophant. Kill time ran 10-27s,
- * which is why the timer shows seconds and not minutes.
+ * which is why the timer shows seconds and not minutes. Checked again on a Voidgloom
+ * night: the quest lines are the same words, only the target reads "Endermen" - and
+ * dying to the boss prints SLAYER QUEST FAILED, which the first version did not know
+ * about, so the boss clock ran on until the next quest started.
  */
 public final class Slayer {
 
@@ -54,6 +59,7 @@ public final class Slayer {
     private static final String BOSS_SPAWN = "SLAYER BOSS SPAWNING";
     private static final String BOSS_SLAIN = "SLAYER BOSS SLAIN";
     private static final String QUEST_DONE = "SLAYER QUEST COMPLETE";
+    private static final String QUEST_FAILED = "SLAYER QUEST FAILED";
 
     // ── module state ──────────────────────────────────────────────────────────
 
@@ -128,6 +134,7 @@ public final class Slayer {
     }
 
     public static void init() {
+        ClientTickEvents.END_CLIENT_TICK.register(Slayer::watchAfk);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             onLine(plain(message));
@@ -159,7 +166,7 @@ public final class Slayer {
             bossUp = false;
             return;
         }
-        if (line.contains(QUEST_START) || line.contains(QUEST_DONE)) {
+        if (line.contains(QUEST_START) || line.contains(QUEST_DONE) || line.contains(QUEST_FAILED)) {
             bossUp = false;
             return;
         }
@@ -254,8 +261,9 @@ public final class Slayer {
      *
      * Client-side only - nothing is sent to the server.
      *
-     * One decimal because slayer kills run 10-27s: whole seconds throw away the
-     * difference between two runs that felt different.
+     * One decimal because revenant kills run 10-27s: whole seconds throw away the
+     * difference between two runs that felt different. Past a minute - a Voidgloom
+     * fight - the decimal is noise and it reads as minutes and seconds instead.
      */
     private static void reportKill(long ms) {
         if (!killTimeInChat) return;
@@ -264,7 +272,7 @@ public final class Slayer {
 
         mc.player.sendSystemMessage(Component.literal("")
                 .append(Component.literal("Boss killed in ").withStyle(ChatFormatting.GRAY))
-                .append(Component.literal(String.format("%.1fs", ms / 1000.0))
+                .append(Component.literal(ms < 60_000 ? String.format("%.1fs", ms / 1000.0) : secs(ms))
                         .withStyle(ChatFormatting.GREEN)));
     }
 
@@ -377,28 +385,52 @@ public final class Slayer {
 
     /** Any line that proves you are still slaying. */
     private static boolean isSlayerLine(String line) {
-        return line.contains(QUEST_START) || line.contains(QUEST_DONE)
+        return line.contains(QUEST_START) || line.contains(QUEST_DONE) || line.contains(QUEST_FAILED)
                 || line.contains(BOSS_SPAWN) || line.contains(BOSS_SLAIN)
                 || TARGET.matcher(line).find() || MINIBOSS.matcher(line).find();
     }
 
     private static void touch() {
         long now = System.currentTimeMillis();
-        if (sessionStart == 0) {
-            sessionStart = now;
-        } else if (lastActivity != 0) {
-            long gap = now - lastActivity;
-            if (gap > idleMs()) sessionStart += gap;    // do not count the break
-        }
+        if (sessionStart == 0) sessionStart = now;
         lastActivity = now;
+        lastMoved = now;
+    }
+
+    /**
+     * Standing still this long is a break, and comes off the clock.
+     *
+     * Not the "Hide when idle" slider, and not chat: slayer lines are minutes apart in
+     * a normal quest, so "no line for thirty seconds" would pause the clock in the
+     * middle of killing the mobs for the next boss. Whether you are MOVING is the
+     * honest signal - and the same thirty seconds the zealot tracker uses.
+     */
+    private static final long AFK_MS = 30_000;
+    private static long lastMoved;
+    private static Vec3 lastPos;
+
+    /** Every tick: note movement, and once a break passes thirty seconds take it off the clock. */
+    private static void watchAfk(Minecraft mc) {
+        if (mc.player == null || sessionStart == 0) return;
+        Vec3 pos = mc.player.position();
+        long now = System.currentTimeMillis();
+        if (lastPos == null || pos.distanceToSqr(lastPos) > 0.01) {
+            if (lastMoved != 0 && now - lastMoved > AFK_MS) sessionStart += now - lastMoved;
+            lastMoved = now;
+        }
+        lastPos = pos;
     }
 
     private static long idleMs() {
         return (long) (Math.max(1, hideAfterMin) * 60_000);
     }
 
+    /** Time on slayers, with the break you are in right now already stopped. */
     private static long elapsedMs() {
-        return sessionStart == 0 ? 0 : System.currentTimeMillis() - sessionStart;
+        if (sessionStart == 0) return 0;
+        long now = System.currentTimeMillis();
+        long still = lastMoved == 0 ? 0 : now - lastMoved;
+        return (still > AFK_MS ? lastMoved : now) - sessionStart;
     }
 
     /** Kills per hour, or -1 while the sample is too short to mean anything. */

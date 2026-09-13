@@ -61,9 +61,35 @@ public final class Keybinds {
         return Map.copyOf(bound);
     }
 
-    /** What to print on the chip: the key's own name, or a dash for unbound. */
+    /**
+     * Mouse buttons share the int with keyboard keys, below the range keys use: a
+     * button b is stored as {@code -100 - b}, so side button 1 (GLFW button 3) is -103.
+     * NONE is -1, which is outside that range, and every keyboard key is positive.
+     */
+    private static final int MOUSE_BASE = -100;
+
+    public static int mouse(int button) {
+        return MOUSE_BASE - button;
+    }
+
+    public static boolean isMouse(int key) {
+        return key <= MOUSE_BASE;
+    }
+
+    /** Whether the bound key or button is down right now. */
+    public static boolean isDown(com.mojang.blaze3d.platform.Window window, int key) {
+        if (key == NONE) return false;
+        if (isMouse(key)) {
+            return org.lwjgl.glfw.GLFW.glfwGetMouseButton(window.handle(), MOUSE_BASE - key)
+                    == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+        }
+        return InputConstants.isKeyDown(window, key);
+    }
+
+    /** What to print on the chip: the key's own name, M3/M4/M5 for a mouse button, a dash for unbound. */
     public static String label(int key) {
         if (key == NONE) return "-";
+        if (isMouse(key)) return "M" + (MOUSE_BASE - key + 1);
         String name = InputConstants.Type.KEYSYM.getOrCreate(key).getDisplayName().getString();
         return name.length() > 7 ? name.substring(0, 7) : name;
     }

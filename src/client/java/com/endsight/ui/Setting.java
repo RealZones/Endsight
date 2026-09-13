@@ -113,6 +113,50 @@ public sealed interface Setting {
         }
     }
 
+    /**
+     * A command with a key: a text field you type the command into, the key chip
+     * beside it, and a remove button. The only setting that is a text field, and the
+     * only one with its own key - both because a command bind is nothing without them.
+     * {@code id} is what the key is bound under and what the config saves it as.
+     */
+    final class Command implements Setting {
+        private final String id;
+        private String command;
+        private final Runnable remove;
+
+        public Command(String id, String command, Runnable remove) {
+            this.id = id;
+            this.command = command;
+            this.remove = remove;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String command() {
+            return command;
+        }
+
+        public void command(String value) {
+            command = value;
+        }
+
+        public Runnable remove() {
+            return remove;
+        }
+
+        @Override
+        public String label() {
+            return id;
+        }
+
+        @Override
+        public String description() {
+            return "";
+        }
+    }
+
     // ── convenience builders for settings backed by nothing, for layout work ──
 
     static Setting.Toggle demoToggle(String label, String description, boolean initial) {

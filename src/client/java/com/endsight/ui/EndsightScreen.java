@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * Knows about Module and ModuleRegistry and nothing else. No feature manager, no
  * config, no mod id - hand it a registry and it draws whatever is in there, which
- * is what lets the same screen serve a bazaar macro and a dragon sim.
+ * is what lets the same screen serve any mod that hands it modules.
  *
  * Hit testing is done against rectangles computed by layout() rather than by
  * vanilla Buttons. Buttons would have to be repositioned every time the list
@@ -1124,6 +1124,13 @@ public class EndsightScreen extends Screen {
             MouseButtonEvent event,
             boolean doubleClick
     ) {
+        // A chip waiting for a key takes a mouse button too - anything but left and
+        // right, which are clicking and clearing. Side buttons are the usual ask.
+        if (binding != null && event.button() >= 2) {
+            Keybinds.set(binding, Keybinds.mouse(event.button()));
+            binding = null;
+            return true;
+        }
         int mx = (int) event.x();
         int my = (int) event.y();
 

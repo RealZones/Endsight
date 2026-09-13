@@ -33,7 +33,7 @@ public final class Alerts {
 
     public static Module module() {
         return new Module("alerts", "Alerts",
-                "On-screen calls for the things worth looking up for.", "Alerts",
+                "Mid-screen alerts for minibosses, slayer bosses and the Protector.", "Alerts",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) Alert.clear();          // an alert already showing goes too

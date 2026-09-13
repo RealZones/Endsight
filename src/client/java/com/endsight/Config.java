@@ -61,6 +61,8 @@ public final class Config {
             }
         }
 
+        com.endsight.qol.CommandBinds.load(p);
+
         for (String name : p.stringPropertyNames()) {
             if (!name.startsWith("bind.")) continue;
             try {
@@ -125,6 +127,7 @@ public final class Config {
         }
 
         Keybinds.all().forEach((id, key) -> p.setProperty("bind." + id, String.valueOf(key)));
+        com.endsight.qol.CommandBinds.save(p);
 
         for (Module m : registry.all()) {
             String base = "module." + m.id();

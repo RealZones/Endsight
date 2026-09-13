@@ -1,112 +1,191 @@
 package com.endsight.slayers;
 
-import com.endsight.hud.Project;
+import com.endsight.hud.HudLayout;
+import com.endsight.hud.HudPlacementScreen;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
+import net.minecraft.gizmos.GizmoStyle;
+import net.minecraft.gizmos.Gizmos;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Marks Nukubi with a box and a tracer, drawn on the HUD rather than in the world.
+ * The Voidgloom fight: the boss's numbers on screen, a mark on the boss, a mark on the
+ * Yang Glyph.
  *
- * Screen-space on purpose, and not for lack of trying the obvious route first. Two
- * things ruled the alternatives out:
+ * The marks are gizmos - the game's own 3D debug shapes, added fresh every frame from
+ * Fabric's BEFORE_GIZMOS - so they sit in the world with depth and thickness. The first
+ * version projected corners to the screen and drew with fill, and a flat box over a
+ * moving boss read as a HUD glitch rather than an outline.
  *
- * - Fabric API 0.147 for 26.1.2 ships no WorldRenderEvents. The render rewrite has not
- *   been ported, so there is no supported hook for putting geometry in the world; the
- *   only way in is a mixin into a renderer that was rewritten this version, which is
- *   the most fragile thing available.
- * - Vanilla's glow (setGlowingTag) outlines the WHOLE entity. Nukubi is a head on an
- *   armour stand, so glowing it draws the stand too - which is exactly the part that
- *   should be left out. It cannot be told to outline only the head.
- *
- * Projecting the head position to 2D and drawing with fill sidesteps both, keeps this
- * inside the one primitive the rest of the mod already trusts across versions, and
- * makes "just the head" a choice of which point to project rather than a bounding box
- * we are stuck with.
+ * Two things this deliberately does not do. It does not mark the Nukekubi heads: the
+ * server outlines those itself, and no head ever appeared in an entity dump to test a
+ * name against, so a highlight would have been a guess drawn over something already
+ * highlighted. And it does not draw the radiation beams: they are "witch" particles,
+ * indistinguishable in the packet from the boss's ordinary sparkle, so a beam renderer
+ * drew itself at random round the boss and was dropped.
  */
 public final class VoidgloomHelper {
 
     private VoidgloomHelper() {
     }
 
-    /**
-     * What counts as Nukubi.
-     *
-     * A guess, and flagged as one: nothing has been dumped from the live server yet, so
-     * this matches on the display name containing the word. If that is wrong, the
-     * "Dump nearby entities" button on this module's page writes every nearby entity to
-     * a file and the fix is this one string - or a different test entirely.
-     */
-    private static final String MATCH = "Nukubi";
-
     private static boolean enabled = false;
-    private static boolean onlyMine = true;
-    private static double range = 64;
-    private static boolean tracer = true;
-    private static boolean fillBox = true;
+    private static boolean onScreen = true;
+    private static boolean highlight = true;
 
     /** Yang Glyph: the beacon the boss drops at your feet from tier 2, with five seconds to reach it. */
     private static boolean glyph = true;
     private static final int GLYPH_RANGE = 12;
     private static final List<BlockPos> beacons = new ArrayList<>();
 
+    /**
+     * The boss, read off its own name tag: "Voidgloom Seraph IV 817.8M/2.5B<3 57 Hits".
+     * The hits are only there while the hitshield is up, which is exactly when they are
+     * the number you need and the hardest to read in the crowd - so they go on screen
+     * big, and the health takes their place the rest of the fight.
+     */
+    private static final Pattern BOSS = Pattern.compile(
+            "Voidgloom Seraph (\\S+)\\s+([\\d.,]+[kKmMbB]?)/([\\d.,]+[kKmMbB]?)❤(?:\\s+(\\d+) Hits?)?");
+    private static Entity bossEntity;
+    private static String bossHp = "", bossMax = "", bossTier = "";
+    private static int bossHits = -1;
+    private static double bossDist = -1;
+    private static long bossSeen;
+
     public static Module module() {
         return new Module("slayer.boss", "Voidgloom Helper",
-                "Marks the Nukekubi heads and the Yang Glyph beacon.", "Slayers",
+                "Your boss's hits and health on screen, boss and Yang Glyph highlights.", "Slayers",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Section("Yang Glyph"),
-                        new Setting.Toggle("Beacon",
-                                "Box and tracer to the beacon, so you reach it inside the five seconds.",
+                        new Setting.Toggle("On screen",
+                                "Hits left on the shield, big; the boss's health when the shield is down.",
+                                () -> onScreen, v -> onScreen = v),
+                        new Setting.Toggle("Highlight boss",
+                                "A box round the boss and a line to it, so it is never lost in the crowd.",
+                                () -> highlight, v -> highlight = v),
+                        new Setting.Toggle("Highlight glyph",
+                                "Box and tracer to the Yang Glyph beacon, so you reach it inside the five seconds.",
                                 () -> glyph, v -> glyph = v),
-                        new Setting.Section("Nukekubi"),
-                        new Setting.Slider("Range",
-                                "How far out to highlight heads.",
-                                8, 256, 8, () -> range, v -> range = v, "m"),
-                        new Setting.Toggle("Only mine",
-                                "Ignore heads tagged as another player's.",
-                                () -> onlyMine, v -> onlyMine = v),
-                        new Setting.Toggle("Tracer",
-                                "Line from the bottom of the screen to each.",
-                                () -> tracer, v -> tracer = v),
-                        new Setting.Toggle("Fill box",
-                                "Tint the inside of the box, not just its edges.",
-                                () -> fillBox, v -> fillBox = v),
-                        new Setting.Action("Dump nearby entities",
-                                "Writes nearby entities and unusual blocks to a file.",
-                                "Dump", VoidgloomHelper::dumpNearby)));
+                        new Setting.Action("Move readout",
+                                "Drag it, and every other readout, where you want.",
+                                "Move", HudPlacementScreen::open)));
     }
 
     public static void init() {
-        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "nukubi"),
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "voidgloom"),
                 (g, delta) -> draw(g));
-        ClientTickEvents.END_CLIENT_TICK.register(VoidgloomHelper::scanBeacons);
+        // A gizmo lives one frame, so the marks are added again every frame, just
+        // before the game draws them.
+        LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> gizmos());
+        ClientTickEvents.END_CLIENT_TICK.register(VoidgloomHelper::tick);
+        HudLayout.register("slayer.voidgloom", "Voidgloom Boss", 0.5f, 0.2f,
+                (g, font, x, y, sample) -> drawBoss(g, font, x, y, sample));
+    }
+
+    /**
+     * The big number: hits while the shield is up, health otherwise, tier and distance
+     * under it. Distance goes red past fifteen blocks, which is the radiation rule.
+     */
+    private static int[] drawBoss(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
+        boolean shield = sample || bossHits >= 0;
+        String big = sample ? "57 HITS" : shield ? bossHits + " HITS" : bossHp + " / " + bossMax;
+        String small = sample ? "Seraph IV  -  9m" : "Seraph " + bossTier + "  -  " + Math.round(bossDist) + "m";
+        float scale = 2.5f;
+        int w = (int) Math.max(font.width(big) * scale, font.width(small)) + 8;
+        int h = (int) (9 * scale) + 14;
+        if (g != null) {
+            int colour = shield ? 0xFF55FFFF : 0xFFFF5555;
+            var pose = g.pose();
+            pose.pushMatrix();
+            pose.translate(x + w / 2f, y);
+            pose.scale(scale, scale);
+            Draw.textCentered(g, font, big, 0, 0, colour);
+            pose.popMatrix();
+            boolean far = !sample && bossDist > 15;
+            Draw.textCentered(g, font, small, x + w / 2, y + (int) (9 * scale) + 4,
+                    far ? 0xFFFF5555 : Theme.muted());
+        }
+        return new int[]{w, h};
+    }
+
+    private static void tick(Minecraft mc) {
+        readBoss(mc);
+        scanBeacons(mc);
+    }
+
+    /**
+     * Your boss, and only yours.
+     *
+     * The name tag carries no owner - the dump shows "☠ Voidgloom Seraph IV 2.5B/2.5B❤
+     * Radiation", nothing like the "(Fear's soul)" the devotees get - so ownership
+     * cannot be read off the entity. What can be read is timing and place: your boss
+     * spawns at your feet in the second after YOUR "SLAYER BOSS SPAWNING" line, which
+     * nobody else's chat prints. So while your quest has a boss up, the nearest Seraph
+     * within twenty blocks is taken as yours and then HELD by entity for the rest of
+     * the fight, rather than re-picked every tick - re-picking is how the first version
+     * wandered onto whoever's boss walked closest. If the server re-sends the entity
+     * mid-fight it is picked up again from where the old one last stood.
+     */
+    private static final double CLAIM_RANGE = 20;
+    private static Vec3 bossPos;
+
+    private static void readBoss(Minecraft mc) {
+        if (!enabled || mc.player == null || mc.level == null || !Slayer.bossUp()) {
+            bossEntity = null;
+            bossPos = null;
+            bossSeen = 0;
+            return;
+        }
+        Entity e = bossEntity;
+        if (e == null || e.isRemoved()) e = claim(mc, bossPos == null ? mc.player.position() : bossPos);
+        if (e == null) return;
+        String plain = plainName(e);
+        if (plain == null) return;
+        Matcher m = BOSS.matcher(plain);
+        if (!m.find()) return;
+        bossTier = m.group(1);
+        bossHp = m.group(2);
+        bossMax = m.group(3);
+        bossHits = m.group(4) == null ? -1 : Integer.parseInt(m.group(4));
+        bossDist = e.position().distanceTo(mc.player.position());
+        bossEntity = e;
+        bossPos = e.position();
+        bossSeen = System.currentTimeMillis();
+    }
+
+    /** The nearest Seraph to a point, within claiming range, or null. */
+    private static Entity claim(Minecraft mc, Vec3 near) {
+        Entity best = null;
+        double bestD = CLAIM_RANGE * CLAIM_RANGE;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            String plain = plainName(e);
+            if (plain == null || !plain.contains("Voidgloom Seraph")) continue;
+            double d = e.position().distanceToSqr(near);
+            if (d < bestD) {
+                bestD = d;
+                best = e;
+            }
+        }
+        return best;
     }
 
     /**
@@ -126,122 +205,6 @@ public final class VoidgloomHelper {
         }
     }
 
-    // ── drawing ───────────────────────────────────────────────────────────────
-
-    private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled) return;
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer player = mc.player;
-        if (player == null || mc.level == null || mc.options.hideGui) return;
-
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
-
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == player || !matches(e)) continue;
-            if (onlyMine && !mine(e)) continue;
-            if (e.position().distanceTo(player.position()) > range) continue;
-
-            // The head, not the entity. An armour stand's box is mostly empty pole, so
-            // its centre sits in the pole and its top is the top of the head - a short
-            // box hung off the top is the head and nothing else.
-            AABB bb = e.getBoundingBox();
-            double headY = bb.maxY - 0.12;
-            Vec3 head = new Vec3((bb.minX + bb.maxX) / 2, headY, (bb.minZ + bb.maxZ) / 2);
-
-            double[] p = Project.toScreen(head, sw, sh);
-            if (p == null) continue;
-
-            // Box scaled by distance, so it frames the head instead of being a fixed
-            // square that swallows it up close and vanishes far away.
-            double[] top = Project.toScreen(head.add(0, 0.34, 0), sw, sh);
-            int half = top == null ? 8 : (int) Math.max(4, Math.abs(p[1] - top[1]));
-
-            int cx = (int) p[0], cy = (int) p[1];
-            drawBox(g, cx - half, cy - half, half * 2, half * 2);
-            if (tracer) drawTracer(g, sw / 2, sh, cx, cy + half);
-        }
-
-        // The glyph: the block's own outline, and always a tracer, because the whole
-        // point is getting to it in time. The eight corners are projected and the twelve
-        // edges drawn between them, so it sits on the block and turns with it rather
-        // than being a square hung in the air where the block roughly is.
-        for (BlockPos b : beacons) {
-            double[][] c = new double[8][];
-            boolean whole = true;
-            for (int i = 0; i < 8; i++) {
-                Vec3 corner = new Vec3(b.getX() + (i & 1), b.getY() + ((i >> 1) & 1), b.getZ() + ((i >> 2) & 1));
-                c[i] = Project.toScreen(corner, sw, sh);
-                if (c[i] == null) whole = false;
-            }
-            if (!whole) continue;                    // a corner behind the camera: skip this frame
-            for (int i = 0; i < 8; i++) {
-                for (int bit = 1; bit < 8; bit <<= 1) {
-                    int j = i | bit;
-                    if (j != i && j > i) line(g, c[i], c[j]);
-                }
-            }
-            double[] centre = Project.toScreen(new Vec3(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5), sw, sh);
-            if (centre != null) drawTracer(g, sw / 2, sh, (int) centre[0], (int) centre[1]);
-        }
-    }
-
-    private static void line(GuiGraphicsExtractor g, double[] a, double[] b) {
-        drawTracer(g, (int) a[0], (int) a[1], (int) b[0], (int) b[1]);
-    }
-
-    private static void drawBox(GuiGraphicsExtractor g, int x, int y, int w, int h) {
-        if (fillBox) Draw.rect(g, x, y, w, h, Draw.alpha(Theme.accent(), 0.16f));
-        int c = Theme.accent();
-        Draw.rect(g, x, y, w, 1, c);
-        Draw.rect(g, x, y + h - 1, w, 1, c);
-        Draw.rect(g, x, y, 1, h, c);
-        Draw.rect(g, x + w - 1, y, 1, h, c);
-    }
-
-    /**
-     * A line, stepped one pixel at a time along its longer axis.
-     *
-     * There is no line primitive here, same as there is no rounded rect - and the same
-     * answer applies. A few hundred one-pixel fills is nothing, and it survives the
-     * render API changing under it, which a vertex buffer would not.
-     */
-    private static void drawTracer(GuiGraphicsExtractor g, int x0, int y0, int x1, int y1) {
-        int dx = x1 - x0, dy = y1 - y0;
-        int steps = Math.max(Math.abs(dx), Math.abs(dy));
-        if (steps <= 0 || steps > 4000) return;
-        int c = Draw.alpha(Theme.accent(), 0.75f);
-        for (int i = 0; i <= steps; i++) {
-            int x = x0 + dx * i / steps;
-            int y = y0 + dy * i / steps;
-            g.fill(x, y, x + 1, y + 1, c);
-        }
-    }
-
-    /**
-     * Whether this one belongs to you.
-     *
-     * The live dump settled this: the server writes the owner into the name itself, as
-     * "[Lv100] Voidling Devotee (SomePlayer's soul) 18M/40M". So ownership is an exact
-     * string test, not the distance guess it was going to have to be.
-     *
-     * Not everything carries the tag though - the boss itself comes through as
-     * "☠ Voidgloom Seraph IV 2.5B/2.5B❤ Radiation" with no owner at all. An untagged
-     * entity is treated as YOURS rather than hidden: "cannot tell" must not silently
-     * hide the thing the module was turned on to see, which is the one failure here
-     * that would go unnoticed.
-     */
-    private static boolean mine(Entity e) {
-        String plain = plainName(e);
-        if (plain == null) return false;
-        if (!plain.contains("'s soul")) return true;      // untagged - cannot tell, so keep
-
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return true;
-        String me = mc.player.getName().getString();
-        return plain.toLowerCase().contains(("(" + me + "'s soul)").toLowerCase());
-    }
-
     /** Display name with the server's literal section codes taken out, or null. */
     private static String plainName(Entity e) {
         Component name = e.getCustomName();
@@ -250,122 +213,48 @@ public final class VoidgloomHelper {
         return name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
     }
 
-    /**
-     * The unusual blocks around you, appended to the same dump.
-     *
-     * Two passes on purpose. Naming every block in a 41x13x41 box is tens of thousands
-     * of lines of end stone, which is not data - it is a haystack. So the first pass
-     * counts block types and the second only prints the RARE ones, on the reasoning
-     * that a dragon altar is by definition not what the ground is made of.
-     *
-     * States print whole ("Block{minecraft:end_portal_frame}[eye=true,facing=north]")
-     * rather than just the block name, because for this job the property IS the answer:
-     * whether a podium holds an eye is a value on the state, not a separate lookup.
-     */
-    private static void dumpBlocks(Minecraft mc, List<String> out) {
-        if (mc.player == null || mc.level == null) return;
-        BlockPos origin = mc.player.blockPosition();
-        int r = 20, vr = 6;
+    // ── in the world ──────────────────────────────────────────────────────────
 
-        Map<String, Integer> counts = new HashMap<>();
-        for (BlockPos pos : BlockPos.betweenClosed(
-                origin.offset(-r, -vr, -r), origin.offset(r, vr, r))) {
-            BlockState st = mc.level.getBlockState(pos);
-            if (st.isAir()) continue;
-            counts.merge(st.getBlock().toString(), 1, Integer::sum);
-        }
-
-        out.add("");
-        out.add("# --- blocks within " + r + " (rare types only) ---");
-        out.add("# type tally:");
-        counts.entrySet().stream()
-                .sorted((a, b) -> b.getValue() - a.getValue())
-                .limit(25)
-                .forEach(e -> out.add("#   " + e.getValue() + "  " + e.getKey()));
-        out.add("");
-
-        int printed = 0;
-        for (BlockPos pos : BlockPos.betweenClosed(
-                origin.offset(-r, -vr, -r), origin.offset(r, vr, r))) {
-            BlockState st = mc.level.getBlockState(pos);
-            if (st.isAir()) continue;
-            String block = st.getBlock().toString();
-            boolean interesting = counts.getOrDefault(block, 0) <= 40
-                    || block.contains("portal") || block.contains("frame")
-                    || block.contains("skull") || block.contains("head");
-            if (!interesting || printed++ > 160) continue;
-            out.add(String.format("%-22s %s", pos.toShortString(), st));
-        }
+    /** Where a tracer starts: a little ahead of and below the eye, so it reads as rising from the bottom of the screen. */
+    private static Vec3 tracerFrom(Minecraft mc) {
+        var cam = mc.gameRenderer.getMainCamera();
+        var f = cam.forwardVector();
+        return cam.position().add(f.x() * 0.8, f.y() * 0.8 - 0.45, f.z() * 0.8);
     }
 
-    private static boolean matches(Entity e) {
-        String plain = plainName(e);
-        return plain != null && plain.toLowerCase().contains(MATCH.toLowerCase());
+    private static void mark(Minecraft mc, AABB box, float width) {
+        int c = Theme.accent() | 0xFF000000;
+        Gizmos.cuboid(box, GizmoStyle.strokeAndFill(c, width, (c & 0x00FFFFFF) | 0x28000000)).setAlwaysOnTop();
+        Vec3 foot = new Vec3((box.minX + box.maxX) / 2, box.minY, (box.minZ + box.maxZ) / 2);
+        Gizmos.line(tracerFrom(mc), foot, c, 1.5f).setAlwaysOnTop();
     }
 
-    // ── the dump ──────────────────────────────────────────────────────────────
-
-    /**
-     * Every entity around you, written to a file.
-     *
-     * Exists because nobody knows yet what actually identifies Nukubi - the name above
-     * it might be the entity's, or a separate armour stand floating over it, and the
-     * head might be equipment or a block. Guessing costs a build and a round trip each
-     * time; one dump answers it. Written next to the game rather than logged because a
-     * log line per entity is unreadable at fifty entities.
-     */
-    private static void dumpNearby() {
+    private static void gizmos() {
+        if (!enabled) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return;
+        if (mc.player == null || mc.level == null || mc.options.hideGui) return;
 
-        List<String> out = new ArrayList<>();
-        out.add("# Endsight entity dump");
-        out.add("# you at " + mc.player.position());
-        out.add("");
-
-        for (Entity e : mc.level.entitiesForRendering()) {
-            double dist = e.position().distanceTo(mc.player.position());
-            if (dist > 48) continue;
-
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format("%-28s d=%5.1f  ", e.getType().toString(), dist));
-            sb.append("custom=").append(e.getCustomName() == null
-                    ? "-" : "\"" + e.getCustomName().getString() + "\"");
-            sb.append("  display=\"").append(e.getDisplayName() == null
-                    ? "-" : e.getDisplayName().getString()).append("\"");
-            sb.append("  nameVisible=").append(e.isCustomNameVisible());
-            sb.append("  bb=").append(String.format("%.2f", e.getBoundingBox().getYsize()));
-
-            // A text_display carries no custom name at all - its text is a separate
-            // synched field - so without this it dumps as the useless "Text Display"
-            // and every floating hologram on the server looks identical in the file.
-            if (e instanceof Display.TextDisplay td) {
-                sb.append("  text=\"")
-                        .append(td.getEntityData().get(Display.TextDisplay.DATA_TEXT_ID).getString())
-                        .append("\"");
-            }
-
-            if (e instanceof LivingEntity le) {
-                ItemStack head = le.getItemBySlot(EquipmentSlot.HEAD);
-                if (!head.isEmpty()) {
-                    sb.append("  head=").append(head.getItem())
-                            .append(" \"").append(head.getHoverName().getString()).append("\"");
-                }
-            }
-            out.add(sb.toString());
+        if (highlight && bossEntity != null && !bossEntity.isRemoved()
+                && System.currentTimeMillis() - bossSeen < 2000) {
+            mark(mc, bossEntity.getBoundingBox(), 2f);
         }
 
-        dumpBlocks(mc, out);
+        for (BlockPos b : beacons) mark(mc, new AABB(b), 2.5f);
+    }
 
-        Path file = mc.gameDirectory.toPath().resolve("endsight-entity-dump.txt");
-        try {
-            Files.write(file, out);
-            mc.player.sendSystemMessage(
-                    Component.literal("[Endsight] wrote " + (out.size() - 3)
-                            + " entities to " + file.getFileName()));
-        } catch (IOException ex) {
-            mc.player.sendSystemMessage(
-                    Component.literal("[Endsight] dump failed: " + ex.getMessage()));
-        }
+    // ── on the screen ─────────────────────────────────────────────────────────
+
+    private static void draw(GuiGraphicsExtractor g) {
+        if (!enabled || !onScreen) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.options.hideGui) return;
+        // Only while a boss has been seen in the last couple of seconds.
+        if (bossSeen == 0 || System.currentTimeMillis() - bossSeen >= 2000) return;
+
+        int sw = mc.getWindow().getGuiScaledWidth();
+        int sh = mc.getWindow().getGuiScaledHeight();
+        int[] size = drawBoss(null, mc.font, 0, 0, false);
+        drawBoss(g, mc.font, HudLayout.x("slayer.voidgloom", size[0], sw),
+                HudLayout.y("slayer.voidgloom", size[1], sh), false);
     }
 }

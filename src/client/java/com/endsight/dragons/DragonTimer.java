@@ -117,7 +117,7 @@ public final class DragonTimer {
 
     public static Module module() {
         return new Module("dragon.timer", "Dragon Timer",
-                "Eye count and dragon state, read from chat.", "Dragons",
+                "Eye count and dragon state, read from chat.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Show on HUD",
@@ -132,6 +132,8 @@ public final class DragonTimer {
     }
 
     public static void init() {
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> resetAll());
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!enabled || overlay) return;
             onLine(plain(message));
@@ -208,6 +210,21 @@ public final class DragonTimer {
         placers.clear();
         golden.clear();
         countedEyes.clear();
+    }
+
+    /**
+     * Everything, on a fresh join.
+     *
+     * The server hands you between backends - End, Crypts, hub - and each is a join to
+     * the client. A dragon that was up when you left the End never sends its death to
+     * you in the Crypts, so without this the readout sat there counting "Young Dragon
+     * 12m37s" over a slayer fight.
+     */
+    private static void resetAll() {
+        resetCycle();
+        dragon = null;
+        dragonSince = 0;
+        eggAt = 0;
     }
 
     /**

@@ -32,6 +32,8 @@ public class SettingsScreen extends Screen {
     private Setting.Slider dragging;
     /** The id waiting for a key, or null. One at a time - two would race for the press. */
     private String binding;
+    /** The command row being typed into, or null. */
+    private Setting.Command editing;
 
     private final Map<String, Anim> anims = new HashMap<>();
     private final List<Row> rows = new ArrayList<>();
@@ -50,11 +52,38 @@ public class SettingsScreen extends Screen {
     private static final int TRACK_H = 4;
     private static final int KNOB = 10;
 
+    /**
+     * Where each module's page was scrolled to, and which page was open when the GUI
+     * was closed - so opening it again lands where you left it, not on a fresh browser.
+     * Cleared by Back and Escape, which are you leaving the page on purpose.
+     */
+    private static final Map<String, Integer> scrolls = new HashMap<>();
+    private static String openModule;
+
     public SettingsScreen(Screen parent, String brand, Module module) {
         super(Component.literal(module.title()));
         this.parent = parent;
         this.brand = brand;
         this.module = module;
+        this.scroll = scrolls.getOrDefault(module.id(), 0);
+        openModule = module.id();
+    }
+
+    /** The id of the settings page that was open when the GUI last closed, or null. */
+    public static String openModule() {
+        return openModule;
+    }
+
+    @Override
+    public void removed() {
+        scrolls.put(module.id(), scroll);
+        super.removed();
+    }
+
+    /** Back to the browser, on purpose: the next open starts there. */
+    private void back() {
+        openModule = null;
+        minecraft.setScreen(parent);
     }
 
     private final ThemeRow themeRow = new ThemeRow();
@@ -188,6 +217,11 @@ public class SettingsScreen extends Screen {
             Draw.roundedRect(g, r.x - 8, r.y, r.w + 16, r.h, Theme.RADIUS,
                     Draw.lerp(Theme.bg(), Theme.surface(), h));
 
+            if (r.setting instanceof Setting.Command c) {
+                drawCommand(g, font, r, c, mouseX, mouseY);
+                continue;
+            }
+
             Draw.text(g, font, r.setting.label(), r.x, r.y + 8, Theme.text());
             if (!r.setting.description().isBlank()) {
                 Draw.text(g, font, Draw.fit(font, r.setting.description(), r.w - 70),
@@ -307,6 +341,36 @@ public class SettingsScreen extends Screen {
         Keybinds.chip(g, font, id, x, y, a, listening);
     }
 
+    // A command row: [ /command field ..................... ] [ key ] [ x ]
+    private static final int REMOVE_W = 18;
+
+    private static int cmdFieldW(Row r) {
+        return r.w - CHIP_W - REMOVE_W - 16;
+    }
+
+    private void drawCommand(GuiGraphicsExtractor g, Font font, Row r, Setting.Command c, int mouseX, int mouseY) {
+        int fy = r.y + r.h / 2 - 10, fw = cmdFieldW(r);
+        boolean focus = editing == c;
+        boolean over = contains(r.x, fy, fw, 20, mouseX, mouseY);
+        float a = anim("cmd:" + c.id()).to(focus || over ? 1f : 0f, Theme.EASE_FAST);
+        Draw.roundedRect(g, r.x, fy, fw, 20, Theme.RADIUS - 2, Draw.lerp(Theme.raised(), Theme.hover(), a));
+        if (focus) Draw.roundedOutline(g, r.x, fy, fw, 20, Theme.RADIUS - 2, Theme.accent(), Theme.raised());
+        String text = c.command();
+        boolean empty = text.isEmpty();
+        String shown = empty && !focus ? "type a command, /warp end" : text;
+        // Long commands scroll so the end - what you are typing - stays in view.
+        while (font.width(shown) > fw - 14 && shown.length() > 1) shown = shown.substring(1);
+        if (focus && (System.currentTimeMillis() / 500) % 2 == 0) shown += "_";
+        Draw.text(g, font, shown, r.x + 7, fy + 6, empty && !focus ? Theme.dim() : Theme.text());
+
+        drawChip(g, font, c.id(), r.x + fw + 8, r.y + r.h / 2 - CHIP_H / 2, mouseX, mouseY);
+
+        int xx = r.x + r.w - REMOVE_W;
+        boolean overX = contains(xx, fy, REMOVE_W, 20, mouseX, mouseY);
+        float ax = anim("cmdx:" + c.id()).to(overX ? 1f : 0f, Theme.EASE_FAST);
+        Draw.textCentered(g, font, "x", xx + REMOVE_W / 2, fy + 6, Draw.lerp(Theme.dim(), Theme.neg(), ax));
+    }
+
     private void drawToggle(GuiGraphicsExtractor g, int x, int y, float t) {
         int w = 20, h = 10;
         Draw.roundedRect(g, x, y, w, h, h / 2, Draw.lerp(Theme.line(), Theme.pos(), t));
@@ -319,14 +383,22 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        // A chip waiting for a key takes a mouse button too - anything but left and
+        // right, which are clicking and clearing. Side buttons are the usual ask.
+        if (binding != null && event.button() >= 2) {
+            Keybinds.set(binding, Keybinds.mouse(event.button()));
+            binding = null;
+            return true;
+        }
         int mx = (int) event.x(), my = (int) event.y();
         layout();
+        editing = null;                           // a click anywhere ends typing; the row re-focuses itself if hit
 
         if (themeRow.click(mx, my)) return true;
 
         int bx = panelX() + 10, by = panelY() + Theme.HEADER_H + 22;
         if (contains(bx, by, Theme.SIDEBAR_W - 20, 22, mx, my)) {
-            minecraft.setScreen(parent);
+            back();
             return true;
         }
 
@@ -346,6 +418,20 @@ public class SettingsScreen extends Screen {
             if (r.y + r.h < contentTop() || r.y > contentBottom()) continue;
             if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
             if (r.setting instanceof Setting.Note) return true;   // nothing to do, but it is ours
+            if (r.setting instanceof Setting.Command c) {
+                int fy = r.y + r.h / 2 - 10, fw = cmdFieldW(r);
+                if (contains(r.x, fy, fw, 20, mx, my)) {
+                    editing = c;
+                    binding = null;
+                } else if (contains(r.x + fw + 8, r.y + r.h / 2 - CHIP_H / 2, CHIP_W, CHIP_H, mx, my)) {
+                    editing = null;
+                    return listen(c.id(), event);
+                } else if (contains(r.x + r.w - REMOVE_W, fy, REMOVE_W, 20, mx, my)) {
+                    if (editing == c) editing = null;
+                    c.remove().run();
+                }
+                return true;
+            }
 
             if (r.setting instanceof Setting.Toggle t) {
                 t.set().accept(!t.get().getAsBoolean());
@@ -420,7 +506,24 @@ public class SettingsScreen extends Screen {
     }
 
     @Override
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        if (editing != null) {
+            if (event.isAllowedChatCharacter()) editing.command(editing.command() + event.codepointAsString());
+            return true;
+        }
+        return super.charTyped(event);
+    }
+
+    @Override
     public boolean keyPressed(KeyEvent event) {
+        if (editing != null) {
+            if (event.key() == 259 && !editing.command().isEmpty()) {          // backspace
+                editing.command(editing.command().substring(0, editing.command().length() - 1));
+            } else if (event.key() == 257 || event.key() == 256 || event.key() == 335) {   // enter, escape, numpad enter
+                editing = null;
+            }
+            return true;
+        }
         if (binding != null) {
             // Escape cancels rather than binding, so there is a way out of a chip you
             // armed by accident; anything else, including a modifier on its own, binds.
@@ -429,7 +532,7 @@ public class SettingsScreen extends Screen {
             return true;
         }
         if (event.key() == 256) {                 // escape goes back, not out
-            minecraft.setScreen(parent);
+            back();
             return true;
         }
         return super.keyPressed(event);

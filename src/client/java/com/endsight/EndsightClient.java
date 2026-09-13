@@ -5,6 +5,7 @@ import com.endsight.dragons.Protector;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Toast;
 import com.endsight.hud.Alerts;
+import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugOnJoin;
 import com.endsight.qol.DropClipboard;
@@ -26,6 +27,7 @@ import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.Keybinds;
 import com.endsight.ui.Module;
+import com.endsight.ui.Setting;
 import com.endsight.ui.EndsightScreen;
 import com.endsight.ui.SettingsScreen;
 import com.endsight.ui.ModuleRegistry;
@@ -72,10 +74,11 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
             registry.replace(LootAlerts.module());
-            registry.add(DebugOnJoin.module());
-            registry.add(DropClipboard.module());
-            registry.add(DropTracker.module());
-            registry.add(MathSolver.module());
+            registry.replace(DebugOnJoin.module());
+            registry.replace(DropClipboard.module());
+            registry.replace(DropTracker.module());
+            registry.replace(MathSolver.module());
+            registry.replace(CommandBinds.module());
             extra("register", registry);
             Config.load(registry);
         }
@@ -155,7 +158,13 @@ public class EndsightClient implements ClientModInitializer {
         // menu later. The edge check is what stops one press opening it every tick.
         boolean down = InputConstants.isKeyDown(client.getWindow(), OPEN_KEY);
         if (down && !keyWasDown && client.screen == null && client.level != null) {
-            client.setScreen(new EndsightScreen("Endsight", registry()));
+            // Back to wherever it was closed from: the browser as it was scrolled, or the
+            // settings page that was open, with the browser behind it for Back.
+            EndsightScreen browser = new EndsightScreen("Endsight", registry());
+            String open = SettingsScreen.openModule();
+            Module page = open == null ? null
+                    : registry().all().stream().filter(m -> m.id().equals(open)).findFirst().orElse(null);
+            client.setScreen(page == null ? browser : new SettingsScreen(browser, "Endsight", page));
         }
         keyWasDown = down;
 
@@ -175,13 +184,16 @@ public class EndsightClient implements ClientModInitializer {
         if (Keybinds.all().isEmpty()) return;
         java.util.Set<Integer> down = new java.util.HashSet<>();
         for (int key : Keybinds.all().values()) {
-            if (InputConstants.isKeyDown(client.getWindow(), key)) down.add(key);
+            if (Keybinds.isDown(client.getWindow(), key)) down.add(key);
         }
         for (Module m : registry().all()) {
             if (pressed(down, Keybinds.get(Keybinds.moduleId(m))) && m.implemented()) {
                 m.toggle();
                 Toast.toggled(m.title(), m.isEnabled());
             }
+        }
+        for (Setting.Command c : CommandBinds.all()) {
+            if (pressed(down, Keybinds.get(c.id()))) CommandBinds.fire(c);
         }
         heldBinds.clear();
         heldBinds.addAll(down);

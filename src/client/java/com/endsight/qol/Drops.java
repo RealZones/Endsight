@@ -43,7 +43,8 @@ public final class Drops {
     public record Drop(String item, int tier) {
     }
 
-    private record Rule(String needle, int tier) {
+    /** {@code name} as written in the file, {@code needle} lowercased for matching. */
+    private record Rule(String name, String needle, int tier) {
     }
 
     /** Anchored: only tier words may come before DROP!, so a speaker in front fails it. */
@@ -122,6 +123,26 @@ public final class Drops {
         return fallback;
     }
 
+    /**
+     * The items in one tier, as a readable list, for the settings pages: a choice of
+     * "Epic and up" means nothing until you can see what epic holds.
+     */
+    public static String listing(int tier) {
+        if (rules == null) rules = load();
+        List<String> names = new ArrayList<>();
+        for (Rule r : rules) if (r.tier() == tier) names.add(r.name());
+        return names.isEmpty() ? "Nothing listed." : String.join(", ", names) + ".";
+    }
+
+    /** Four notes, one per tier, for any page that offers the tier choice. */
+    public static List<com.endsight.ui.Setting> tierNotes() {
+        return List.of(
+                new com.endsight.ui.Setting.Note("Legendary", () -> listing(3)),
+                new com.endsight.ui.Setting.Note("Epic", () -> listing(2)),
+                new com.endsight.ui.Setting.Note("Rare", () -> listing(1)),
+                new com.endsight.ui.Setting.Note("Common", () -> listing(0)));
+    }
+
     /** Re-read the file. For after an edit, without a restart. */
     public static void reload() {
         rules = null;
@@ -153,7 +174,7 @@ public final class Drops {
                     case "common" -> 0;
                     default -> -1;
                 };
-                if (tier >= 0) out.add(new Rule(parts[1].trim().toLowerCase(Locale.ROOT), tier));
+                if (tier >= 0) out.add(new Rule(parts[1].trim(), parts[1].trim().toLowerCase(Locale.ROOT), tier));
             }
         } catch (IOException e) {
             System.err.println("[Endsight] could not read drops.txt: " + e);

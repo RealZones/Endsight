@@ -41,6 +41,12 @@ public class SettingsScreen extends Screen {
 
     private static final int ROW_H = 46;
     private static final int SECTION_ROW_H = 30;
+    /** A note wraps to this many lines at most; a tier with forty items is still a glance. */
+    private static final int NOTE_LINES = 6;
+
+    private int noteH(Setting.Note n, int w) {
+        return 24 + Draw.wrap(font, n.description(), w - 16, NOTE_LINES).size() * 11;
+    }
     private static final int TRACK_H = 4;
     private static final int KNOB = 10;
 
@@ -69,7 +75,8 @@ public class SettingsScreen extends Screen {
         int y = contentTop() + Theme.PAD - scroll;
 
         for (Setting s : module.settings()) {
-            int h = s instanceof Setting.Section ? SECTION_ROW_H : ROW_H;
+            int h = s instanceof Setting.Section ? SECTION_ROW_H
+                    : s instanceof Setting.Note n ? noteH(n, w) : ROW_H;
             rows.add(new Row(s, x, y, w, h));
             y += h + 4;
         }
@@ -163,6 +170,16 @@ public class SettingsScreen extends Screen {
                 Draw.text(g, font, sec.label().toUpperCase(), r.x, r.y + 14, Theme.muted());
                 int lx = r.x + font.width(sec.label().toUpperCase()) + 10;
                 Draw.rect(g, lx, r.y + 17, r.x + r.w - lx, 1, Theme.hair());
+                continue;
+            }
+            if (r.setting instanceof Setting.Note n) {
+                // A heading and its paragraph. No hover, nothing to click.
+                Draw.text(g, font, n.label(), r.x, r.y + 8, Theme.text());
+                int ly = r.y + 20;
+                for (String line : Draw.wrap(font, n.description(), r.w - 16, NOTE_LINES)) {
+                    Draw.text(g, font, line, r.x, ly, Theme.dim());
+                    ly += 11;
+                }
                 continue;
             }
 
@@ -328,6 +345,7 @@ public class SettingsScreen extends Screen {
         for (Row r : rows) {
             if (r.y + r.h < contentTop() || r.y > contentBottom()) continue;
             if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
+            if (r.setting instanceof Setting.Note) return true;   // nothing to do, but it is ours
 
             if (r.setting instanceof Setting.Toggle t) {
                 t.set().accept(!t.get().getAsBoolean());

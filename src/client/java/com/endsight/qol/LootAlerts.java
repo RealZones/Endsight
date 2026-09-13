@@ -32,10 +32,17 @@ public final class LootAlerts {
         return new Module("dragon.loot", "Loot Alerts",
                 "On-screen call and a ping for drops worth stopping for.", "Alerts",
                 () -> enabled, v -> enabled = v,
-                List.of(
+                concat(List.of(
                         new Setting.Choice("Alert from",
                                 "Lowest tier worth a call. Set in config/endsight/drops.txt.",
-                                Drops.TIERS, () -> minTier, v -> minTier = v)));
+                                Drops.TIERS, () -> minTier, v -> minTier = v)),
+                        Drops.tierNotes()));
+    }
+
+    private static List<Setting> concat(List<Setting> a, List<Setting> b) {
+        List<Setting> out = new java.util.ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     public static void init() {

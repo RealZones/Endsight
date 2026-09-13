@@ -55,7 +55,7 @@ public final class DropTracker {
         return new Module("qol.droptracker", "Drop Tracker",
                 "Every drop, counted, on screen - this session or ever.", "Quality of Life",
                 () -> enabled, v -> enabled = v,
-                List.of(
+                concat(List.of(
                         new Setting.Choice("Mode",
                                 "This session's drops, or every drop since you started keeping count.",
                                 List.of(SESSION, TOTAL), () -> mode, v -> mode = v),
@@ -70,7 +70,14 @@ public final class DropTracker {
                                 "Reset", DropTracker::reset),
                         new Setting.Action("Reload tiers",
                                 "Re-read config/endsight/drops.txt after editing it.",
-                                "Reload", Drops::reload)));
+                                "Reload", Drops::reload)),
+                        Drops.tierNotes()));
+    }
+
+    private static List<Setting> concat(List<Setting> a, List<Setting> b) {
+        List<Setting> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     public static void init() {

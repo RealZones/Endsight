@@ -51,20 +51,57 @@ public final class Drops {
     /** Longest needle first, so "Golden Hot Potato Book" wins over "Hot Potato Book". */
     private static List<Rule> rules;
 
-    /** The drop in this line, or null if it is not one. {@code raw} keeps its colour codes. */
+    /** The same item inside this window is the same drop reported twice. */
+    private static final long REPEAT_MS = 1_500;
+    private static String lastItem = "";
+    private static long lastAt;
+
+    /**
+     * The drop in this line, or null if it is not one - or if it is the one just seen.
+     * {@code raw} keeps its colour codes.
+     *
+     * With /debug on, one drop is two lines a tick apart: "loot number: 57 → Golden
+     * Eye" and then "EPIC DROP! Golden Eye". Counting both put every drop on the tracker
+     * twice and rang the alert twice. The second sighting of an item within a second and
+     * a half is the same drop.
+     *
+     * The /debug line only counts for an item in your list. Its colour is not the
+     * rarity - the log shows a §a Hot Potato Book on the loot line and a §5 one on the
+     * announcement - so for anything unlisted the announcement, with its tier word, is
+     * the one to trust, and it always follows.
+     */
     public static Drop parse(String raw) {
         String line = Zealots.strip(raw).trim();
         Matcher a = ANNOUNCE.matcher(line);
         if (a.find()) {
             String item = a.group(2).trim();
-            return new Drop(item, tierOf(item, rank(a.group(1))));
+            return once(new Drop(item, tierOf(item, rank(a.group(1)))));
         }
         Matcher l = LOOT.matcher(raw);
         if (l.find()) {
             String item = Zealots.strip(l.group(2)).trim();
-            return new Drop(item, tierOf(item, rankColour(l.group(1))));
+            int tier = tierOf(item, -1);
+            return tier < 0 ? null : once(new Drop(item, tier));
         }
         return null;
+    }
+
+    private static Drop once(Drop d) {
+        long now = System.currentTimeMillis();
+        if (d.item().equalsIgnoreCase(lastItem) && now - lastAt < REPEAT_MS) return null;
+        lastItem = d.item();
+        lastAt = now;
+        return d;
+    }
+
+    /** Minecraft's own rarity colours, so the call reads like the item's name would. */
+    public static int colour(int tier) {
+        return switch (tier) {
+            case 3 -> 0xFFAA00;   // gold, legendary
+            case 2 -> 0xAA00AA;   // dark purple, epic
+            case 1 -> 0x5555FF;   // blue, rare
+            default -> 0xAAAAAA;  // grey, common
+        };
     }
 
     public static boolean passes(Drop d, String minTier) {

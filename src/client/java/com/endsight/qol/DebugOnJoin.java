@@ -31,7 +31,7 @@ public final class DebugOnJoin {
 
     public static Module module() {
         return new Module("qol.debug", "Debug on join",
-                "Runs /debug for you two seconds after every join.", "Quality of Life",
+                "Runs /debug for you two seconds after every join.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of());
     }

@@ -53,7 +53,7 @@ public final class DropTracker {
 
     public static Module module() {
         return new Module("qol.droptracker", "Drop Tracker",
-                "Every drop counted on screen, this session or all-time.", "Visual",
+                "Every drop counted on screen, this session or all-time.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Choice("Mode",

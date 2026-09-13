@@ -40,7 +40,7 @@ public final class LootFilter {
 
     public static Module module() {
         return new Module("qol.lootfilter", "Loot Number Filter",
-                "Hides loot numbers except the close calls at either end.", "Quality of Life",
+                "Hides loot numbers except the close calls at either end.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Slider("Show under",

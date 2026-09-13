@@ -109,7 +109,7 @@ public final class Slayer {
 
     public static Module killTimerModule() {
         return new Module("slayer.timer", "Slayer Tracker",
-                "Kills, time spent and rate for the session.", "Slayers",
+                "Kills, time spent and rate for the session.", "Trackers",
                 () -> timerOn, v -> timerOn = v,
                 List.of(
                         new Setting.Action("Move readout",

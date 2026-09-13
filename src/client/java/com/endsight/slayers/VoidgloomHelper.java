@@ -73,7 +73,7 @@ public final class VoidgloomHelper {
 
     public static Module module() {
         return new Module("slayer.boss", "Voidgloom Helper",
-                "Your boss's hits and health on screen, boss and Yang Glyph highlights.", "Slayers",
+                "Your boss's hits and health on screen, boss and Yang Glyph highlights.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("On screen",

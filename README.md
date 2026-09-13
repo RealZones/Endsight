@@ -27,20 +27,21 @@ browser; any module can be bound to a key.
 
 ## Features
 
-### Visual
+### Trackers
 
 **Dragon Timer** — eyes placed out of eight, then the countdown to the next dragon.
 Golden eyes are marked.
 
+**Protector Stage** — the Endstone Protector's tier, 2 to 5, and how long it has been up.
+
 **Zealot Tracker** — your zealot kills, Summoning Eyes and Golden Eyes this session,
 each with a per-hour rate. Only your own kills count. Pauses when you stop moving.
 
+**Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
+when you stop moving. Each boss's kill time is printed in chat.
+
 **Drop Tracker** — every drop you get, counted on screen. One button switches between
 this session and all-time.
-
-**Damage Numbers** — shortens damage popups to `8.49M`, or hides them.
-
-**Storage Preview** — hover a storage page to see what is in it.
 
 ### Alerts
 
@@ -50,22 +51,19 @@ Protector spawning. Size, opacity and duration are adjustable.
 **Loot Alerts** — mid-screen alert and a ping when a drop you care about lands. Which
 drops count is set by tier — see *Drops*.
 
-### Golem
-
-**Protector Stage** — the Endstone Protector's tier, 2 to 5, and how long it has been up.
-
-**Protector Beacon** — a beam over the Protector so it can be found at a glance.
-
-### Slayers
-
-**Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
-when you stop moving. Each boss's kill time is printed in chat.
+### Visual
 
 **Voidgloom Helper** — your Seraph's hits left on its shield, big on screen, and its
 health once the shield is down. A box and tracer on the boss and on the Yang Glyph
 beacon, drawn in the world. Your own boss only.
 
-### Quality of Life
+**Protector Beacon** — a beam over the Protector so it can be found at a glance.
+
+**Damage Numbers** — shortens damage popups to `8.49M`, or hides them.
+
+**Storage Preview** — hover a storage page to see what is in it.
+
+### Chat
 
 **Debug on join** — turns `/debug` on for you after every join, so kills show their
 loot number.
@@ -78,6 +76,8 @@ a 99.98 is as rare as a 0.02. Lines that dropped something always show.
 
 **Math Solver** — answers the Golden Dragon's math question under the question, or
 copies the answer.
+
+### Quality of Life
 
 **Protect Placed Eyes** — stops a spam-click from pulling out the eye you just placed.
 

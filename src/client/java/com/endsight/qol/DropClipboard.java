@@ -23,7 +23,7 @@ public final class DropClipboard {
 
     public static Module module() {
         return new Module("qol.drops", "Copy drops",
-                "Each drop goes to your clipboard as it lands.", "Quality of Life",
+                "Each drop goes to your clipboard as it lands.", "Chat",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Choice("Copy from",

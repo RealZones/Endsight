@@ -134,7 +134,7 @@ public final class ZealotTracker {
 
     public static Module module() {
         return new Module("zealot.tracker", "Zealot Tracker",
-                "Your zealot kills, eye drops and rates for the session.", "Visual",
+                "Your zealot kills, eye drops and rates for the session.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Action("Move readout",

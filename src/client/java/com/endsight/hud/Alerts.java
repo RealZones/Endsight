@@ -1,9 +1,17 @@
 package com.endsight.hud;
 
+import com.endsight.dragons.DragonTimer;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
+import com.endsight.zealots.Zealots;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.minecraft.client.Minecraft;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Every on-screen alert, in one place.
@@ -30,10 +38,24 @@ public final class Alerts {
     private static boolean miniboss = true;
     private static boolean slayerBoss = true;
     private static boolean protector = true;
+    private static boolean fireball = true;
+    private static boolean fullInventory = true;
+
+    /**
+     * The dragon announces its fireball in chat, in character - "[BOSS] Young Dragon:
+     * You are weak young padowan, you will never kill me. FIREBALL!!" - and the same
+     * line for every dragon type, so the word is enough. The speaker has a space in
+     * its name, which is what keeps the player-chat filter from eating it.
+     */
+    private static final Pattern FIREBALL = Pattern.compile("^\\[BOSS\\] .*Dragon: .*FIREBALL");
+    private static final int ORANGE = 0xFFFFAA00;
+    private static final int YELLOW = 0xFFFFEE55;
+    /** Whether the inventory was full last tick, so the alert fires once per filling. */
+    private static boolean wasFull;
 
     public static Module module() {
         return new Module("alerts", "Alerts",
-                "Mid-screen alerts for minibosses, slayer bosses and the Protector.", "Alerts",
+                "Mid-screen alerts for bosses, fireballs and a full inventory.", "Alerts",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) Alert.clear();          // an alert already showing goes too
@@ -49,6 +71,12 @@ public final class Alerts {
                         new Setting.Toggle("Endstone Protector",
                                 "When it finishes rising and spawns.",
                                 () -> protector, v -> protector = v),
+                        new Setting.Toggle("Dragon fireball",
+                                "The dragon calling its fireball.",
+                                () -> fireball, v -> fireball = v),
+                        new Setting.Toggle("Full inventory",
+                                "The moment the last slot fills.",
+                                () -> fullInventory, v -> fullInventory = v),
 
                         new Setting.Section("How they look"),
                         new Setting.Slider("Size",
@@ -63,6 +91,33 @@ public final class Alerts {
                         new Setting.Toggle("Play a sound",
                                 "Ping when an alert fires.",
                                 () -> sound, v -> sound = v)));
+    }
+
+    public static void init() {
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (overlay || !enabled || !fireball) return;
+            String line = Zealots.strip(message.getString()).trim();
+            if (DragonTimer.isPlayerChat(line) || !FIREBALL.matcher(line).find()) return;
+            fire("FIREBALL", "incoming", ORANGE, 1.15f);
+        });
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.player == null) return;
+            boolean full = true;
+            for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) {
+                if (s.isEmpty()) {
+                    full = false;
+                    break;
+                }
+            }
+            if (full && !wasFull && enabled && fullInventory) fire("INVENTORY FULL", "no room for the next drop", YELLOW, 1f);
+            wasFull = full;
+        });
+    }
+
+    private static void fire(String title, String sub, int colour, float weight) {
+        Alert.show(title, sub, colour, weight, seconds);
+        Minecraft mc = Minecraft.getInstance();
+        if (sound && mc.player != null) mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 1.6f);
     }
 
     // ── what the modules ask ──────────────────────────────────────────────────

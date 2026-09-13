@@ -35,10 +35,12 @@ public final class Zealots {
         return player.getMainHandItem().getHoverName().getString().contains(SCYTHE);
     }
 
-    public static boolean holdingRose(Player player) {
+    /** How many roses a right-click throws: one for the Flower, three for the Bouquet, none otherwise. */
+    public static int roses(Player player) {
         String name = player.getMainHandItem().getHoverName().getString();
-        for (String rose : ROSES) if (name.contains(rose)) return true;
-        return false;
+        if (name.contains(ROSES[1])) return 3;
+        if (name.contains(ROSES[0])) return 1;
+        return 0;
     }
 
     public static String strip(String s) {

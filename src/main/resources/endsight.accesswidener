@@ -15,3 +15,14 @@ accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScr
 # state, which is a snapshot the renderer builds and not the value it is built from.
 accessible	field	net/minecraft/world/entity/Display$TextDisplay	DATA_TEXT_ID	Lnet/minecraft/network/syncher/EntityDataAccessor;
 accessible	field	net/minecraft/world/entity/Display	DATA_VIEW_RANGE_ID	Lnet/minecraft/network/syncher/EntityDataAccessor;
+
+# Ability Spam replaces the last cooldown line with one carrying a count. Vanilla chat
+# can add a message or delete one by signature, and a server line has no signature, so
+# the previous line has to come out of the list itself, and the trimmed copy rebuilt.
+accessible	field	net/minecraft/client/gui/components/ChatComponent	allMessages	Ljava/util/List;
+accessible	method	net/minecraft/client/gui/components/ChatComponent	refreshTrimmedMessages	()V
+
+# Copy Chat finds the line under a right-click with the same arithmetic vanilla draws
+# them by, then copies the whole message that row belongs to.
+accessible	field	net/minecraft/client/gui/components/ChatComponent	trimmedMessages	Ljava/util/List;
+accessible	field	net/minecraft/client/gui/components/ChatComponent	chatScrollbarPos	I

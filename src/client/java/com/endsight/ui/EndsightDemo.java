@@ -52,7 +52,7 @@ public final class EndsightDemo {
 
         // Alerts: the things that interrupt you.
         r.add(Module.placeholder("alerts", "Alerts",
-                "Mid-screen alerts for minibosses, slayer bosses and the Protector.", "Alerts"));
+                "Mid-screen alerts for bosses, fireballs and a full inventory.", "Alerts"));
         r.add(Module.unimplemented("dragon.loot", "Loot Alerts",
                 "Mid-screen alert and a ping for the drops you pick.", "Alerts"));
 
@@ -71,8 +71,10 @@ public final class EndsightDemo {
                 "Runs /debug for you two seconds after every join.", "Chat"));
         r.add(Module.placeholder("qol.lootfilter", "Loot Number Filter",
                 "Hides loot numbers except the close calls at either end.", "Chat"));
-        r.add(Module.placeholder("qol.drops", "Copy drops",
-                "Each drop goes to your clipboard as it lands.", "Chat"));
+        r.add(Module.placeholder("qol.abilityspam", "Ability Spam",
+                "One cooldown line with a count instead of a wall of them, or none at all.", "Chat"));
+        r.add(Module.placeholder("qol.copychat", "Copy Chat",
+                "Right-click a chat line to copy it. Drops can copy themselves.", "Chat"));
         r.add(Module.placeholder("qol.math", "Math Solver",
                 "Works out the Golden Dragon's sum and puts the answer under it.", "Chat"));
 

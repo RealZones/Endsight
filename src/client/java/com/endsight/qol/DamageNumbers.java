@@ -77,6 +77,13 @@ public final class DamageNumbers {
 
     private static boolean enabled = false;
     private static String mode = COMPACT;
+    /**
+     * Whether the plain numbers go regardless of mode. A crit is decorated - the
+     * sparkle either side - and a hit that did not crit, or came from an ability, is
+     * the bare number. What is worth reading in a fight is the crits, so this drops
+     * everything undecorated and leaves the mode to decide what happens to the rest.
+     */
+    private static boolean critsOnly = false;
 
     /** Live popups by entity id. Rebuilt every pass, so it cleans up after itself. */
     private static Map<Integer, Tracked> tracked = new HashMap<>();
@@ -93,7 +100,10 @@ public final class DamageNumbers {
                 List.of(
                         new Setting.Choice("Mode",
                                 "Shorten them to 8.49M, or remove them completely.",
-                                List.of(COMPACT, HIDE), () -> mode, v -> mode = v)));
+                                List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
+                        new Setting.Toggle("Crits only",
+                                "Hide the plain numbers - non-crits and ability damage - and keep the crits.",
+                                () -> critsOnly, v -> critsOnly = v)));
     }
 
     /**
@@ -142,7 +152,7 @@ public final class DamageNumbers {
                 // dead inside a second, so there is no state worth re-deciding - and a
                 // decision that cannot change is one that cannot flicker.
                 known = new Tracked();
-                if (HIDE.equals(mode)) hide(e, known);
+                if (HIDE.equals(mode) || (critsOnly && !isCrit(plain))) hide(e, known);
                 else shorten(e, known);
 
             } else if (e.tickCount > STALE_TICKS) {
@@ -153,6 +163,11 @@ public final class DamageNumbers {
             next.put(e.getId(), known);
         }
         tracked = next;
+    }
+
+    /** Decorated at all - anything left once the number, its punctuation and spaces are gone. */
+    private static boolean isCrit(String plain) {
+        return !plain.replaceAll("[\\d,.\\s]", "").isEmpty();
     }
 
     /**

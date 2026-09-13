@@ -50,6 +50,16 @@ import java.util.Set;
  * Bouquet of Lies are casts too, but with a real one-second cooldown, so under a held
  * click most clicks ARE refused, and each refusal withdraws the strike it belongs to.
  *
+ * A rose is also the one strike that can only kill so much. A bolt pierces and a swing
+ * sweeps, so anything dying in their zone is theirs; a rose homes onto one zealot and
+ * then bounces to a couple more, each within a few blocks of the last - three kills
+ * a cast, and the Bouquet throws three roses. The first version gave a rose the
+ * bolt's open zone, and looking at a cluster while someone else cleared it counted
+ * their kills - one cast was explaining six deaths. Now a cast names the zealot it
+ * most likely homed onto at the moment of the click, that one is credited first, the
+ * next credits only go to deaths within bounce range of the LAST one credited, and
+ * once the three are spent the cast explains nothing else.
+ *
  * The Giant's Sword is the other way round: it says nothing on the click and "You hear
  * something falling from the sky." when the cast lands, so that line is its trigger.
  *
@@ -86,12 +96,20 @@ public final class ZealotTracker {
     private static final double BOLT = 6.0;
     private static final long BOLT_MS = 1_500;
     /**
-     * A rose homes: it leaves along your aim and bends to the nearest enemy near it, so
-     * its zone is the same line, wider, and open longer because the rose has to fly
-     * there. The Bouquet throws three at once - the same zone with more deaths in it.
+     * A rose, measured from a recorded session of nine casts: the first kill lands
+     * 170-460ms after the click and within three blocks of the aim line, then the rose
+     * bounces on, each next kill 110-240ms later and 3.4-5.1 blocks from the one
+     * before, three kills in all. Every zealot that died later than that, or further
+     * off, was someone else's. So the zone is the line, a little wider than the bolt's;
+     * the first kill has just over a second to arrive; and a bounce has to be quick
+     * and close to the last kill, not merely near your aim.
      */
-    private static final double ROSE = 9.0;
-    private static final long ROSE_MS = 2_500;
+    private static final double ROSE = 4.0;
+    private static final long ROSE_MS = 2_400;
+    private static final long FIRST_MS = 1_200;
+    private static final int ROSE_KILLS = 3;
+    private static final double BOUNCE = 6.0;
+    private static final long BOUNCE_MS = 600;
     /**
      * The sword drops something on the point you were looking at, and it has to fall
      * first: a wider zone at the far end of the line only, and a longer window.
@@ -115,8 +133,64 @@ public final class ZealotTracker {
      * One of your actions that could have killed something: a zone in the world, for a
      * while. The zone is a capsule from one point to another - a swing or a sword drop
      * is a sphere (both ends the same), a bolt is the whole line it flew along.
+     *
+     * {@code left} is how many deaths this strike may still explain - unlimited for a
+     * bolt or a swing, three for a rose - and {@code targetId} the entity it was aimed
+     * at, which is credited ahead of anything merely inside the zone. A strike that
+     * {@code chains} moves its zone after each kill: the next death it can explain has
+     * to be within bounce range of {@code last}, the one it just took.
      */
-    private record Strike(long at, Vec3 from, Vec3 to, double radius, long window, int targetId) {
+    private static final class Strike {
+        final long at;
+        final Vec3 from, to;
+        final double radius;
+        final long window;
+        final boolean chains;
+        int targetId;
+        int left;
+        Vec3 last;
+        long lastAt;
+
+        Strike(long at, Vec3 from, Vec3 to, double radius, long window, int targetId, int left, boolean chains) {
+            this.at = at;
+            this.from = from;
+            this.to = to;
+            this.radius = radius;
+            this.window = window;
+            this.targetId = targetId;
+            this.left = left;
+            this.chains = chains;
+        }
+
+        /** How well this strike explains a death there and then: a distance, or NaN for not at all. */
+        double explains(int id, Vec3 p, long now) {
+            if (left <= 0) return Double.NaN;
+            if (last != null) {
+                if (now - lastAt > BOUNCE_MS) return Double.NaN;
+                double d = p.distanceTo(last);
+                return d <= BOUNCE ? d : Double.NaN;
+            }
+            if (chains && now - at > FIRST_MS) return Double.NaN;
+            if (targetId == id) return -1;
+            double d = distanceTo(p);
+            return d <= radius ? d : Double.NaN;
+        }
+
+        void spend(Vec3 p, long now) {
+            if (left != Integer.MAX_VALUE) left--;
+            if (chains) {
+                last = p;
+                lastAt = now;
+            }
+        }
+
+        long at() {
+            return at;
+        }
+
+        long window() {
+            return window;
+        }
 
         double distanceTo(Vec3 p) {
             Vec3 d = to.subtract(from);
@@ -160,7 +234,7 @@ public final class ZealotTracker {
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
             if (enabled && Zealots.isZealot(entity)) {
                 Vec3 at = entity.position();
-                strikes.add(new Strike(System.currentTimeMillis(), at, at, SWEEP, SWEEP_MS, entity.getId()));
+                strikes.add(new Strike(System.currentTimeMillis(), at, at, SWEEP, SWEEP_MS, entity.getId(), Integer.MAX_VALUE, false));
             }
             return InteractionResult.PASS;
         });
@@ -168,12 +242,18 @@ public final class ZealotTracker {
             // Main hand only: vanilla tries the off hand too when the main hand passes,
             // which would make every click two strikes.
             if (enabled && hand == InteractionHand.MAIN_HAND) {
-                if (Zealots.holdingScythe(player)) provisional = bolt(player, BOLT, BOLT_MS);
-                else if (Zealots.holdingRose(player)) provisional = bolt(player, ROSE, ROSE_MS);
+                int roses = Zealots.roses(player);
+                if (Zealots.holdingScythe(player)) provisional = bolt(player, BOLT, BOLT_MS, Integer.MAX_VALUE, false);
+                else if (roses > 0) provisional = roses(player, roses);
             }
             return InteractionResult.PASS;
         });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!overlay && enabled) onLine(plain(message));
+        });
+        // A line another module hid - Ability Spam folds the cooldown refusals - still
+        // has to reach the refusal check, or a hidden refusal leaves a dead click credited.
+        ClientReceiveMessageEvents.GAME_CANCELED.register((message, overlay) -> {
             if (!overlay && enabled) onLine(plain(message));
         });
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
@@ -198,8 +278,10 @@ public final class ZealotTracker {
             // dies in front of you in the next three seconds gets pinned on it.
             if (provisional != null && System.currentTimeMillis() - provisional.at() <= REFUSE_MS) {
                 strikes.remove(provisional);
+                strikes.removeAll(provisionalRoses);
             }
             provisional = null;
+            provisionalRoses = List.of();
         } else if (line.contains(SWORD_CAST)) {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player != null) drop(mc.player);
@@ -212,13 +294,47 @@ public final class ZealotTracker {
         }
     }
 
-    /** A cast down your aim - a scythe bolt or a rose: the line from your eyes to whatever it lands on. */
-    private static Strike bolt(Player player, double radius, long window) {
+    /** A cast down your aim: the line from your eyes to whatever your aim lands on. */
+    private static Strike bolt(Player player, double radius, long window, int credits, boolean chains) {
         Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
-        Strike s = new Strike(System.currentTimeMillis(), player.getEyePosition(), impact, radius, window, -1);
+        Strike s = new Strike(System.currentTimeMillis(), player.getEyePosition(), impact, radius, window, -1, credits, chains);
         strikes.add(s);
         return s;
     }
+
+    /**
+     * Roses: one chained strike per rose thrown, each aimed at its own zealot.
+     *
+     * The zealots named are the ones closest to your aim line, nearer ones first when
+     * two are close - which is what "homes onto the first enemy it reaches" comes to
+     * from where you stand; a second rose takes the second-closest. Named at the click,
+     * because by the time the death arrives you have looked somewhere else. Returns
+     * the first, which is the one a cooldown refusal withdraws; the rest are withdrawn
+     * with it.
+     */
+    private static Strike roses(Player player, int count) {
+        List<Strike> thrown = new ArrayList<>();
+        for (int i = 0; i < count; i++) thrown.add(bolt(player, ROSE, ROSE_MS, ROSE_KILLS, true));
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) {
+            List<Entity> near = new ArrayList<>();
+            Strike line = thrown.get(0);
+            for (Entity e : mc.level.entitiesForRendering()) {
+                if (Zealots.isZealot(e) && line.distanceTo(e.position()) <= ROSE) near.add(e);
+            }
+            near.sort((a, b) -> Double.compare(score(line, a), score(line, b)));
+            for (int i = 0; i < count && i < near.size(); i++) thrown.get(i).targetId = near.get(i).getId();
+        }
+        provisionalRoses = thrown;
+        return thrown.get(0);
+    }
+
+    private static double score(Strike line, Entity e) {
+        return line.distanceTo(e.position()) + 0.05 * e.position().distanceTo(line.from);
+    }
+
+    /** The whole last throw, so a refusal takes every rose of a Bouquet back, not just the first. */
+    private static List<Strike> provisionalRoses = List.of();
 
     /**
      * A sword drop: a sphere at the far end of your aim, and nothing along the way.
@@ -229,7 +345,7 @@ public final class ZealotTracker {
      */
     private static void drop(Player player) {
         Vec3 impact = player.pick(PICK_RANGE, 1f, false).getLocation();
-        strikes.add(new Strike(System.currentTimeMillis(), impact, impact, IMPACT, IMPACT_MS, -1));
+        strikes.add(new Strike(System.currentTimeMillis(), impact, impact, IMPACT, IMPACT_MS, -1, Integer.MAX_VALUE, false));
     }
 
     // ── counting ──────────────────────────────────────────────────────────────
@@ -263,13 +379,24 @@ public final class ZealotTracker {
         }
     }
 
+    /**
+     * The strike that best explains this death, if any, with a credit spent on it: the
+     * one that named this entity, else the nearest zone it fell inside.
+     */
     private static boolean ours(int id, Vec3 at, long now) {
+        Strike best = null;
+        double bestD = Double.MAX_VALUE;
         for (Strike s : strikes) {
             if (now - s.at() > s.window()) continue;
-            if (s.targetId() == id) return true;
-            if (s.distanceTo(at) <= s.radius()) return true;
+            double d = s.explains(id, at, now);
+            if (!Double.isNaN(d) && d < bestD) {
+                bestD = d;
+                best = s;
+            }
         }
-        return false;
+        if (best == null) return false;
+        best.spend(at, now);
+        return true;
     }
 
     // ── session clock, same rules as the slayer tracker ───────────────────────

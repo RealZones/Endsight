@@ -19,7 +19,7 @@ browser; any module can be bound to a key.
 
 ## Install
 
-1. Download `endsight-0.2.1.jar` from [Releases](../../releases).
+1. Download the latest `endsight-<version>.jar` from [Releases](../../releases).
 2. Drop it in your `mods` folder alongside Fabric API.
 3. Launch, join DragSim, press **Right Shift**.
 
@@ -45,8 +45,9 @@ this session and all-time.
 
 ### Alerts
 
-**Alerts** — mid-screen alerts for a miniboss, a slayer boss spawning and the Endstone
-Protector spawning. Size, opacity and duration are adjustable.
+**Alerts** — mid-screen alerts for a miniboss, a slayer boss spawning, the Endstone
+Protector spawning, the dragon's fireball and a full inventory. Size, opacity and
+duration are adjustable.
 
 **Loot Alerts** — mid-screen alert and a ping when a drop you care about lands. Which
 drops count is set by tier — see *Drops*.
@@ -59,7 +60,8 @@ beacon, drawn in the world. Your own boss only.
 
 **Protector Beacon** — a beam over the Protector so it can be found at a glance.
 
-**Damage Numbers** — shortens damage popups to `8.49M`, or hides them.
+**Damage Numbers** — shortens damage popups to `8.49M`, or hides them. *Crits only*
+hides the plain numbers — non-crits and ability damage — and keeps the crits.
 
 **Storage Preview** — hover a storage page to see what is in it.
 
@@ -72,7 +74,11 @@ loot number.
 a number you set (2.5 to start) and, with *Both ends* on, the same distance from 100 —
 a 99.98 is as rare as a 0.02. Lines that dropped something always show.
 
-**Copy drops** — the last drop's name goes to your clipboard as it lands.
+**Ability Spam** — "This ability is on cooldown" once, with a count, instead of forty
+times; or hidden altogether.
+
+**Copy Chat** — right-click any chat line to copy it. Optionally each drop's name goes
+to the clipboard on its own as it lands.
 
 **Math Solver** — answers the Golden Dragon's math question under the question, or
 copies the answer.
@@ -87,7 +93,7 @@ copies the answer.
 
 ### Drops
 
-Loot Alerts, Drop Tracker and Copy drops share one list, `config/endsight/drops.txt`,
+Loot Alerts, Drop Tracker and Copy Chat share one list, `config/endsight/drops.txt`,
 created on first run. Each line is a tier and an item name — `legendary`, `epic`,
 `rare` or `common` — set by rarity and value rather than the game's colour. Add or move
 items by editing the file; the Drop Tracker has a *Reload tiers* button. Anything not

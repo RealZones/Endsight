@@ -45,7 +45,7 @@ public final class DropTracker {
     private static final String SESSION = "Session", TOTAL = "Total";
 
     private static boolean enabled = false;
-    private static String minTier = "Rare and up";
+    private static String minTier = "Any drop";
     private static String mode = SESSION;
     /** Item -> count, in first-seen order; drawn newest first. */
     private static final Map<String, Integer> session = new LinkedHashMap<>();
@@ -85,7 +85,7 @@ public final class DropTracker {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "drops"),
                 (g, delta) -> draw(g));
-        HudLayout.register("qol.droptracker", "Drop Tracker", 0f, 0.7f,
+        HudLayout.register("qol.droptracker", "Drop Tracker", 1f, 0.72f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
@@ -135,7 +135,7 @@ public final class DropTracker {
     // ── drawing ───────────────────────────────────────────────────────────────
 
     private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled || (mode.equals(TOTAL) ? total : session).isEmpty()) return;
+        if (!enabled) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         Font font = mc.font;
@@ -156,6 +156,10 @@ public final class DropTracker {
             for (int i = all.size() - 1; i >= 0 && rows.size() < MAX_ROWS; i--) {
                 rows.add(new String[]{all.get(i).getKey(), String.valueOf(all.get(i).getValue())});
             }
+            // Drawn even with nothing to show. Hidden until the first drop, it looked
+            // switched off - and with Summoning Eye tiered common, "Rare and up" meant
+            // a whole zealot session could pass without it ever appearing.
+            if (rows.isEmpty()) rows.add(new String[]{"None yet", "-"});
         }
         String title = mode.equals(TOTAL) ? "DROPS  TOTAL" : "DROPS";
         int labelW = 0, valueW = 0;

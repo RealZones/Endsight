@@ -34,7 +34,7 @@ public final class EndsightDemo {
         r.add(Module.placeholder("dragon.timer", "Dragon Timer",
                 "Eye count and dragon state, read from chat.", "Dragons"));
         r.add(Module.unimplemented("dragon.loot", "Loot Alerts",
-                "On-screen alerts for drops worth stopping for.", "Dragons"));
+                "On-screen alerts for drops worth stopping for.", "Alerts"));
 
         r.add(Module.placeholder("dragon.protector", "Protector Stage",
                 "Tracks the Endstone Protector rising, tier by tier.", "Golem"));

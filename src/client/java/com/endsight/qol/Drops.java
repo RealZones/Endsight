@@ -1,5 +1,6 @@
 package com.endsight.qol;
 
+import com.endsight.dragons.DragonTimer;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -45,7 +46,8 @@ public final class Drops {
     private record Rule(String needle, int tier) {
     }
 
-    private static final Pattern ANNOUNCE = Pattern.compile("^(.*?)\\s*DROP!\\s*\\(?([^()]+?)\\)?\\s*(\\(.*)?$");
+    /** Anchored: only tier words may come before DROP!, so a speaker in front fails it. */
+    private static final Pattern ANNOUNCE = Pattern.compile("^([A-Z][A-Z ]*?)\\s*DROP!\\s*\\(?([^()]+?)\\)?\\s*(\\(.*)?$");
     private static final Pattern LOOT = Pattern.compile("loot number:[^→]*→\\s*(?:§[k-or])*(§[0-9a-f])?(.+)$");
 
     /** Longest needle first, so "Golden Hot Potato Book" wins over "Hot Potato Book". */
@@ -72,6 +74,9 @@ public final class Drops {
      */
     public static Drop parse(String raw) {
         String line = Zealots.strip(raw).trim();
+        // Someone pasting their drop into chat is "[MVP+] Name: EPIC DROP! Golden Eye",
+        // which is not your drop. The server's own line has no speaker in front of it.
+        if (DragonTimer.isPlayerChat(line)) return null;
         Matcher a = ANNOUNCE.matcher(line);
         if (a.find()) {
             String item = a.group(2).trim();

@@ -106,6 +106,8 @@ public final class Recipes {
 
     private static boolean enabled = true;
     private static boolean panel = true;
+    /** The boxes as tinted glass instead of solid, for people who want the world behind them. */
+    private static boolean glass = false;
     /** What "have" counts: what is on you, or that plus every storage page and the ender chest. */
     private static final String INV = "Inventory only";
     private static final String ALL = "Inventory + storage";
@@ -134,6 +136,9 @@ public final class Recipes {
                         new Setting.Toggle("Panel",
                                 "The item grid beside any inventory window. Click one for its recipe, right-click for what uses it. R or U over any item does the same.",
                                 () -> panel, v -> panel = v),
+                        new Setting.Toggle("Glass",
+                                "See-through boxes with a slight tint, instead of solid.",
+                                () -> glass, v -> glass = v),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
                                 + CATEGORY.size() + " categories, in config/endsight/recipes.txt")));
     }
@@ -752,7 +757,7 @@ public final class Recipes {
 
     private static void drawGrid(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Frame f = frame(s);
-        Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, Theme.surface());
+        Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, glass ? Draw.alpha(Theme.surface(), 0.45f) : Theme.surface());
 
         List<String> list = visible();
         int perPage = f.cols * f.rows;
@@ -832,7 +837,19 @@ public final class Recipes {
 
     private static void tooltip(GuiGraphicsExtractor g, Font font, Recipe r, Map<String, Integer> have, int mx, int my) {
         List<String> lines = new ArrayList<>();
-        lines.add(r.name());
+        // The item as the game would show it - its stats and what it does - because
+        // "what does this even give" is the question a grid of icons raises first.
+        ItemStack icon = ICONS.get(r.name());
+        if (icon != null) {
+            Minecraft mc = Minecraft.getInstance();
+            for (Component c : icon.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
+                    net.minecraft.world.item.TooltipFlag.NORMAL)) {
+                lines.add(c.getString());
+            }
+            lines.add("");
+        } else {
+            lines.add(r.name());
+        }
         for (Ingredient i : r.needs()) {
             int got = have.getOrDefault(i.name(), 0);
             lines.add((got >= i.count() ? "§a" : "§c") + Math.min(got, 9999) + "/" + i.count() + " §7" + i.name());
@@ -893,7 +910,7 @@ public final class Recipes {
      */
     private static void drawViewer(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Viewer v = viewer(s);
-        Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, Theme.surface());
+        Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, glass ? Draw.alpha(Theme.surface(), 0.45f) : Theme.surface());
         int x = v.x + PAD, y = v.y + 5;
         if (!trail.isEmpty()) chip(g, font, "◀ back", x, y, 0, mx, my);
         chip(g, font, "✕", v.x + v.w - PAD - 14, y, 14, mx, my);

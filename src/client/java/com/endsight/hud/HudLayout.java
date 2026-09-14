@@ -42,6 +42,7 @@ public final class HudLayout {
     private static final Map<String, float[]> POS = new LinkedHashMap<>();
     /** Size per element, 1 being drawn as designed; the wheel over one in the placement screen. */
     private static final Map<String, Float> SCALE = new LinkedHashMap<>();
+    private static final Map<String, Long> LOGGED = new LinkedHashMap<>();
     public static final float MIN_SCALE = 0.5f, MAX_SCALE = 2f;
 
     public static float scale(String id) {
@@ -64,21 +65,44 @@ public final class HudLayout {
      * element sits in, so its accent tick lands on the outside edge.
      */
     public static void draw(String id, GuiGraphicsExtractor g, Font font, boolean sample) {
+        draw(id, g, font, sample, false);
+    }
+
+    /**
+     * @param overMenus draw even while an inventory-type window is open. Off for
+     *                  everything but the readout that belongs to a window: trackers
+     *                  showing through the recipe panel read as clutter, not context.
+     */
+    public static void draw(String id, GuiGraphicsExtractor g, Font font, boolean sample, boolean overMenus) {
         Element e = ELEMENTS.get(id);
         if (e == null) return;
         var mc = net.minecraft.client.Minecraft.getInstance();
+        if (!sample && !overMenus
+                && mc.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) return;
         int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
         float s = scale(id);
         int[] size = e.renderer().draw(null, font, 0, 0, sample);
         int w = Math.round(size[0] * s), h = Math.round(size[1] * s);
         int x = x(id, w, sw), y = y(id, h, sh);
         Readout.mirror = x + w / 2 > sw / 2;
-        var pose = g.pose();
-        pose.pushMatrix();
-        pose.translate(x, y);
-        pose.scale(s, s);
-        e.renderer().draw(g, font, 0, 0, sample);
-        pose.popMatrix();
+        // A line every half minute per readout saying where it went, so "it is not
+        // showing" can be read off the log instead of argued about.
+        long now = System.currentTimeMillis();
+        if (now - LOGGED.getOrDefault(id, 0L) > 30_000) {
+            LOGGED.put(id, now);
+            System.out.println("[Endsight] hud " + id + " at " + x + "," + y + " size " + w + "x" + h + " scale " + s);
+        }
+        if (Math.abs(s - 1f) < 0.01f) {
+            // As designed: drawn straight at its place, the way every readout always was.
+            e.renderer().draw(g, font, x, y, sample);
+        } else {
+            var pose = g.pose();
+            pose.pushMatrix();
+            pose.translate((float) x, (float) y);
+            pose.scale(s, s);
+            e.renderer().draw(g, font, 0, 0, sample);
+            pose.popMatrix();
+        }
         Readout.mirror = false;
     }
 

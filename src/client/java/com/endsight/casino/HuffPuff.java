@@ -276,7 +276,7 @@ public final class HuffPuff {
         boolean open = mc.screen != null && isSlot(mc.screen);
         if (!open && hideAfterMin > 0 && (lastActivity == 0
                 || System.currentTimeMillis() - lastActivity > hideAfterMin * 60_000)) return;
-        HudLayout.draw("casino.huff", g, mc.font, false);
+        HudLayout.draw("casino.huff", g, mc.font, false, open);
     }
 
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {

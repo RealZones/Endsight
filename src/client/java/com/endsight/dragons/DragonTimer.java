@@ -258,14 +258,9 @@ public final class DragonTimer {
         if (!enabled || !showHud) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
-        if (Area.crypts()) return;
+        if (!Area.end()) return;
 
-        Font font = mc.font;
-        int[] size = drawAt(null, font, 0, 0, false);
-        drawAt(g, font,
-                HudLayout.x("dragon.timer", size[0], mc.getWindow().getGuiScaledWidth()),
-                HudLayout.y("dragon.timer", size[1], mc.getWindow().getGuiScaledHeight()),
-                false);
+        HudLayout.draw("dragon.timer", g, mc.font, false);
     }
 
     /**

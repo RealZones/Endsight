@@ -83,7 +83,7 @@ public final class StoragePreview {
         return new Module("storage.preview", "Storage Preview",
                 "Hover a storage page to see inside it.", "Visual",
                 () -> enabled, v -> enabled = v,
-                List.of(
+                concat(List.of(
                         new Setting.Toggle("Snapshot on close",
                                 "Remember each page as you leave it.",
                                 () -> capturing, v -> capturing = v),
@@ -95,7 +95,14 @@ public final class StoragePreview {
                                 () -> showCounts, v -> showCounts = v),
                         new Setting.Action("Reposition preview",
                                 "Drag it where you want it, against the real window.",
-                                "Move", StoragePreview::openPlacement)));
+                                "Move", StoragePreview::openPlacement)),
+                        StorageSearch.settings()));
+    }
+
+    private static List<Setting> concat(List<Setting> a, List<Setting> b) {
+        List<Setting> out = new java.util.ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 
     private static void openPlacement() {

@@ -92,11 +92,13 @@ public final class HuffPuff {
         load();
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
-            if (!Zealots.strip(screen.getTitle().getString()).trim().equals(TITLE)) return;
+            if (!isSlot(screen)) return;
             ScreenMouseEvents.afterMouseClick(screen).register((s, click, handled) -> {
-                pulled(container);
+                pulled(container, click.x(), click.y());
                 return handled;
             });
+            ScreenEvents.afterTick(screen).register(s -> watchButton(container));
+            ScreenEvents.remove(screen).register(s -> button = null);
         });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay || !enabled) return;
@@ -111,23 +113,83 @@ public final class HuffPuff {
 
     // ── reading ───────────────────────────────────────────────────────────────
 
-    /** After any click in the menu: if it landed on PULL, that was a round at the stake PULL names. */
-    private static void pulled(AbstractContainerScreen<?> screen) {
+    /** The slot machine's window, whichever apostrophe the server drew the title with. */
+    private static boolean isSlot(net.minecraft.client.gui.screens.Screen screen) {
+        String title = Zealots.strip(screen.getTitle().getString()).replaceAll("[\u2018\u2019`´]", "'").trim();
+        return title.equalsIgnoreCase(TITLE);
+    }
+
+    /**
+     * The button itself, watched every tick: PULL while you can pull, SKIP while the
+     * reels spin - or FAST, once you have hurried a round and it is "already going as
+     * fast as it goes". PULL turning into either IS a round starting, from the server's
+     * own hand, so a pull is counted whether or not the click was seen; the click is
+     * kept as a fallback. Whichever fires first counts; the other is ignored for a
+     * couple of seconds.
+     */
+    private static String button;
+    private static long lastRound;
+
+    private static void watchButton(AbstractContainerScreen<?> screen) {
         if (!enabled) return;
-        Slot slot = screen.hoveredSlot;
-        if (slot == null || !slot.hasItem()) return;
-        ItemStack stack = slot.getItem();
-        if (!Zealots.strip(stack.getHoverName().getString()).trim().equalsIgnoreCase("PULL")) return;
-        long stake = stakeOf(screen, stack);
+        String now = null;
+        for (Slot s : screen.getMenu().slots) {
+            if (!s.hasItem()) continue;
+            String n = Zealots.strip(s.getItem().getHoverName().getString()).trim().toUpperCase();
+            if (n.equals("PULL") || n.equals("SKIP") || n.equals("FAST")) {
+                now = n;
+                if (n.equals("PULL")) {
+                    long stake = stakeOf(screen, s.getItem());
+                    if (stake > 0) lastStake = stake;
+                }
+                break;
+            }
+        }
+        if ("PULL".equals(button) && now != null && !now.equals("PULL")) round(lastStake, "button");
+        if (now != null) button = now;
+    }
+
+    private static void round(long stake, String how) {
+        long now = System.currentTimeMillis();
+        if (now - lastRound < 2_000) return;        // the click and the button saw the same pull
         if (stake <= 0) return;
-        lastStake = stake;
+        lastRound = now;
         pulled = true;
         for (long[] t : new long[][]{session, total}) {
             t[0]++;
             t[1] += stake;
         }
-        lastActivity = System.currentTimeMillis();
+        lastActivity = now;
         save();
+        System.out.println("[Endsight] Huff 'n' Puff: pull (" + how + ") at " + stake);
+    }
+
+    /**
+     * After any click in the menu: if it landed on PULL, that was a round at the stake
+     * PULL names.
+     *
+     * The slot is found from the mouse position here, not read off the screen's own
+     * hoveredSlot: that field is filled while the frame is being extracted and is
+     * empty again by the time a click arrives, which is why the first version counted
+     * nothing but the wins - every pull looked like a click on no slot at all.
+     */
+    private static void pulled(AbstractContainerScreen<?> screen, double mx, double my) {
+        if (!enabled) return;
+        Slot slot = slotAt(screen, mx, my);
+        if (slot == null || !slot.hasItem()) return;
+        ItemStack stack = slot.getItem();
+        if (!Zealots.strip(stack.getHoverName().getString()).trim().equalsIgnoreCase("PULL")) return;
+        long stake = stakeOf(screen, stack);
+        if (stake > 0) lastStake = stake;
+        round(lastStake, "click");
+    }
+
+    private static Slot slotAt(AbstractContainerScreen<?> screen, double mx, double my) {
+        for (Slot s : screen.getMenu().slots) {
+            int x = screen.leftPos + s.x, y = screen.topPos + s.y;
+            if (mx >= x && mx < x + 16 && my >= y && my < y + 16) return s;
+        }
+        return null;
     }
 
     /** The stake off PULL's own tooltip, or the bet item beside it, or the last one seen. */
@@ -211,14 +273,10 @@ public final class HuffPuff {
     private static void draw(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        boolean open = mc.screen instanceof AbstractContainerScreen<?> s
-                && Zealots.strip(s.getTitle().getString()).trim().equals(TITLE);
+        boolean open = mc.screen != null && isSlot(mc.screen);
         if (!open && hideAfterMin > 0 && (lastActivity == 0
                 || System.currentTimeMillis() - lastActivity > hideAfterMin * 60_000)) return;
-        int[] size = drawAt(null, mc.font, 0, 0, false);
-        drawAt(g, mc.font,
-                HudLayout.x("casino.huff", size[0], mc.getWindow().getGuiScaledWidth()),
-                HudLayout.y("casino.huff", size[1], mc.getWindow().getGuiScaledHeight()), false);
+        HudLayout.draw("casino.huff", g, mc.font, false);
     }
 
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {

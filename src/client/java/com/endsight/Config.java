@@ -51,6 +51,13 @@ public final class Config {
         }
 
         for (String id : com.endsight.hud.HudLayout.ids()) {
+            String ss = p.getProperty("hud." + id + ".scale");
+            if (ss != null) {
+                try {
+                    com.endsight.hud.HudLayout.setScale(id, Float.parseFloat(ss));
+                } catch (NumberFormatException ignored) {
+                }
+            }
             String sx = p.getProperty("hud." + id + ".x");
             String sy = p.getProperty("hud." + id + ".y");
             if (sx == null || sy == null) continue;
@@ -119,6 +126,7 @@ public final class Config {
         Properties p = new Properties();
         p.setProperty("palette", Theme.palette().name());
 
+        com.endsight.hud.HudLayout.scales().forEach((id, s) -> p.setProperty("hud." + id + ".scale", String.valueOf(s)));
         for (String id : com.endsight.hud.HudLayout.ids()) {
             float[] f = com.endsight.hud.HudLayout.saved(id);
             if (f == null) continue;            // never moved, so nothing to pin down

@@ -17,6 +17,7 @@ import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
 import com.endsight.qol.MathSolver;
+import com.endsight.qol.Updates;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
@@ -68,7 +69,6 @@ public class EndsightClient implements ClientModInitializer {
             // Real modules overwrite their placeholders here rather than in the demo
             // registry, so EndsightDemo stays a pure list of things that do nothing.
             registry.replace(StoragePreview.module());
-            registry.replace(StorageSearch.module());
             registry.replace(VoidgloomHelper.module());
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
@@ -131,6 +131,7 @@ public class EndsightClient implements ClientModInitializer {
         LootAlerts.init();
         Alerts.init();
         MathSolver.init();
+        Updates.init();
         Beacon.init();
         Slayer.init();
         HuffPuff.init();

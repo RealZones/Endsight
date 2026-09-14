@@ -52,27 +52,33 @@ public final class StorageSearch {
     private static EditBox box;
     private static String query = "";
 
-    public static Module module() {
-        return new Module("storage.search", "Item Search",
-                "Finds an item across every page at once.", "Quality of Life",
-                () -> enabled, v -> {
-                    enabled = v;
-                    // The box is a real widget on a screen that is already open, so
-                    // switching the module off has to take it away rather than just
-                    // stop drawing it - otherwise it keeps eating keystrokes.
-                    if (!v) {
-                        query = "";
-                        if (box != null) box.setValue("");
-                    }
-                },
-                List.of(
-                        new Setting.Toggle("Search your inventory",
-                                "Mark matches in your own inventory too.",
-                                () -> searchInventory, v -> searchInventory = v),
-                        new Setting.Toggle("Mark unopened pages",
-                                "Ring pages that have never been opened, so an empty "
-                                        + "result is not mistaken for a real answer.",
-                                () -> markUnsearched, v -> markUnsearched = v)));
+    /**
+     * Its settings, as rows on Storage Preview's page - one window, one card. It was
+     * a card of its own once, and "Item Search" beside "Storage Preview" read as two
+     * things to learn about the same screen.
+     */
+    public static List<Setting> settings() {
+        return List.of(
+                new Setting.Section("Item search"),
+                new Setting.Toggle("Search box",
+                        "A search box in the Storage window that marks which pages hold the item.",
+                        () -> enabled, v -> {
+                            enabled = v;
+                            // The box is a real widget on a screen that is already open,
+                            // so switching it off has to take it away rather than just
+                            // stop drawing it - otherwise it keeps eating keystrokes.
+                            if (!v) {
+                                query = "";
+                                if (box != null) box.setValue("");
+                            }
+                        }),
+                new Setting.Toggle("Search your inventory",
+                        "Mark matches in your own inventory too.",
+                        () -> searchInventory, v -> searchInventory = v),
+                new Setting.Toggle("Mark unopened pages",
+                        "Ring pages that have never been opened, so an empty "
+                                + "result is not mistaken for a real answer.",
+                        () -> markUnsearched, v -> markUnsearched = v));
     }
 
     /** Set while a Storage-ish window is open, so stale boxes never take input. */

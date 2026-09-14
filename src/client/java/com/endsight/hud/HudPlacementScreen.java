@@ -62,11 +62,9 @@ public final class HudPlacementScreen extends Screen {
 
             // Measured, not drawn: an element's size depends on the text it happens to be
             // showing and its position depends on the size, so the size has to come first.
-            // Asking for it with a null target means the measuring pass cannot put
-            // anything on screen, which an off-screen coordinate only pretends to do.
-            int[] size = r.draw(null, font, 0, 0, true);
-            int w = Math.max(8, size[0]);
-            int h = Math.max(8, size[1]);
+            // Scaled here the way it is drawn, so the box you grab is the box you see.
+            int[] size = HudLayout.size(id, font);
+            int w = size[0], h = size[1];
 
             int x = HudLayout.x(id, w, width);
             int y = HudLayout.y(id, h, height);
@@ -77,14 +75,18 @@ public final class HudPlacementScreen extends Screen {
 
             Draw.roundedRect(g, x - 3, y - 3, w + 6, h + 6, 4,
                     Draw.alpha(Theme.accent(), hot ? 0.22f : 0.10f));
-            r.draw(g, font, x, y, true);
+            HudLayout.draw(id, g, font, true);
             if (hot) {
                 Draw.roundedOutline(g, x - 3, y - 3, w + 6, h + 6, 4,
                         Theme.accent(), 0x00000000);
+                float s = HudLayout.scale(id);
+                if (Math.abs(s - 1f) > 0.01f) {
+                    Draw.text(g, font, Math.round(s * 100) + "%", x + w + 6, y, Theme.accent());
+                }
             }
         }
 
-        String hint = "Drag to place  ·  Right-click one to reset it  ·  Esc when done";
+        String hint = "Drag to place  ·  Scroll over one to resize  ·  Right-click to reset  ·  Esc when done";
         Draw.textCentered(g, font, hint, width / 2, height - 26, Theme.muted());
     }
 
@@ -124,6 +126,18 @@ public final class HudPlacementScreen extends Screen {
     public boolean mouseReleased(MouseButtonEvent event) {
         dragging = null;
         return super.mouseReleased(event);
+    }
+
+    /** The wheel over an element: a tenth bigger or smaller a notch, half to double. */
+    @Override
+    public boolean mouseScrolled(double mx, double my, double dx, double dy) {
+        for (Map.Entry<String, int[]> e : bounds.entrySet()) {
+            int[] b = e.getValue();
+            if (mx < b[0] || mx >= b[0] + b[2] || my < b[1] || my >= b[1] + b[3]) continue;
+            HudLayout.setScale(e.getKey(), HudLayout.scale(e.getKey()) + (dy > 0 ? 0.1f : -0.1f));
+            return true;
+        }
+        return super.mouseScrolled(mx, my, dx, dy);
     }
 
     @Override

@@ -64,7 +64,8 @@ beacon, drawn in the world. Your own boss only.
 **Damage Numbers** — shortens damage popups to `8.49M`, or hides them. *Crits only*
 hides the plain numbers — non-crits and ability damage — and keeps the crits.
 
-**Storage Preview** — hover a storage page to see what is in it.
+**Storage Preview** — hover a storage page to see what is in it. Its item search puts a
+box in the Storage window that marks which pages hold the item.
 
 **Ping / TPS** — FPS, your ping and the server's tick rate in one pill. Ping is a real
 round trip measured once a second; TPS is worked out from the server's clock, good to
@@ -92,19 +93,21 @@ copies the answer.
 
 **Protect Placed Eyes** — stops a spam-click from pulling out the eye you just placed.
 
-**Item Search** — a search box in Storage that marks which pages hold the item.
-
 **Recipes** — an item panel beside any inventory window: every server recipe as a
 grid of icons in the server's own categories, paged and searchable. Hover for what
 you hold of each ingredient (your inventory, every storage page you have opened, and
 your ender chest),
 click for the recipe's grid — craftable ingredients are underlined and click through
-to their own recipe — right-click for everything that uses an item. At a crafting
+to their own recipe — right-click for everything that uses an item. **R** over any
+item in any window opens its recipe, **U** what it goes into. At a crafting
 table, *Fill grid* places the recipe from your inventory; anywhere else the button
 sends `/craft`. Every recipe ships with the mod; *Scan all recipes* re-reads the
 server's menu if they change, into `config/endsight/recipes.txt`.
 
 **Command Binds** — a key that sends a command you typed, like `/warp end` on F6.
+
+A toast and a chat line with the link appear when a newer release is out, checked
+shortly after launch and every half hour while you play.
 
 ### Drops
 
@@ -124,6 +127,10 @@ in the sidebar. Seven palettes; the whole UI follows whichever is picked.
 Any module can be bound to a key or a mouse button: click the chip on its card, press
 the key. Right-click the chip to clear it. A toast in the bottom-right says what the key
 just did. Every on-screen readout can be dragged to where you want it.
+
+Readouts about the End - dragon, protector, zealots, the beacon - stay off the screen
+anywhere else, read off the server's own sidebar. In the placement screen the scroll
+wheel over a readout resizes it, half to double.
 
 The menu reopens where you left it - same category, same settings page, same scroll.
 Your choices are saved to `config/endsight.properties` when you close the menu and again

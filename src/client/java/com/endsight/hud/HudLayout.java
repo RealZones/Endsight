@@ -40,6 +40,56 @@ public final class HudLayout {
 
     private static final Map<String, Element> ELEMENTS = new LinkedHashMap<>();
     private static final Map<String, float[]> POS = new LinkedHashMap<>();
+    /** Size per element, 1 being drawn as designed; the wheel over one in the placement screen. */
+    private static final Map<String, Float> SCALE = new LinkedHashMap<>();
+    public static final float MIN_SCALE = 0.5f, MAX_SCALE = 2f;
+
+    public static float scale(String id) {
+        return SCALE.getOrDefault(id, 1f);
+    }
+
+    public static void setScale(String id, float s) {
+        s = Math.round(Math.max(MIN_SCALE, Math.min(MAX_SCALE, s)) * 10) / 10f;
+        if (Math.abs(s - 1f) < 0.01f) SCALE.remove(id);
+        else SCALE.put(id, s);
+    }
+
+    /**
+     * Draw an element where it lives, at its size.
+     *
+     * The one place every readout goes through, so scale and side are decided once:
+     * measured first (a null target draws nothing), placed by its scaled size, then
+     * drawn under a transform so the element itself never knows it is not 1:1. Before
+     * the draw, {@link Readout#mirror} is set for whichever half of the screen the
+     * element sits in, so its accent tick lands on the outside edge.
+     */
+    public static void draw(String id, GuiGraphicsExtractor g, Font font, boolean sample) {
+        Element e = ELEMENTS.get(id);
+        if (e == null) return;
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
+        float s = scale(id);
+        int[] size = e.renderer().draw(null, font, 0, 0, sample);
+        int w = Math.round(size[0] * s), h = Math.round(size[1] * s);
+        int x = x(id, w, sw), y = y(id, h, sh);
+        Readout.mirror = x + w / 2 > sw / 2;
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate(x, y);
+        pose.scale(s, s);
+        e.renderer().draw(g, font, 0, 0, sample);
+        pose.popMatrix();
+        Readout.mirror = false;
+    }
+
+    /** Scaled size of an element, for hit-testing in the placement screen. */
+    public static int[] size(String id, Font font) {
+        Element e = ELEMENTS.get(id);
+        if (e == null) return new int[]{8, 8};
+        float s = scale(id);
+        int[] size = e.renderer().draw(null, font, 0, 0, true);
+        return new int[]{Math.max(8, Math.round(size[0] * s)), Math.max(8, Math.round(size[1] * s))};
+    }
 
     /**
      * @param defX 0 is the left edge, 1 the right; the element's own width is kept on
@@ -98,6 +148,7 @@ public final class HudLayout {
 
     public static void reset(String id) {
         POS.remove(id);
+        SCALE.remove(id);
     }
 
     // ── persistence, driven by Config ─────────────────────────────────────────
@@ -108,6 +159,10 @@ public final class HudLayout {
 
     public static void restore(String id, float fx, float fy) {
         POS.put(id, new float[]{clamp01(fx), clamp01(fy)});
+    }
+
+    public static Map<String, Float> scales() {
+        return Map.copyOf(SCALE);
     }
 
     private static float clamp01(float v) {

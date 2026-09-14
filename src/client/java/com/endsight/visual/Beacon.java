@@ -69,6 +69,7 @@ public final class Beacon {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.options.hideGui) return;
+        if (!com.endsight.hud.Area.end()) return;
 
         Entity target = find(player);
         if (target == null) return;

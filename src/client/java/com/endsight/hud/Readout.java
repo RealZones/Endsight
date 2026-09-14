@@ -24,6 +24,22 @@ public final class Readout {
     }
 
     public static final int ROW_H = 10;
+    /** Set by HudLayout while an element on the right half of the screen is drawn. */
+    public static boolean mirror;
+
+    /** The accent tick on the outside edge of an element that is {@code w} wide. */
+    public static void tick(GuiGraphicsExtractor g, int x, int y, int w, int colour) {
+        Draw.rect(g, mirror ? x + w - TICK_W : x, y, TICK_W, ROW_H - 1, colour);
+    }
+
+    /** Where a title or label starts, and where values end, given the tick's side. */
+    public static int left(int x) {
+        return mirror ? x : x + TICK_W + GAP;
+    }
+
+    public static int right(int x, int w) {
+        return mirror ? x + w - TICK_W - GAP : x + w;
+    }
     private static final int TICK_W = 2;
     private static final int GAP = 6;
     private static final int BAR_H = 2;
@@ -37,12 +53,15 @@ public final class Readout {
                            String label, String value, boolean hot, float progress) {
         int accent = hot ? Theme.accent() : Draw.lerp(Theme.line(), Theme.accent(), 0.7f);
 
-        // Leading tick. Marks the element without enclosing it.
-        Draw.rect(g, x, y, TICK_W, ROW_H - 1, accent);
+        // The tick marks the element without enclosing it, on the edge facing the
+        // side of the screen the element sits on, so it reads as a margin, not a bar
+        // down the middle of the view.
+        tick(g, x, y, w, accent);
 
-        int textX = x + TICK_W + GAP;
+        int textX = mirror ? x : x + TICK_W + GAP;
+        int right = mirror ? x + w - TICK_W - GAP : x + w;
         Draw.text(g, font, label, textX, y, Theme.muted());
-        Draw.textRight(g, font, value, x + w, y, hot ? Theme.accent() : Theme.text());
+        Draw.textRight(g, font, value, right, y, hot ? Theme.accent() : Theme.text());
 
         if (progress >= 0) {
             int barY = y + ROW_H + 1;

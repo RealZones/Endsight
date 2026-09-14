@@ -145,14 +145,9 @@ public final class Protector {
         if (!enabled || tier <= 0) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
-        if (Area.crypts()) return;
+        if (!Area.end()) return;
 
-        Font font = mc.font;
-        int[] size = drawAt(null, font, 0, 0, false);
-        drawAt(g, font,
-                HudLayout.x("dragon.protector", size[0], mc.getWindow().getGuiScaledWidth()),
-                HudLayout.y("dragon.protector", size[1], mc.getWindow().getGuiScaledHeight()),
-                false);
+        HudLayout.draw("dragon.protector", g, mc.font, false);
     }
 
     /**

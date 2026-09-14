@@ -83,8 +83,6 @@ public final class EndsightDemo {
         // Quality of Life: the rest.
         r.add(Module.placeholder("qol.eyeguard", "Protect Placed Eyes",
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
-        r.add(Module.placeholder("storage.search", "Item Search",
-                "Finds an item across every page at once.", "Quality of Life"));
         r.add(Module.placeholder("storage.recipes", "Recipes",
                 "Every recipe beside your inventory, with what you already have for it.", "Quality of Life"));
         r.add(Module.placeholder("qol.commands", "Command Binds",

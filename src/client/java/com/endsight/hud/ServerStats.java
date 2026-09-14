@@ -126,10 +126,7 @@ public final class ServerStats {
     private static void draw(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        int[] size = drawAt(null, mc.font, 0, 0, false);
-        drawAt(g, mc.font,
-                HudLayout.x("hud.stats", size[0], mc.getWindow().getGuiScaledWidth()),
-                HudLayout.y("hud.stats", size[1], mc.getWindow().getGuiScaledHeight()), false);
+        HudLayout.draw("hud.stats", g, mc.font, false);
     }
 
     /** Label, value, value colour - one per stat that is switched on. */

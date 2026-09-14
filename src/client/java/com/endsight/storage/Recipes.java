@@ -106,6 +106,12 @@ public final class Recipes {
 
     private static boolean enabled = true;
     private static boolean panel = true;
+    /** What "have" counts: what is on you, or that plus every storage page and the ender chest. */
+    private static final String INV = "Inventory only";
+    private static final String ALL = "Inventory + storage";
+    private static String scope = ALL;
+    /** Height of the "Counting:" chip row under a recipe's title. */
+    private static final int SCOPE_H = 18;
     private static final Map<String, Recipe> RECIPES = new LinkedHashMap<>();
     /** Category name -> the recipe names the server lists under it, in its order. */
     private static final Map<String, LinkedHashSet<String>> CATEGORY = new LinkedHashMap<>();
@@ -126,11 +132,8 @@ public final class Recipes {
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Panel",
-                                "The item grid beside any inventory window. Click one for its recipe, right-click for what uses it.",
+                                "The item grid beside any inventory window. Click one for its recipe, right-click for what uses it. R or U over any item does the same.",
                                 () -> panel, v -> panel = v),
-                        new Setting.Action("Scan all recipes",
-                                "Open the recipe menu and it clicks through every category and page for you.",
-                                "Scan", Recipes::arm),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
                                 + CATEGORY.size() + " categories, in config/endsight/recipes.txt")));
     }
@@ -280,6 +283,32 @@ public final class Recipes {
 
     static String name(ItemStack s) {
         return Zealots.strip(s.getHoverName().getString()).trim();
+    }
+
+    /**
+     * The recipe an item is, whatever the server has hung on its name.
+     *
+     * A helmet in your inventory reads "Fierce Superior Dragon Helmet ✪✪✪✪"; the recipe
+     * is "Superior Dragon Helmet". Reforge in front, stars behind, and the first R that
+     * did nothing on a piece of armour was exactly this. So the match is the longest
+     * recipe name found inside the item's, on letters and digits alone - an exact hit
+     * wins, and nothing shorter than the whole recipe name ever matches by accident.
+     */
+    private static String recipeFor(String itemName) {
+        if (RECIPES.containsKey(itemName)) return itemName;
+        String hay = plain(itemName);
+        String best = null;
+        for (String r : RECIPES.keySet()) {
+            String needle = plain(r);
+            if (needle.isEmpty() || !hay.contains(needle)) continue;
+            if (best == null || needle.length() > plain(best).length()) best = r;
+        }
+        return best;
+    }
+
+    /** Letters, digits and single spaces; everything the server decorates with, gone. */
+    private static String plain(String s) {
+        return s.toLowerCase().replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
     }
 
     private static List<ItemStack> containerSlots(AbstractContainerScreen<?> screen) {
@@ -492,6 +521,7 @@ public final class Recipes {
         if (mc.player != null) {
             for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) count(have, s);
         }
+        if (INV.equals(scope)) return have;
         for (PageSnapshot snap : StoragePreview.snapshots().values()) {
             for (ItemStack s : snap.items()) count(have, s);
         }
@@ -529,7 +559,7 @@ public final class Recipes {
     private static final int PAD = 6;
     private static final int GAP = 6;
     private static final int HEAD = 22;
-    private static final int FOOT = 22;
+    private static final int FOOT = 34;
     private static final int CATS = 22;
 
     private static String query = "";
@@ -581,7 +611,7 @@ public final class Recipes {
     private static void attachPanel(Minecraft client, Screen screen, AbstractContainerScreen<?> container) {
         Frame f = frame(container);
         Font font = client.font;
-        int bx = f.gridX() + 3, by = f.y + f.h - FOOT + 4;
+        int bx = f.gridX() + 3, by = f.y + f.h - FOOT + 16;
         box = new EditBox(font, bx, by, f.gridW() - 6, 11, Component.literal("Search"));
         box.setBordered(false);
         box.setMaxLength(40);
@@ -598,9 +628,16 @@ public final class Recipes {
         // As Item Search does: the box first, and the inventory key hidden from the
         // screen while it is focused, so typing "e" types an "e". Escape still closes.
         ScreenKeyboardEvents.allowKeyPress(screen).register((s, e) -> {
-            if (!enabled || !panel || box == null || !box.isFocused() || e.key() == 256) return true;
-            box.keyPressed(e);
-            return false;
+            if (!enabled || !panel) return true;
+            if (box != null && box.isFocused() && e.key() != 256) {
+                box.keyPressed(e);
+                return false;
+            }
+            // R and U over any item, in any window: its recipe, or what it goes into.
+            if (e.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_R || e.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_U) {
+                return !lookup(container, e.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_U);
+            }
+            return true;
         });
         ScreenEvents.afterExtract(screen).register((s, g, mx, my, d) -> draw(container, g, mx, my));
         ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !click(container, click.x(), click.y(), click.button()));
@@ -611,6 +648,47 @@ public final class Recipes {
                 box = null;
             }
         });
+    }
+
+    /**
+     * The item under the mouse - a slot of the window, or a cell of our grid - opened
+     * as its recipe (R) or its uses (U). The one habit everyone brings from the other
+     * item lists, so it works here too, and it works on things in your own inventory
+     * that the grid never shows, which is where "what is this even for" gets asked.
+     */
+    private static boolean lookup(AbstractContainerScreen<?> s, boolean uses) {
+        Minecraft mc = Minecraft.getInstance();
+        double mx = mc.mouseHandler.getScaledXPos(mc.getWindow());
+        double my = mc.mouseHandler.getScaledYPos(mc.getWindow());
+        String name = null;
+        for (Slot slot : s.getMenu().slots) {
+            int x = s.leftPos + slot.x, y = s.topPos + slot.y;
+            if (slot.hasItem() && mx >= x && mx < x + 16 && my >= y && my < y + 16) {
+                name = name(slot.getItem());
+                break;
+            }
+        }
+        if (name == null && shown) {
+            Frame f = frame(s);
+            List<String> list = visible();
+            int gx = f.gridX(), gy = f.gridY();
+            if (mx >= gx && mx < gx + f.gridW() && my >= gy && my < gy + f.gridH()) {
+                int idx = page * f.cols * f.rows + (int) ((my - gy) / CELL) * f.cols + (int) ((mx - gx) / CELL);
+                if (idx < list.size()) name = list.get(idx);
+            }
+        }
+        if (name == null) return false;
+        String known = recipeFor(name);
+        if (uses) {
+            String item = known != null ? known : name;
+            if (usesOf(item).isEmpty()) return false;
+            openUses(item);
+        } else {
+            if (known == null) return false;
+            openRecipe(known);
+        }
+        shown = true;
+        return true;
     }
 
     /** The results to show: the category, filtered by the search, in the server's own order. */
@@ -655,6 +733,7 @@ public final class Recipes {
         Map<String, Integer> have = holdings();
         drawGrid(s, g, font, have, mx, my);
         if (openRecipe != null || openUses != null) drawViewer(s, g, font, have, mx, my);
+        drawTip(g, font);
     }
 
     /** The tab on the grid's left edge - or on the screen's right edge once the grid is tucked away. */
@@ -696,7 +775,11 @@ public final class Recipes {
             if (icon != null) g.fakeItem(icon, cx + 1, cy + 1);
             else Draw.textCentered(g, font, c == null ? "All" : c.substring(0, 1), cx + 9, cy + 5, on ? Theme.accent() : Theme.muted());
             if (on) Draw.rect(g, cx - 3, cy + 3, 1, 12, Theme.accent());
-            if (hover) g.setTooltipForNextFrame(Component.literal(c == null ? "All" : c), mx, my);
+            if (hover) {
+                pendingTip = List.of(c == null ? "All" : c);
+                tipX = mx;
+                tipY = my;
+            }
             cy += CELL;
         }
 
@@ -719,10 +802,24 @@ public final class Recipes {
             if (hover) tooltip(g, font, r, have, mx, my);
         }
 
-        // Footer: the search box's frame.
-        int by = f.y + f.h - FOOT + 1;
+        // The two keys, said once where the eye lands anyway; nobody reads a settings
+        // description to learn a keybind.
+        Draw.textCentered(g, font, "R: recipe   U: uses  -  over any item", f.gridX() + f.gridW() / 2,
+                f.y + f.h - FOOT + 1, Theme.dim());
+
+        // Footer: the search box. The widget draws itself with the screen, UNDER this
+        // panel, so what it wrote is painted over by now - the frame, the text and the
+        // caret are drawn again here on top; the widget is only kept for the typing.
+        int by = f.y + f.h - FOOT + 13;
+        boolean focused = box != null && box.isFocused();
         Draw.roundedOutline(g, f.gridX(), by, f.gridW(), 17, 5,
-                query.isEmpty() ? Draw.alpha(Theme.line(), 0.8f) : Theme.accent(), Theme.input());
+                focused || !query.isEmpty() ? Theme.accent() : Draw.alpha(Theme.line(), 0.8f), Theme.input());
+        String shown = query.isEmpty() && !focused ? "Search recipes…" : query;
+        int tx = f.gridX() + 5, ty = by + 5;
+        Draw.text(g, font, fit(font, shown, f.gridW() - 12), tx, ty, query.isEmpty() ? Theme.dim() : Theme.text());
+        if (focused && (System.currentTimeMillis() / 500) % 2 == 0) {
+            Draw.rect(g, tx + font.width(fit(font, query, f.gridW() - 12)) + 1, ty - 1, 1, 10, Theme.text());
+        }
     }
 
     private static int chip(GuiGraphicsExtractor g, Font font, String text, int x, int y, int w, int mx, int my) {
@@ -734,14 +831,59 @@ public final class Recipes {
     }
 
     private static void tooltip(GuiGraphicsExtractor g, Font font, Recipe r, Map<String, Integer> have, int mx, int my) {
-        List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal(r.name()));
+        List<String> lines = new ArrayList<>();
+        lines.add(r.name());
         for (Ingredient i : r.needs()) {
             int got = have.getOrDefault(i.name(), 0);
-            lines.add(Component.literal((got >= i.count() ? "§a" : "§c") + Math.min(got, 9999) + "/" + i.count() + " §7" + i.name()));
+            lines.add((got >= i.count() ? "§a" : "§c") + Math.min(got, 9999) + "/" + i.count() + " §7" + i.name());
         }
-        lines.add(Component.literal("§8click: recipe   right-click: uses"));
-        g.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mx, my);
+        lines.add("§8R / click: recipe   U / right-click: uses");
+        pendingTip = lines;
+        tipX = mx;
+        tipY = my;
+    }
+
+    /** The item's own tooltip - name and lore, as the game would show it - for a cell. */
+    private static void itemTip(ItemStack s, int mx, int my) {
+        Minecraft mc = Minecraft.getInstance();
+        List<String> lines = new ArrayList<>();
+        for (Component c : s.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
+                net.minecraft.world.item.TooltipFlag.NORMAL)) {
+            lines.add(c.getString());
+        }
+        pendingTip = lines;
+        tipX = mx;
+        tipY = my;
+    }
+
+    /**
+     * Tooltips are drawn by us, last, over everything. The game's own tooltip hook
+     * did nothing from here: by the time this panel draws, the screen's tooltip pass
+     * has been and gone, so a tooltip handed to it was a tooltip for nobody. One
+     * pending tooltip per frame, whoever asked last.
+     */
+    private static List<String> pendingTip;
+    private static int tipX, tipY;
+
+    private static void drawTip(GuiGraphicsExtractor g, Font font) {
+        if (pendingTip == null || pendingTip.isEmpty()) return;
+        Minecraft mc = Minecraft.getInstance();
+        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
+        int w = 0;
+        for (String l : pendingTip) w = Math.max(w, font.width(l));
+        int h = pendingTip.size() * 10 + 6;
+        int x = tipX + 12, y = tipY - 12;
+        if (x + w + 8 > sw) x = tipX - w - 16;
+        if (y + h > sh) y = sh - h;
+        if (y < 0) y = 0;
+        Draw.roundedRect(g, x - 1, y - 1, w + 10, h + 2, 4, Theme.accent());
+        Draw.roundedRect(g, x, y, w + 8, h, 4, 0xF0100010);
+        int ly = y + 4;
+        for (int i = 0; i < pendingTip.size(); i++) {
+            Draw.text(g, font, pendingTip.get(i), x + 4, ly, i == 0 ? Theme.text() : 0xFFAAAAAA);
+            ly += 10;
+        }
+        pendingTip = null;
     }
 
     /**
@@ -768,8 +910,10 @@ public final class Recipes {
             if (icon != null) g.fakeItem(icon, x, ny - 4);
             Draw.text(g, font, fit(font, r.name(), v.w - PAD * 2 - 22), x + 20, ny, Theme.text());
             if (r.count() > 1) Draw.textRight(g, font, "x" + r.count(), v.x + v.w - PAD, ny, Theme.muted());
+            // What the numbers count, said in words, and a click away from the other.
+            chip(g, font, "Counting: " + scope.toLowerCase(), x, ny + 12, 0, mx, my);
 
-            int gx = x, gy = ny + 14;
+            int gx = x, gy = ny + 14 + SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -784,7 +928,7 @@ public final class Recipes {
                     Draw.text(g, font, String.valueOf(in.count()), cx + 6, cy + 6, Theme.text());
                 }
                 if (RECIPES.containsKey(in.name())) Draw.rect(g, cx + 2, cy + CELL - 3, CELL - 4, 1, Theme.accent());
-                if (hover && st != null) g.setTooltipForNextFrame(font, st, mx, my);
+                if (hover && st != null) itemTip(st, mx, my);
             }
             int lx = gx + 3 * CELL + 6, ly = gy + 2;
             for (Ingredient in : r.needs()) {
@@ -792,6 +936,15 @@ public final class Recipes {
                 String n = Math.min(got, 9999) + "/" + in.count();
                 Draw.text(g, font, n, lx, ly, got >= in.count() ? Theme.pos() : Theme.neg());
                 Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
+                if (mx >= lx && mx < v.x + v.w - PAD && my >= ly - 1 && my < ly + 9) {
+                    ItemStack st = ICONS.get(in.name());
+                    if (st != null) itemTip(st, mx, my);
+                    else {
+                        pendingTip = List.of(in.name());
+                        tipX = mx;
+                        tipY = my;
+                    }
+                }
                 ly += 10;
             }
             int uy = Math.max(ly, gy + 3 * CELL) + 8;
@@ -926,7 +1079,7 @@ public final class Recipes {
         // Search box: NOT consumed. The screen's own click is what focuses a widget
         // in its eyes, and only a widget it sees as focused gets the typed characters
         // - focusing the box from here made the caret blink and nothing else.
-        int by = f.y + f.h - FOOT + 1;
+        int by = f.y + f.h - FOOT + 13;
         if (my >= by && my < by + 17) return false;
         if (box != null) box.setFocused(false);
         // Categories.
@@ -981,7 +1134,12 @@ public final class Recipes {
                 close();
                 return true;
             }
-            int gx = x, gy = y + 20 + 14;
+            int cy0 = y + 20 + 12;
+            if (my >= cy0 && my < cy0 + 14 && mx < x + font.width("Counting: " + scope.toLowerCase()) + 10) {
+                scope = ALL.equals(scope) ? INV : ALL;
+                return true;
+            }
+            int gx = x, gy = y + 20 + 14 + SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];

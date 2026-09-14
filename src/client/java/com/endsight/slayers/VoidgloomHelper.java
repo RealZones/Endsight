@@ -251,10 +251,6 @@ public final class VoidgloomHelper {
         // Only while a boss has been seen in the last couple of seconds.
         if (bossSeen == 0 || System.currentTimeMillis() - bossSeen >= 2000) return;
 
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
-        int[] size = drawBoss(null, mc.font, 0, 0, false);
-        drawBoss(g, mc.font, HudLayout.x("slayer.voidgloom", size[0], sw),
-                HudLayout.y("slayer.voidgloom", size[1], sh), false);
+        HudLayout.draw("slayer.voidgloom", g, mc.font, false);
     }
 }

@@ -311,12 +311,7 @@ public final class Slayer {
         if (hideAfterMin > 0 && (lastActivity == 0
                 || System.currentTimeMillis() - lastActivity > idleMs())) return;
 
-        Font font = mc.font;
-        int[] size = drawAt(null, font, 0, 0, false);
-        drawAt(g, font,
-                HudLayout.x("slayer.timer", size[0], mc.getWindow().getGuiScaledWidth()),
-                HudLayout.y("slayer.timer", size[1], mc.getWindow().getGuiScaledHeight()),
-                false);
+        HudLayout.draw("slayer.timer", g, mc.font, false);
     }
 
     /**
@@ -367,13 +362,13 @@ public final class Slayer {
         int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
 
         if (g != null) {
-            Draw.rect(g, x, y, 2, Readout.ROW_H - 1, Theme.accent());
-            Draw.text(g, font, title, x + 8, y, Theme.muted());
+            Readout.tick(g, x, y, w, Theme.accent());
+            Draw.text(g, font, title, Readout.left(x), y, Theme.muted());
 
             int ry = y + Readout.ROW_H + 3;
             for (int i = 0; i < rows.length; i++) {
-                Draw.text(g, font, rows[i][0], x + 8, ry, Theme.dim());
-                Draw.textRight(g, font, rows[i][1], x + w, ry,
+                Draw.text(g, font, rows[i][0], Readout.left(x), ry, Theme.dim());
+                Draw.textRight(g, font, rows[i][1], Readout.right(x, w), ry,
                         i == 0 && hot ? Theme.accent() : Theme.text());
                 ry += Readout.ROW_H + 2;
             }

@@ -1,6 +1,7 @@
 package com.endsight.zealots;
 
 import com.endsight.dragons.DragonTimer;
+import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
@@ -457,6 +458,7 @@ public final class ZealotTracker {
         if (!enabled) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
+        if (Area.crypts()) return;
         if (hideAfterMin > 0 && (lastActivity == 0
                 || System.currentTimeMillis() - lastActivity > idleMs())) return;
 

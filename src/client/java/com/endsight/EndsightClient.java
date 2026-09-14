@@ -1,16 +1,18 @@
 package com.endsight;
 
+import com.endsight.casino.HuffPuff;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Toast;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.Area;
+import com.endsight.hud.ServerStats;
 import com.endsight.qol.AbilitySpam;
 import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugOnJoin;
 import com.endsight.qol.CopyChat;
-import com.endsight.qol.DropTracker;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
@@ -22,6 +24,7 @@ import com.endsight.slayers.VoidgloomHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
+import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
@@ -70,6 +73,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(Slayer.killTimerModule());
+            registry.replace(HuffPuff.module());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
@@ -80,7 +84,8 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(LootFilter.module());
             registry.replace(AbilitySpam.module());
             registry.replace(CopyChat.module());
-            registry.replace(DropTracker.module());
+            registry.replace(Recipes.module());
+            registry.replace(ServerStats.module());
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             extra("register", registry);
@@ -120,12 +125,15 @@ public class EndsightClient implements ClientModInitializer {
         LootFilter.init();
         AbilitySpam.init();
         CopyChat.init();
-        DropTracker.init();
+        Recipes.init();
+        ServerStats.init();
+        Area.init();
         LootAlerts.init();
         Alerts.init();
         MathSolver.init();
         Beacon.init();
         Slayer.init();
+        HuffPuff.init();
         ZealotTracker.init();
         extra("init", null);
 

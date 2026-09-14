@@ -47,8 +47,8 @@ public final class EndsightDemo {
                 "Your zealot kills and rate for the session.", "Trackers"));
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Trackers"));
-        r.add(Module.placeholder("qol.droptracker", "Drop Tracker",
-                "Every drop counted on screen, this session or all-time.", "Trackers"));
+        r.add(Module.placeholder("casino.huff", "Huff 'n' Puff",
+                "Profit and loss at the slot, this session or all time.", "Trackers"));
 
         // Alerts: the things that interrupt you.
         r.add(Module.placeholder("alerts", "Alerts",
@@ -65,6 +65,8 @@ public final class EndsightDemo {
                 "Shortens the damage popups, or takes them away.", "Visual"));
         r.add(Module.placeholder("storage.preview", "Storage Preview",
                 "Hover a storage page to see inside it.", "Visual"));
+        r.add(Module.placeholder("hud.stats", "Ping / TPS",
+                "FPS, your ping and the server's tick rate, in a pill.", "Visual"));
 
         // Chat: what the server prints, and what goes to the clipboard from it.
         r.add(Module.placeholder("qol.debug", "Debug on join",
@@ -83,6 +85,8 @@ public final class EndsightDemo {
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
         r.add(Module.placeholder("storage.search", "Item Search",
                 "Finds an item across every page at once.", "Quality of Life"));
+        r.add(Module.placeholder("storage.recipes", "Recipes",
+                "Every recipe beside your inventory, with what you already have for it.", "Quality of Life"));
         r.add(Module.placeholder("qol.commands", "Command Binds",
                 "Keys that send a command for you.", "Quality of Life"));
 

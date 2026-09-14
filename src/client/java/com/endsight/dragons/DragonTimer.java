@@ -2,6 +2,7 @@ package com.endsight.dragons;
 
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
@@ -257,6 +258,7 @@ public final class DragonTimer {
         if (!enabled || !showHud) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
+        if (Area.crypts()) return;
 
         Font font = mc.font;
         int[] size = drawAt(null, font, 0, 0, false);

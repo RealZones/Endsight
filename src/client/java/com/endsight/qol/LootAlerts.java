@@ -35,7 +35,10 @@ public final class LootAlerts {
                 concat(List.of(
                         new Setting.Choice("Alert from",
                                 "Lowest tier worth a call. Set in config/endsight/drops.txt.",
-                                Drops.TIERS, () -> minTier, v -> minTier = v)),
+                                Drops.TIERS, () -> minTier, v -> minTier = v),
+                        new Setting.Action("Reload tiers",
+                                "Re-read config/endsight/drops.txt after editing it.",
+                                "Reload", Drops::reload)),
                         Drops.tierNotes()));
     }
 

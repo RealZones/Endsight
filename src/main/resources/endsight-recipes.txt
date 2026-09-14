@@ -1,0 +1,151 @@
+# result	count	cell0..cell8 as count*name (blank for empty). Rewritten by the mod on every scan.
+Crystal Helmet	1	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment			
+Maxor's Helmet	1		1*Maxor's Wand			1*Frozen Blaze Helmet			1*Maxor's Wand	
+Crystal Chestplate	1	10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment
+Crystal Leggings	1	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment
+Crystal Boots	1	10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment			
+Frozen Blaze Helmet	1	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment		10*Frozen Fragment			
+Frozen Blaze Chestplate	1	10*Frozen Fragment		10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment
+Frozen Blaze Leggings	1	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment		10*Frozen Fragment	10*Frozen Fragment		10*Frozen Fragment
+Frozen Blaze Boots	1	10*Frozen Fragment		10*Frozen Fragment	10*Frozen Fragment		10*Frozen Fragment			
+Golden Dragon Helmet	1	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment		10*Golden Fragment			
+Golden Dragon Chestplate	1	10*Golden Fragment		10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment
+Golden Dragon Leggings	1	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment	10*Golden Fragment		10*Golden Fragment	10*Golden Fragment		10*Golden Fragment
+Golden Dragon Boots	1	10*Golden Fragment		10*Golden Fragment	10*Golden Fragment		10*Golden Fragment			
+Storm Helmet	1		1*Storm's Wand			1*Frozen Blaze Helmet			1*Storm's Wand	
+Storm Chestplate	1		1*Storm's Wand			1*Frozen Blaze Chestplate			1*Storm's Wand	
+Storm Leggings	1		1*Storm's Wand			1*Frozen Blaze Leggings			1*Storm's Wand	
+Storm Boots	1		1*Storm's Wand			1*Frozen Blaze Boots			1*Storm's Wand	
+Maxor's Chestplate	1		1*Maxor's Wand			1*Frozen Blaze Chestplate			1*Maxor's Wand	
+Maxor's Leggings	1		1*Maxor's Wand			1*Frozen Blaze Leggings			1*Maxor's Wand	
+Maxor's Boots	1		1*Maxor's Wand			1*Frozen Blaze Boots			1*Maxor's Wand	
+Necron Helmet	1		1*Necron Aegis			1*Frozen Blaze Helmet			1*Necron Aegis	
+Necron Chestplate	1		1*Necron Aegis			1*Frozen Blaze Chestplate			1*Necron Aegis	
+Necron Leggings	1		1*Necron Aegis			1*Frozen Blaze Leggings			1*Necron Aegis	
+Necron Boots	1		1*Necron Aegis			1*Frozen Blaze Boots			1*Necron Aegis	
+Old Dragon Helmet	1	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment		10*Old Dragon Fragment			
+Old Dragon Chestplate	1	10*Old Dragon Fragment		10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment
+Old Dragon Leggings	1	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment	10*Old Dragon Fragment		10*Old Dragon Fragment	10*Old Dragon Fragment		10*Old Dragon Fragment
+Old Dragon Boots	1	10*Old Dragon Fragment		10*Old Dragon Fragment	10*Old Dragon Fragment		10*Old Dragon Fragment			
+Protector Dragon Helmet	1	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment		10*Protector Dragon Fragment			
+Protector Dragon Chestplate	1	10*Protector Dragon Fragment		10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment
+Protector Dragon Leggings	1	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment	10*Protector Dragon Fragment		10*Protector Dragon Fragment	10*Protector Dragon Fragment		10*Protector Dragon Fragment
+Protector Dragon Boots	1	10*Protector Dragon Fragment		10*Protector Dragon Fragment	10*Protector Dragon Fragment		10*Protector Dragon Fragment			
+Sorrow Helmet	1		1*Lament		2*Golden Droplet	1*Superior Dragon Helmet	8*Endstone Rose Bush			
+Sorrow Chestplate	1		1*Lament		2*Golden Droplet	1*Superior Dragon Chestplate	8*Endstone Rose Bush			
+Sorrow Leggings	1		1*Lament		2*Golden Droplet	1*Superior Dragon Leggings	8*Endstone Rose Bush			
+Sorrow Boots	1		1*Lament		2*Golden Droplet	1*Superior Dragon Boots	8*Endstone Rose Bush			
+Strong Dragon Helmet	1	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment		10*Strong Dragon Fragment			
+Strong Dragon Chestplate	1	10*Strong Dragon Fragment		10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment
+Strong Dragon Leggings	1	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment	10*Strong Dragon Fragment		10*Strong Dragon Fragment	10*Strong Dragon Fragment		10*Strong Dragon Fragment
+Strong Dragon Boots	1	10*Strong Dragon Fragment		10*Strong Dragon Fragment	10*Strong Dragon Fragment		10*Strong Dragon Fragment			
+Superior Dragon Helmet	1	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment		10*Superior Dragon Fragment			
+Superior Dragon Chestplate	1	10*Superior Dragon Fragment		10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment
+Superior Dragon Leggings	1	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment	10*Superior Dragon Fragment		10*Superior Dragon Fragment	10*Superior Dragon Fragment		10*Superior Dragon Fragment
+Superior Dragon Boots	1	10*Superior Dragon Fragment		10*Superior Dragon Fragment	10*Superior Dragon Fragment		10*Superior Dragon Fragment			
+Unstable Dragon Helmet	1	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment			
+Unstable Dragon Chestplate	1	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment
+Unstable Dragon Leggings	1	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment
+Unstable Dragon Boots	1	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment	10*Unstable Dragon Fragment		10*Unstable Dragon Fragment			
+Wise Dragon Helmet	1	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment		10*Wise Dragon Fragment			
+Wise Dragon Chestplate	1	10*Wise Dragon Fragment		10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment
+Wise Dragon Leggings	1	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment	10*Wise Dragon Fragment		10*Wise Dragon Fragment	10*Wise Dragon Fragment		10*Wise Dragon Fragment
+Wise Dragon Boots	1	10*Wise Dragon Fragment		10*Wise Dragon Fragment	10*Wise Dragon Fragment		10*Wise Dragon Fragment			
+Young Dragon Helmet	1	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment		10*Young Dragon Fragment			
+Young Dragon Chestplate	1	10*Young Dragon Fragment		10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment
+Young Dragon Leggings	1	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment	10*Young Dragon Fragment		10*Young Dragon Fragment	10*Young Dragon Fragment		10*Young Dragon Fragment
+Young Dragon Boots	1	10*Young Dragon Fragment		10*Young Dragon Fragment	10*Young Dragon Fragment		10*Young Dragon Fragment			
+Axe of the Shredded	1	32*Revenant Viscera	1*Shard of the Shredded	32*Revenant Viscera	1*Shard of the Shredded	1*Reaper Falchion	1*Shard of the Shredded	32*Revenant Viscera	1*Shard of the Shredded	32*Revenant Viscera
+Blinding Sword	1	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet		1*Mysterious Handle	
+Bouquet of Lies	1	1*Endstone Rose Bush	1*Rose of Lies	1*Endstone Rose Bush		1*Flower of Truth		1*Endstone Rose Bush	1*Rose of Lies	1*Endstone Rose Bush
+Edible Mace	1			10*Frozen Fragment			10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment
+Flower of Truth	1	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*End Stone Rose	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush
+Frozen Scythe	1	20*Frozen Fragment	20*Frozen Fragment	20*Frozen Fragment			20*Frozen Fragment			20*Frozen Fragment
+Giant's Sword	1		1*Giant's Core		1*Endstone Rose Bush	1*Livid Dagger	1*Endstone Rose Bush		1*Endstone Rose Bush	
+Golden Sceptre	1	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet		1*Mysterious Handle			1*Mysterious Handle	
+Midas Staff	1	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Golden Droplet	1*Mysterious Handle	1*Mysterious Handle	1*Mysterious Handle
+Golden Cannon	1		1*Mysterious Handle	1*Golden Droplet	1*Mysterious Handle	1*Golden Gun	1*Golden Droplet		1*Mysterious Handle	1*Golden Droplet
+Aspect of the Void	1		8*Null Ovoid		8*Null Ovoid	1*Aspect of the End	8*Null Ovoid		8*Null Ovoid	
+Atomsplit Katana	1	24*Null Ovoid	16*Null Atom	24*Null Ovoid	24*Null Ovoid	16*Null Atom	24*Null Ovoid	24*Null Ovoid	1*Vorpal Katana	24*Null Ovoid
+Bigger Teeth	1		1*Big Teeth		1*Big Teeth	1*Big Teeth	1*Big Teeth		1*Big Teeth	
+Gold Claws	1		1*Iron Claws		1*Iron Claws	1*Iron Claws	1*Iron Claws		1*Iron Claws	
+Null Atom	1		8*Null Ovoid		8*Null Ovoid	8*Null Ovoid	8*Null Ovoid		8*Null Ovoid	
+Reaper Falchion	1		1*Revived Heart			1*Revenant Catalyst			1*Revenant Falchion	
+Reaper Scythe	1		1*Scythe Blade	1*Scythe Blade		64*Revenant Viscera			1*Reaper Falchion	
+Revenant Falchion	1		1*Crystallized Heart			1*Undead Catalyst			1*Dragon Claw	
+Serrated Claws	1		1*Sharpened Claws		1*Sharpened Claws	1*Sharpened Claws	1*Sharpened Claws		1*Sharpened Claws	
+Terminator	1		32*Null Atom		64*Null Ovoid	1*Judgement Core	64*Null Ovoid	64*Null Ovoid	1*Golden Cannon	64*Null Ovoid
+Voidedge Katana	1		1*Shard of the Shredded			8*Null Ovoid			1*Mysterious Handle	
+Voodoo Doll	1		10*Frozen Fragment		10*Frozen Fragment	10*Frozen Fragment	10*Frozen Fragment		10*Frozen Fragment	
+Vorpal Katana	1		2*Null Atom			48*Null Ovoid			1*Voidedge Katana	
+Wand of Healing	1		8*Revenant Viscera			8*Revenant Viscera			8*Revenant Viscera	
+Wand of Mending	1		8*Revenant Viscera			1*Wand of Healing			8*Revenant Viscera	
+Wand of Restoration	1		16*Revenant Viscera			1*Wand of Mending			16*Revenant Viscera	
+Wand of Atonement	1		1*Revenant Catalyst			64*Revenant Viscera			1*Wand of Restoration	
+Crystallized Heart	1		8*Revenant Viscera		8*Revenant Viscera		8*Revenant Viscera		8*Revenant Viscera	
+Final Destination Helmet	1	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid		16*Null Ovoid			
+Final Destination Chestplate	1	16*Null Ovoid		16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid
+Final Destination Leggings	1	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid	16*Null Ovoid		16*Null Ovoid	16*Null Ovoid		16*Null Ovoid
+Final Destination Boots	1				16*Null Ovoid		16*Null Ovoid	16*Null Ovoid		16*Null Ovoid
+Reaper Mask	1	16*Revenant Viscera	1*Revived Heart	16*Revenant Viscera	16*Revenant Viscera	1*Beheaded Horror	16*Revenant Viscera			
+Reaper Chestplate	1				64*Revenant Viscera	1*Revenant Chestplate	64*Revenant Viscera			
+Reaper Leggings	1				64*Revenant Viscera	1*Revenant Leggings	64*Revenant Viscera			
+Reaper Boots	1				64*Revenant Viscera	1*Revenant Boots	64*Revenant Viscera			
+Revenant Chestplate	1	8*Revenant Viscera		8*Revenant Viscera	1*Zombie Heart	1*Zombie Heart	1*Zombie Heart	8*Revenant Viscera	1*Zombie Heart	8*Revenant Viscera
+Revenant Leggings	1	8*Revenant Viscera	8*Revenant Viscera	8*Revenant Viscera	1*Zombie Heart		1*Zombie Heart	1*Zombie Heart		1*Zombie Heart
+Revenant Boots	1				8*Revenant Viscera		8*Revenant Viscera	1*Zombie Heart		1*Zombie Heart
+Revived Heart	1	1*Zombie Heart	1*Zombie Heart	1*Zombie Heart	1*Zombie Heart	1*Crystallized Heart	1*Zombie Heart	1*Zombie Heart	1*Zombie Heart	1*Zombie Heart
+Warden Helmet	1	1*Shard of the Shredded	1*Warden Heart	1*Shard of the Shredded	4*Summoning Eye	1*Warden Core	4*Summoning Eye	64*Revenant Viscera	1*Revived Heart	64*Revenant Viscera
+Zombie Heart	1	4*Revenant Viscera	4*Revenant Viscera	4*Revenant Viscera	4*Revenant Viscera	1*Crystallized Heart	4*Revenant Viscera	4*Revenant Viscera	4*Revenant Viscera	4*Revenant Viscera
+Average Greed	1		1*Golden Droplet			1*Low Greed			1*Golden Droplet	
+Big Loan	1		1*Scythe Blade		1*Shard of the Shredded	1*Small Loan	1*Judgement Core		1*High Class Archfiend Dice	
+Draconic Artifact	1		1*Golden Egg			1*Draconic Ring				
+Draconic Ring	1		1*Dragon Horn			1*Draconic Talisman				
+Draconic Talisman	1	8*Dragon Scale	8*Dragon Scale	8*Dragon Scale	8*Dragon Claw	8*Dragon Claw	8*Dragon Claw	8*Dragon Scale	8*Dragon Scale	8*Dragon Scale
+Ender Artifact	1	2*Null Atom	2*Null Atom	2*Null Atom	2*Null Atom	1*Ender Ring	2*Null Atom	2*Null Atom	2*Null Atom	2*Null Atom
+Ender Relic	1	4*Null Atom	4*Null Atom	4*Null Atom	4*Null Atom	1*Ender Artifact	4*Null Atom	4*Null Atom	4*Null Atom	4*Null Atom
+Ender Ring	1	32*Null Ovoid	32*Null Ovoid	32*Null Ovoid	32*Null Ovoid	1*Ender Talisman	32*Null Ovoid	32*Null Ovoid	32*Null Ovoid	32*Null Ovoid
+Ender Talisman	1	32*Null Ovoid		32*Null Ovoid				32*Null Ovoid		32*Null Ovoid
+The Greediest of Them All	1	1*Midas Jewel	1*Golden Egg	1*Midas Jewel	1*Golden Droplet	1*High Greed	1*Golden Droplet	1*Midas Jewel	1*Golden Droplet	1*Midas Jewel
+High Greed	1		1*Scythe Blade		1*Tier Boost	1*Average Greed	1*Void Upgrade Stone			
+Low Greed	1		1*Lucky Clover			1*Weak Greedness				
+Protector's Shield	1		1*Giant's Core			1*Defender Talisman				
+Reaper Orb	1	1*Scythe Blade		1*Scythe Blade	1*Scythe Blade	1*Shard of the Shredded	1*Scythe Blade	1*Scythe Blade		1*Scythe Blade
+Revenant Talisman	1	32*Revenant Viscera	64*Undead Catalyst	32*Revenant Viscera				32*Revenant Viscera	32*Revenant Catalyst	32*Revenant Viscera
+Revenant Ring	1	32*Revenant Viscera	8*Beheaded Horror	32*Revenant Viscera		1*Revenant Talisman		32*Revenant Viscera	8*End Stone Rose	32*Revenant Viscera
+Revenant Artifact	1	64*Revenant Viscera	16*End Stone Rose	64*Revenant Viscera		1*Revenant Ring		64*Revenant Viscera	16*Beheaded Horror	64*Revenant Viscera
+Rose Artifact	1	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Rose Ring	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush
+Rose Ring	1	4*End Stone Rose	4*End Stone Rose	4*End Stone Rose	4*End Stone Rose	1*Rose Talisman	4*End Stone Rose	4*End Stone Rose	4*End Stone Rose	4*End Stone Rose
+Rose Talisman	1	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose	1*End Stone Rose
+Small Loan	1	16*Null Atom	2*Etherwarp Conduit	16*Null Atom		1*Spare Change Talisman		16*Null Atom	2*Transmission Tuner	16*Null Atom
+Spare Change Talisman	1	64*Revenant Viscera	4*Beheaded Horror	64*Revenant Viscera	4*Revenant Catalyst	1*Shard of the Shredded	4*Undead Catalyst	64*Revenant Viscera	4*End Stone Rose	64*Revenant Viscera
+Void Artifact	1	8*Null Atom	8*Null Atom	8*Null Atom	8*Null Atom	1*Void Ring	8*Null Atom	8*Null Atom	8*Null Atom	8*Null Atom
+Void Relic	1				1*Void Upgrade Stone	1*Void Artifact				
+Void Ring	1	4*Null Atom	4*Null Atom	4*Null Atom	4*Null Atom	1*Void Talisman	4*Null Atom	4*Null Atom	4*Null Atom	4*Null Atom
+Void Talisman	1	4*Null Atom		4*Null Atom				4*Null Atom		4*Null Atom
+Warden Talisman	1		1*Golem Upgrader			1*Defender Talisman				
+Warden's Blade	1		1*Warden Core			1*Defender Talisman				
+Weak Greedness	1		1*Golden Droplet		1*Golden Droplet		1*Golden Droplet		1*Golden Droplet	
+Wilted Rose Artifact	1	2*Rose of Lies	2*Rose of Lies	2*Rose of Lies	2*Rose of Lies	1*Wilted Rose Ring	2*Rose of Lies	2*Rose of Lies	2*Rose of Lies	2*Rose of Lies
+Wilted Rose Ring	1	1*Rose of Lies	1*Rose of Lies	1*Rose of Lies	1*Rose of Lies	1*Wilted Rose Talisman	1*Rose of Lies	1*Rose of Lies	1*Rose of Lies	1*Rose of Lies
+Wilted Rose Talisman	1	1*Rose of Lies		1*Rose of Lies				1*Rose of Lies		1*Rose of Lies
+Zealot Artifact	1	1*Golden Eye	1*InfiniEye™	1*Golden Eye	1*Golden Eye	1*Zealot Ring	1*Golden Eye	1*Golden Eye	1*Golden Eye	1*Golden Eye
+Zealot Ring	1	16*Summoning Eye	1*Golden Eye	16*Summoning Eye	16*Summoning Eye	1*Zealot Talisman	16*Summoning Eye	16*Summoning Eye	16*Summoning Eye	16*Summoning Eye
+Zealot Talisman	1	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye	8*Summoning Eye
+Zombie Artifact	1	32*Revenant Viscera	32*Revenant Viscera	32*Revenant Viscera	16*Revenant Catalyst	1*Zombie Ring	4*Beheaded Horror	32*Revenant Viscera	4*Rose of Lies	32*Revenant Viscera
+Zombie Relic	1	64*Revenant Viscera	1*Shard of the Shredded	64*Revenant Viscera	64*Revenant Viscera	1*Zombie Artifact	64*Revenant Viscera	64*Revenant Viscera	64*Revenant Viscera	64*Revenant Viscera
+Zombie Ring	1	16*Revenant Viscera	16*Revenant Viscera	16*Revenant Viscera	16*Revenant Viscera	1*Zombie Talisman	16*Revenant Viscera	16*Revenant Viscera	32*Undead Catalyst	16*Revenant Viscera
+[Lvl 1] Golden Dragon	1	1*Golden Droplet	1*Golden Egg	1*Golden Droplet	64*Golden Fragment	1*[Lvl 1] Ender Dragon	64*Golden Fragment	1*Golden Droplet	64*Golden Fragment	1*Golden Droplet
+Tier Boost	1		1*Endstone Rose Bush		1*Endstone Rose Bush	1*Tier Boost Core	1*Endstone Rose Bush		1*Endstone Rose Bush	
+Reinforced Scales	1		1*Hardened Scales		1*Hardened Scales	1*Hardened Scales	1*Hardened Scales		1*Hardened Scales	
+Golden Hot Potato Book	1		16*Golden Fragment		16*Golden Fragment	1*Hot Potato Book	16*Golden Fragment		16*Golden Fragment	
+Lament	1	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	2*Golden Droplet	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush
+Endstone Rose Bush	1		10*End Stone Rose		10*End Stone Rose	10*End Stone Rose	10*End Stone Rose		10*End Stone Rose	
+Void Upgrade Stone	1	32*Null Atom		32*Null Atom		1*Shard of the Shredded		32*Null Atom		32*Null Atom
+Weird Tuba	1	4*Frozen Fragment		4*Frozen Fragment	4*Frozen Fragment		4*Frozen Fragment		4*Frozen Fragment	
+
+# categories, as the server's menu lists them
+@Combat	Crystal Helmet	Crystal Chestplate	Crystal Leggings	Crystal Boots	Frozen Blaze Helmet	Frozen Blaze Chestplate	Frozen Blaze Leggings		Frozen Blaze Boots	Storm Helmet	Storm Chestplate	Storm Leggings	Storm Boots	Maxor's Helmet	Maxor's Chestplate	Maxor's Leggings	Maxor's Boots	Necron Helmet	Necron Chestplate	Necron Leggings	Necron Boots	Sorrow Helmet	Sorrow Chestplate	Sorrow Leggings	Sorrow Boots	Axe of the Shredded	Blinding Sword	Bouquet of Lies	Edible Mace	Flower of Truth	Frozen Scythe	Giant's Sword	Golden Sceptre	Midas Staff	Golden Cannon
+@Slayer	Aspect of the Void	Atomsplit Katana	Bigger Teeth	Gold Claws	Null Atom	Reaper Falchion	Reaper Scythe		Revenant Falchion	Serrated Claws	Terminator	Voidedge Katana	Voodoo Doll	Vorpal Katana	Wand of Healing	Wand of Mending	Wand of Restoration	Wand of Atonement	Crystallized Heart	Final Destination Helmet	Final Destination Chestplate	Final Destination Leggings	Final Destination Boots	Reaper Mask	Reaper Chestplate	Reaper Leggings	Reaper Boots	Revenant Chestplate	Revenant Leggings	Revenant Boots	Revived Heart	Warden Helmet	Zombie Heart
+@Dragon & Draconic	Golden Dragon Helmet	Golden Dragon Chestplate	Golden Dragon Leggings	Golden Dragon Boots	Old Dragon Helmet	Old Dragon Chestplate	Old Dragon Leggings		Old Dragon Boots	Protector Dragon Helmet	Protector Dragon Chestplate	Protector Dragon Leggings	Protector Dragon Boots	Strong Dragon Helmet	Strong Dragon Chestplate	Strong Dragon Leggings	Strong Dragon Boots	Superior Dragon Helmet	Superior Dragon Chestplate	Superior Dragon Leggings	Superior Dragon Boots	Unstable Dragon Helmet	Unstable Dragon Chestplate	Unstable Dragon Leggings	Unstable Dragon Boots	Wise Dragon Helmet	Wise Dragon Chestplate	Wise Dragon Leggings	Wise Dragon Boots	Young Dragon Helmet	Young Dragon Chestplate	Young Dragon Leggings	Young Dragon Boots	[Lvl 1] Golden Dragon	Reinforced Scales
+@Accessories	Average Greed	Big Loan	Draconic Artifact	Draconic Ring	Draconic Talisman	Ender Artifact	Ender Relic		Ender Ring	Ender Talisman	The Greediest of Them All	High Greed	Low Greed	Protector's Shield	Reaper Orb	Revenant Talisman	Revenant Ring	Revenant Artifact	Rose Artifact	Rose Ring	Rose Talisman	Small Loan	Spare Change Talisman	Void Artifact	Void Relic	Void Ring	Void Talisman	Warden Talisman	Warden's Blade	Weak Greedness	Wilted Rose Artifact	Wilted Rose Ring	Wilted Rose Talisman	Zealot Artifact	Zealot Ring	Zealot Talisman	Zombie Artifact	Zombie Relic	Zombie Ring

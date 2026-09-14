@@ -26,3 +26,8 @@ accessible	method	net/minecraft/client/gui/components/ChatComponent	refreshTrimm
 # them by, then copies the whole message that row belongs to.
 accessible	field	net/minecraft/client/gui/components/ChatComponent	trimmedMessages	Ljava/util/List;
 accessible	field	net/minecraft/client/gui/components/ChatComponent	chatScrollbarPos	I
+
+# Recipes hangs its panel off the right edge of the inventory window, which is the
+# window's own size - protected, and nothing public says it.
+accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageWidth	I
+accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageHeight	I

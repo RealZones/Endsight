@@ -2,7 +2,7 @@
 
 A Fabric client mod for **DragSim** — End Simulator / Dragon Sim.
 
-Trackers for dragons, zealots and slayers, drop alerts and a drop tracker, storage
+Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storage
 previews and a Voidgloom helper. Press **Right Shift** in game to open the module
 browser; any module can be bound to a key.
 
@@ -40,8 +40,9 @@ each with a per-hour rate. Only your own kills count. Pauses when you stop movin
 **Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
 when you stop moving. Each boss's kill time is printed in chat.
 
-**Drop Tracker** — every drop you get, counted on screen. One button switches between
-this session and all-time.
+**Huff 'n' Puff** — profit and loss at the casino slot: rounds, wagered, won, P/L and
+your best hit, this session or all time. The server only announces wins, so the stake
+is read off the PULL button as you click it.
 
 ### Alerts
 
@@ -64,6 +65,10 @@ beacon, drawn in the world. Your own boss only.
 hides the plain numbers — non-crits and ability damage — and keeps the crits.
 
 **Storage Preview** — hover a storage page to see what is in it.
+
+**Ping / TPS** — FPS, your ping and the server's tick rate in one pill. Ping is a real
+round trip measured once a second; TPS is worked out from the server's clock, good to
+about half a tick.
 
 ### Chat
 
@@ -89,14 +94,24 @@ copies the answer.
 
 **Item Search** — a search box in Storage that marks which pages hold the item.
 
+**Recipes** — an item panel beside any inventory window: every server recipe as a
+grid of icons in the server's own categories, paged and searchable. Hover for what
+you hold of each ingredient (your inventory, every storage page you have opened, and
+your ender chest),
+click for the recipe's grid — craftable ingredients are underlined and click through
+to their own recipe — right-click for everything that uses an item. At a crafting
+table, *Fill grid* places the recipe from your inventory; anywhere else the button
+sends `/craft`. Every recipe ships with the mod; *Scan all recipes* re-reads the
+server's menu if they change, into `config/endsight/recipes.txt`.
+
 **Command Binds** — a key that sends a command you typed, like `/warp end` on F6.
 
 ### Drops
 
-Loot Alerts, Drop Tracker and Copy Chat share one list, `config/endsight/drops.txt`,
+Loot Alerts and Copy Chat share one list, `config/endsight/drops.txt`,
 created on first run. Each line is a tier and an item name — `legendary`, `epic`,
 `rare` or `common` — set by rarity and value rather than the game's colour. Add or move
-items by editing the file; the Drop Tracker has a *Reload tiers* button. Anything not
+items by editing the file; Loot Alerts has a *Reload tiers* button. Anything not
 listed uses the server's own tier. Drops other people paste into chat are ignored.
 
 ---

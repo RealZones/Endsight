@@ -1,0 +1,1054 @@
+package com.endsight.storage;
+
+import com.endsight.hud.Toast;
+import com.endsight.ui.Draw;
+import com.endsight.ui.Module;
+import com.endsight.ui.Setting;
+import com.endsight.ui.Theme;
+import com.endsight.zealots.Zealots;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.world.Container;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * The server's recipes, learned from its own recipe menu and kept: an item panel
+ * beside any inventory window - a grid of results in the server's own categories,
+ * paged and searchable - and a second box on the other side where the one you
+ * clicked opens, with what you already hold of each ingredient, counting your bags
+ * and every storage page you have ever opened.
+ *
+ * The recipes are not in any file the client gets - they exist only as the menu the
+ * server draws: "Recipes (1/6)", pages of items, and clicking one opens "<Item>
+ * Recipe", a 3x3 grid with the result beside it. So they are read off those screens
+ * as they appear, and "Scan all recipes" walks the menu for you: each category in
+ * the left column in turn, every page of it read for what belongs there, each item
+ * whose grid is not yet known clicked, read, and backed out of. Everything learned
+ * goes to config/endsight/recipes.txt, so a scan is a once-a-patch job.
+ *
+ * Reading, not guessing, the screen's layout: the left column of a list page is the
+ * categories (the star is "All Recipes"), the recipes sit in columns 1-8 of rows 1-4,
+ * the bottom row is furniture - page arrows at 48 and 53, a barrier to close. On a
+ * recipe page the grid is rows 1-3 of columns 1-3, the result is slot 25 and the
+ * arrow at 45 goes back.
+ */
+public final class Recipes {
+
+    private Recipes() {
+    }
+
+    private static final Pattern LIST = Pattern.compile("^Recipes \\((\\d+)/(\\d+)\\)$");
+    private static final Pattern RECIPE = Pattern.compile("^(.+?) Recipe(?: \\(\\d+/\\d+\\))?$");
+    private static final int[] GRID = {10, 11, 12, 19, 20, 21, 28, 29, 30};
+    private static final int RESULT = 25;
+    private static final int BACK = 45;
+    private static final int NEXT = 53;
+    /** The category column: the star (All) and the four under it. */
+    private static final int[] CATEGORIES = {9, 18, 27, 36, 0};
+
+    /** One cell of a grid, or the result: what and how many. */
+    record Ingredient(String name, int count) {
+    }
+
+    /** A recipe: nine cells (null for empty), the result and its count. */
+    record Recipe(String name, int count, Ingredient[] grid) {
+        List<Ingredient> needs() {
+            Map<String, Integer> sum = new LinkedHashMap<>();
+            for (Ingredient i : grid) if (i != null) sum.merge(i.name(), i.count(), Integer::sum);
+            List<Ingredient> out = new ArrayList<>();
+            sum.forEach((n, c) -> out.add(new Ingredient(n, c)));
+            return out;
+        }
+
+        boolean uses(String item) {
+            for (Ingredient i : grid) if (i != null && i.name().equals(item)) return true;
+            return false;
+        }
+    }
+
+    private static boolean enabled = true;
+    private static boolean panel = true;
+    private static final Map<String, Recipe> RECIPES = new LinkedHashMap<>();
+    /** Category name -> the recipe names the server lists under it, in its order. */
+    private static final Map<String, LinkedHashSet<String>> CATEGORY = new LinkedHashMap<>();
+    /**
+     * A stack seen for each name, anywhere, so the panel can draw an icon instead of a
+     * word. Kept on disk too - the first relaunch showed a grid of letters, because
+     * the icons had only ever lived in memory and the recipes file holds names.
+     */
+    private static final Map<String, ItemStack> ICONS = new HashMap<>();
+    private static boolean iconsLoaded, iconsDirty;
+    /** The ender chest, by title, the last time it was open - /ec holds things too. */
+    private static final Map<String, List<ItemStack>> CHESTS = new LinkedHashMap<>();
+    private static final Pattern CHEST = Pattern.compile("^Ender Chest(?: \\(\\d+/\\d+\\))?$");
+
+    public static Module module() {
+        return new Module("storage.recipes", "Recipes",
+                "Every recipe beside your inventory, with what you already have for it.", "Quality of Life",
+                () -> enabled, v -> enabled = v,
+                List.of(
+                        new Setting.Toggle("Panel",
+                                "The item grid beside any inventory window. Click one for its recipe, right-click for what uses it.",
+                                () -> panel, v -> panel = v),
+                        new Setting.Action("Scan all recipes",
+                                "Open the recipe menu and it clicks through every category and page for you.",
+                                "Scan", Recipes::arm),
+                        new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
+                                + CATEGORY.size() + " categories, in config/endsight/recipes.txt")));
+    }
+
+    public static void init() {
+        load();
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if (!(screen instanceof AbstractContainerScreen<?> container)) return;
+            ScreenEvents.afterTick(screen).register(s -> tick(container));
+            if (StoragePreview.isStorageWindow(container)) return;     // that window has its own panel
+            attachPanel(client, screen, container);
+        });
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            // A scan that loses its screen - Escape, a teleport - is over, not waiting.
+            if (armed && mc.screen == null && System.currentTimeMillis() - busyUntil > 1_500) finish("stopped");
+            // Icons need the level's registries to decode, so they wait for one.
+            if (mc.level == null) return;
+            if (!iconsLoaded) {
+                iconsLoaded = true;
+                loadIcons();
+            }
+            if (iconsDirty && System.currentTimeMillis() - iconsSaved > 15_000) saveIcons();
+        });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            if (iconsDirty) saveIcons();
+        });
+    }
+
+    // ── reading the screens ───────────────────────────────────────────────────
+
+    private static void tick(AbstractContainerScreen<?> screen) {
+        if (!enabled) return;
+        String title = Zealots.strip(screen.getTitle().getString()).trim();
+        Matcher list = LIST.matcher(title);
+        if (list.matches()) {
+            List<ItemStack> slots = containerSlots(screen);
+            if (slots.size() < 54) return;
+            for (ItemStack s : slots) remember(s);
+            if (armed) walkList(screen, slots, Integer.parseInt(list.group(1)), Integer.parseInt(list.group(2)));
+            return;
+        }
+        Matcher recipe = RECIPE.matcher(title);
+        if (recipe.matches()) {
+            List<ItemStack> slots = containerSlots(screen);
+            if (slots.size() < 54 || slots.get(RESULT).isEmpty()) return;      // not arrived yet
+            capture(slots);
+            if (armed) walkRecipe(screen);
+            return;
+        }
+        if (CHEST.matcher(title).matches()) {
+            List<ItemStack> slots = containerSlots(screen);
+            boolean any = false;
+            for (ItemStack s : slots) if (!s.isEmpty()) any = true;
+            // Blank for a frame or two after opening; a real empty chest stays whatever
+            // it was, which costs nothing.
+            if (any) {
+                List<ItemStack> copy = new ArrayList<>();
+                for (ItemStack s : slots) copy.add(s.copy());
+                CHESTS.put(title, copy);
+                iconsDirty = true;
+            }
+        }
+    }
+
+    private static void capture(List<ItemStack> slots) {
+        ItemStack result = slots.get(RESULT);
+        String name = name(result);
+        Ingredient[] grid = new Ingredient[9];
+        for (int i = 0; i < 9; i++) {
+            ItemStack s = slots.get(GRID[i]);
+            if (!s.isEmpty()) {
+                grid[i] = new Ingredient(name(s), s.getCount());
+                remember(s);
+            }
+        }
+        remember(result);
+        Recipe r = new Recipe(name, result.getCount(), grid);
+        Recipe old = RECIPES.put(name, r);
+        if (old == null || !Arrays.equals(old.grid(), r.grid())) save();
+    }
+
+    private static void remember(ItemStack s) {
+        if (s.isEmpty()) return;
+        if (ICONS.putIfAbsent(name(s), s.copyWithCount(1)) == null) iconsDirty = true;
+    }
+
+    // ── icons and chests, on disk ─────────────────────────────────────────────
+
+    private static long iconsSaved;
+
+    private static Path iconsFile() {
+        return dir().resolve("recipes-items.nbt");
+    }
+
+    /** One stack per name, and the ender chest's contents, as the storage snapshots are kept. */
+    private static void saveIcons() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        iconsDirty = false;
+        iconsSaved = System.currentTimeMillis();
+        try {
+            RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess());
+            ListTag icons = new ListTag();
+            for (ItemStack s : ICONS.values()) ItemStack.OPTIONAL_CODEC.encodeStart(ops, s).result().ifPresent(icons::add);
+            ListTag chests = new ListTag();
+            CHESTS.forEach((title, items) -> {
+                CompoundTag c = new CompoundTag();
+                c.putString("title", title);
+                ListTag list = new ListTag();
+                for (ItemStack s : items) ItemStack.OPTIONAL_CODEC.encodeStart(ops, s).result().ifPresent(list::add);
+                c.put("items", list);
+                chests.add(c);
+            });
+            CompoundTag root = new CompoundTag();
+            root.put("icons", icons);
+            root.put("chests", chests);
+            Files.createDirectories(dir());
+            NbtIo.writeCompressed(root, iconsFile());
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[Endsight] could not write recipe items: " + e);
+        }
+    }
+
+    private static void loadIcons() {
+        Minecraft mc = Minecraft.getInstance();
+        Path f = iconsFile();
+        seed("endsight-recipes-items.nbt", f);
+        if (mc.level == null || !Files.exists(f)) return;
+        try {
+            CompoundTag root = NbtIo.readCompressed(f, NbtAccounter.create(16L * 1024 * 1024));
+            RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess());
+            for (Tag tag : root.getListOrEmpty("icons")) {
+                ItemStack s = ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY);
+                if (!s.isEmpty()) ICONS.putIfAbsent(name(s), s);
+            }
+            for (CompoundTag c : root.getListOrEmpty("chests").compoundStream().toList()) {
+                List<ItemStack> items = new ArrayList<>();
+                for (Tag tag : c.getListOrEmpty("items")) {
+                    items.add(ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY));
+                }
+                CHESTS.put(c.getStringOr("title", "Ender Chest"), items);
+            }
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[Endsight] could not read recipe items: " + e);
+        }
+    }
+
+    static String name(ItemStack s) {
+        return Zealots.strip(s.getHoverName().getString()).trim();
+    }
+
+    private static List<ItemStack> containerSlots(AbstractContainerScreen<?> screen) {
+        Minecraft mc = Minecraft.getInstance();
+        Container playerInv = mc.player == null ? null : mc.player.getInventory();
+        List<ItemStack> out = new ArrayList<>();
+        try {
+            for (Slot slot : screen.getMenu().slots) {
+                if (slot.container != playerInv) out.add(slot.getItem());
+            }
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+        return out;
+    }
+
+    // ── the scan ──────────────────────────────────────────────────────────────
+
+    private static boolean armed;
+    private static long busyUntil;
+    private static String expecting;
+    private static final Set<String> skipped = new HashSet<>();
+    private static int scanned;
+    /** Which entry of CATEGORIES the scan is in, and that category's name. */
+    private static int categoryAt;
+    private static String category;
+
+    private static void arm() {
+        armed = true;
+        scanned = 0;
+        categoryAt = -1;
+        category = null;
+        skipped.clear();
+        busyUntil = System.currentTimeMillis() + 60_000;     // a minute to open the menu
+        Toast.changed("Recipes", "Open the recipe menu");
+    }
+
+    private static void finish(String why) {
+        armed = false;
+        save();
+        Toast.changed("Recipes", why + " - " + RECIPES.size() + " known");
+    }
+
+    private static void click(AbstractContainerScreen<?> screen, int containerIndex, long wait) {
+        Minecraft mc = Minecraft.getInstance();
+        Container playerInv = mc.player.getInventory();
+        List<Slot> slots = screen.getMenu().slots;
+        for (int i = 0; i < slots.size(); i++) {
+            Slot s = slots.get(i);
+            if (s.container != playerInv && s.index == containerIndex) {
+                mc.gameMode.handleContainerInput(screen.getMenu().containerId, i, 0, ContainerInput.PICKUP, mc.player);
+                break;
+            }
+        }
+        busyUntil = System.currentTimeMillis() + wait;
+    }
+
+    private static void walkList(AbstractContainerScreen<?> screen, List<ItemStack> slots, int page, int pages) {
+        long now = System.currentTimeMillis();
+        if (now < busyUntil) {
+            // The list is still up after a click that should have opened a recipe: that
+            // item has none. Skipped, or the scan would click it forever.
+            if (expecting != null && now > busyUntil - 200) {
+                skipped.add(expecting);
+                expecting = null;
+            }
+            return;
+        }
+        expecting = null;
+
+        // Not in a category yet: open the first one. The catalogue view and a category's
+        // pages look alike, so the scan is always inside one it chose itself.
+        if (categoryAt < 0) {
+            nextCategory(screen, slots);
+            return;
+        }
+
+        // Everything on this page belongs to the category, known grid or not.
+        if (category != null) {
+            LinkedHashSet<String> in = CATEGORY.computeIfAbsent(category, k -> new LinkedHashSet<>());
+            for (int row = 1; row <= 4; row++) {
+                for (int col = 1; col <= 8; col++) {
+                    ItemStack s = slots.get(row * 9 + col);
+                    if (!s.isEmpty()) in.add(name(s));
+                }
+            }
+        }
+        for (int row = 1; row <= 4; row++) {
+            for (int col = 1; col <= 8; col++) {
+                int i = row * 9 + col;
+                ItemStack s = slots.get(i);
+                if (s.isEmpty()) continue;
+                String n = name(s);
+                if (skipped.contains(n)) continue;
+                // Known, and every ingredient has a face: nothing to learn from it.
+                if (RECIPES.containsKey(n) && !missingIcons(RECIPES.get(n))) continue;
+                expecting = n;
+                click(screen, i, 1_500);
+                return;
+            }
+        }
+        if (page < pages) click(screen, NEXT, 800);
+        else nextCategory(screen, slots);
+    }
+
+    /** On to the next category in the left column; the star ("All") comes last, for strays. */
+    private static void nextCategory(AbstractContainerScreen<?> screen, List<ItemStack> slots) {
+        while (++categoryAt < CATEGORIES.length) {
+            ItemStack s = slots.get(CATEGORIES[categoryAt]);
+            if (s.isEmpty()) continue;
+            String n = name(s);
+            category = n.contains("All") ? null : n;
+            click(screen, CATEGORIES[categoryAt], 800);
+            return;
+        }
+        finish("Scanned " + scanned);
+    }
+
+    /** Whether any cell of the grid has no stack on record to draw it with. */
+    private static boolean missingIcons(Recipe r) {
+        for (Ingredient i : r.grid()) if (i != null && !ICONS.containsKey(i.name())) return true;
+        return false;
+    }
+
+    private static void walkRecipe(AbstractContainerScreen<?> screen) {
+        if (System.currentTimeMillis() < busyUntil) return;
+        scanned++;
+        expecting = null;
+        click(screen, BACK, 600);
+    }
+
+    // ── the file ──────────────────────────────────────────────────────────────
+
+    private static Path dir() {
+        return FabricLoader.getInstance().getConfigDir().resolve("endsight");
+    }
+
+    /**
+     * One line per recipe: result, its count, then the nine cells as "count*name",
+     * tab-separated; then the categories, one line each: "category: name, name, ...".
+     */
+    private static void save() {
+        List<String> lines = new ArrayList<>();
+        lines.add("# result\tcount\tcell0..cell8 as count*name (blank for empty). Rewritten by the mod on every scan.");
+        for (Recipe r : RECIPES.values()) {
+            StringBuilder sb = new StringBuilder(r.name()).append('\t').append(r.count());
+            for (Ingredient i : r.grid()) sb.append('\t').append(i == null ? "" : i.count() + "*" + i.name());
+            lines.add(sb.toString());
+        }
+        lines.add("");
+        lines.add("# categories, as the server's menu lists them");
+        CATEGORY.forEach((c, names) -> lines.add("@" + c + "\t" + String.join("\t", names)));
+        try {
+            Files.createDirectories(dir());
+            Files.write(dir().resolve("recipes.txt"), lines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not write recipes: " + e);
+        }
+    }
+
+    /**
+     * The scan's results ship inside the jar, so nobody but Fear ever has to run one:
+     * the first launch copies them out to config, and from then on the config copy is
+     * the one that counts - a scan of your own updates it, the jar's never overwrites it.
+     */
+    private static void seed(String resource, Path to) {
+        if (Files.exists(to)) return;
+        try (java.io.InputStream in = Recipes.class.getResourceAsStream("/" + resource)) {
+            if (in == null) return;
+            Files.createDirectories(to.getParent());
+            Files.copy(in, to);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not seed " + resource + ": " + e);
+        }
+    }
+
+    private static void load() {
+        Path f = dir().resolve("recipes.txt");
+        seed("endsight-recipes.txt", f);
+        if (!Files.exists(f)) return;
+        try {
+            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
+                if (line.isBlank() || line.startsWith("#")) continue;
+                String[] p = line.split("\t", -1);
+                if (line.startsWith("@")) {
+                    LinkedHashSet<String> in = CATEGORY.computeIfAbsent(p[0].substring(1), k -> new LinkedHashSet<>());
+                    for (int i = 1; i < p.length; i++) if (!p[i].isBlank()) in.add(p[i]);
+                    continue;
+                }
+                if (p.length < 11) continue;
+                Ingredient[] grid = new Ingredient[9];
+                for (int i = 0; i < 9; i++) {
+                    String cell = p[2 + i];
+                    int star = cell.indexOf('*');
+                    if (star > 0) grid[i] = new Ingredient(cell.substring(star + 1), Integer.parseInt(cell.substring(0, star)));
+                }
+                RECIPES.put(p[0], new Recipe(p[0], Integer.parseInt(p[1]), grid));
+            }
+        } catch (IOException | NumberFormatException e) {
+            System.err.println("[Endsight] could not read recipes: " + e);
+        }
+    }
+
+    // ── what you have ─────────────────────────────────────────────────────────
+
+    /** Everything you hold, by name: your inventory, every storage page ever snapshotted, and the ender chest. */
+    private static Map<String, Integer> holdings() {
+        Map<String, Integer> have = new HashMap<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) count(have, s);
+        }
+        for (PageSnapshot snap : StoragePreview.snapshots().values()) {
+            for (ItemStack s : snap.items()) count(have, s);
+        }
+        for (List<ItemStack> chest : CHESTS.values()) {
+            for (ItemStack s : chest) count(have, s);
+        }
+        return have;
+    }
+
+    private static void count(Map<String, Integer> have, ItemStack s) {
+        if (s.isEmpty()) return;
+        have.merge(name(s), s.getCount(), Integer::sum);
+        remember(s);
+    }
+
+    /** Ingredients you have enough of, out of the ingredients there are. */
+    private static int[] ready(Recipe r, Map<String, Integer> have) {
+        int ok = 0;
+        List<Ingredient> needs = r.needs();
+        for (Ingredient i : needs) if (have.getOrDefault(i.name(), 0) >= i.count()) ok++;
+        return new int[]{ok, needs.size()};
+    }
+
+    // ── the panel ─────────────────────────────────────────────────────────────
+
+    /**
+     * Two boxes, not one. The item grid sits on the right of the screen - pages of
+     * icons, the categories down its left edge as the server's own menu has them,
+     * prev / page / next above, a search box below. A recipe opens in a SEPARATE box
+     * on the left, so the grid stays where it is: a craft-up needs three recipes read
+     * one after another, and a viewer that replaced the grid meant back, find, click,
+     * back, find, click. Now the grid never moves and the left box just changes.
+     */
+    private static final int CELL = 20;
+    private static final int PAD = 6;
+    private static final int GAP = 6;
+    private static final int HEAD = 22;
+    private static final int FOOT = 22;
+    private static final int CATS = 22;
+
+    private static String query = "";
+    private static String cat = null;           // null = All
+    /** Tucked away by the tab on its edge; the tab stays so it can come back. */
+    private static boolean shown = true;
+    private static final int TAB_W = 9, TAB_H = 28;
+    private static int page;
+    /** What the left box shows: a recipe, or an item whose uses are listed; null for closed. */
+    private static String openRecipe, openUses;
+    private static final List<String> trail = new ArrayList<>();
+
+    private static EditBox box;
+    private static Screen owner;
+
+    private record Frame(int x, int y, int w, int h, int cols, int rows) {
+        int catX() { return x + PAD; }
+        int gridX() { return x + PAD + CATS; }
+        int gridY() { return y + HEAD; }
+        int gridW() { return cols * CELL; }
+        int gridH() { return rows * CELL; }
+    }
+
+    private static Frame frame(AbstractContainerScreen<?> s) {
+        Minecraft mc = Minecraft.getInstance();
+        int sw = mc.getWindow().getGuiScaledWidth();
+        int sh = mc.getWindow().getGuiScaledHeight();
+        int left = s.leftPos + s.imageWidth + GAP;
+        int avail = sw - 4 - left;
+        int cols = Math.max(4, Math.min(9, (avail - PAD * 2 - CATS) / CELL));
+        int w = cols * CELL + PAD * 2 + CATS;
+        int x = sw - 4 - w;
+        int y = 4, h = sh - 8;
+        int rows = Math.max(2, (h - HEAD - FOOT) / CELL);
+        return new Frame(x, y, w, h, cols, rows);
+    }
+
+    /** The left box: as wide as the room beside the window allows, up to a comfortable width. */
+    private record Viewer(int x, int y, int w, int h) {
+    }
+
+    private static Viewer viewer(AbstractContainerScreen<?> s) {
+        Minecraft mc = Minecraft.getInstance();
+        int sh = mc.getWindow().getGuiScaledHeight();
+        int w = Math.min(9 * CELL + PAD * 2, s.leftPos - GAP - 4);
+        return new Viewer(4, 4, Math.max(120, w), sh - 8);
+    }
+
+    private static void attachPanel(Minecraft client, Screen screen, AbstractContainerScreen<?> container) {
+        Frame f = frame(container);
+        Font font = client.font;
+        int bx = f.gridX() + 3, by = f.y + f.h - FOOT + 4;
+        box = new EditBox(font, bx, by, f.gridW() - 6, 11, Component.literal("Search"));
+        box.setBordered(false);
+        box.setMaxLength(40);
+        box.setTextColor(Theme.text());
+        box.setHint(Component.literal("Search recipes…"));
+        box.setValue(query);
+        box.setResponder(v -> {
+            query = v;
+            page = 0;
+        });
+        owner = screen;
+        Screens.getWidgets(screen).add(box);
+
+        // As Item Search does: the box first, and the inventory key hidden from the
+        // screen while it is focused, so typing "e" types an "e". Escape still closes.
+        ScreenKeyboardEvents.allowKeyPress(screen).register((s, e) -> {
+            if (!enabled || !panel || box == null || !box.isFocused() || e.key() == 256) return true;
+            box.keyPressed(e);
+            return false;
+        });
+        ScreenEvents.afterExtract(screen).register((s, g, mx, my, d) -> draw(container, g, mx, my));
+        ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !click(container, click.x(), click.y(), click.button()));
+        ScreenMouseEvents.allowMouseScroll(screen).register((s, mx, my, hx, vy) -> !scroll(container, mx, my, vy));
+        ScreenEvents.remove(screen).register(s -> {
+            if (owner == s) {
+                owner = null;
+                box = null;
+            }
+        });
+    }
+
+    /** The results to show: the category, filtered by the search, in the server's own order. */
+    private static List<String> visible() {
+        List<String> out = new ArrayList<>();
+        Iterable<String> names = cat == null ? RECIPES.keySet() : CATEGORY.getOrDefault(cat, new LinkedHashSet<>());
+        String q = query.trim().toLowerCase();
+        for (String n : names) {
+            if (!RECIPES.containsKey(n)) continue;
+            if (!q.isEmpty() && !n.toLowerCase().contains(q)) continue;
+            out.add(n);
+        }
+        return out;
+    }
+
+    /** The category column's entries: All first, then the server's, each with its icon if one was seen. */
+    private static List<String> categories() {
+        List<String> out = new ArrayList<>();
+        out.add(null);
+        out.addAll(CATEGORY.keySet());
+        return out;
+    }
+
+    private static ItemStack categoryIcon(String c) {
+        if (c != null) return ICONS.get(c);
+        for (Map.Entry<String, ItemStack> e : ICONS.entrySet()) {
+            if (e.getKey().startsWith("All Recipes")) return e.getValue();
+        }
+        return null;
+    }
+
+    private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
+        if (!enabled || !panel || RECIPES.isEmpty()) {
+            if (box != null) box.visible = false;
+            return;
+        }
+        if (box != null) box.visible = shown;
+        Minecraft mc = Minecraft.getInstance();
+        Font font = mc.font;
+        drawTab(s, g, font, mx, my);
+        if (!shown) return;
+        Map<String, Integer> have = holdings();
+        drawGrid(s, g, font, have, mx, my);
+        if (openRecipe != null || openUses != null) drawViewer(s, g, font, have, mx, my);
+    }
+
+    /** The tab on the grid's left edge - or on the screen's right edge once the grid is tucked away. */
+    private static int[] tab(AbstractContainerScreen<?> s) {
+        Frame f = frame(s);
+        int x = shown ? f.x - TAB_W + 1 : Minecraft.getInstance().getWindow().getGuiScaledWidth() - TAB_W - 1;
+        return new int[]{x, f.y + f.h / 2 - TAB_H / 2};
+    }
+
+    private static void drawTab(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, int mx, int my) {
+        int[] t = tab(s);
+        boolean hover = mx >= t[0] && mx < t[0] + TAB_W && my >= t[1] && my < t[1] + TAB_H;
+        Draw.roundedRect(g, t[0], t[1], TAB_W, TAB_H, 4, hover ? Theme.hover() : Theme.surface(), true, false, true, false);
+        Draw.textCentered(g, font, shown ? "›" : "‹", t[0] + TAB_W / 2, t[1] + TAB_H / 2 - 4, hover ? Theme.text() : Theme.muted());
+    }
+
+    private static void drawGrid(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
+        Frame f = frame(s);
+        Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, Theme.surface());
+
+        List<String> list = visible();
+        int perPage = f.cols * f.rows;
+        int pages = Math.max(1, (list.size() + perPage - 1) / perPage);
+        page = Math.max(0, Math.min(page, pages - 1));
+
+        // Header: prev, page, next, over the grid.
+        int hy = f.y + 5;
+        chip(g, font, "◀", f.gridX(), hy, 14, mx, my);
+        chip(g, font, "▶", f.gridX() + f.gridW() - 14, hy, 14, mx, my);
+        Draw.textCentered(g, font, (page + 1) + " / " + pages, f.gridX() + f.gridW() / 2, hy + 3, Theme.muted());
+
+        // The categories, down the left edge.
+        int cx = f.catX(), cy = f.gridY();
+        for (String c : categories()) {
+            boolean on = c == null ? cat == null : c.equals(cat);
+            boolean hover = mx >= cx && mx < cx + 18 && my >= cy && my < cy + 18;
+            Draw.roundedRect(g, cx, cy, 18, 18, 3, on ? Draw.alpha(Theme.accent(), 0.3f) : hover ? Theme.hover() : Theme.raised());
+            ItemStack icon = categoryIcon(c);
+            if (icon != null) g.fakeItem(icon, cx + 1, cy + 1);
+            else Draw.textCentered(g, font, c == null ? "All" : c.substring(0, 1), cx + 9, cy + 5, on ? Theme.accent() : Theme.muted());
+            if (on) Draw.rect(g, cx - 3, cy + 3, 1, 12, Theme.accent());
+            if (hover) g.setTooltipForNextFrame(Component.literal(c == null ? "All" : c), mx, my);
+            cy += CELL;
+        }
+
+        // The grid.
+        int gx = f.gridX(), gy = f.gridY();
+        for (int i = 0; i < perPage; i++) {
+            int idx = page * perPage + i;
+            if (idx >= list.size()) break;
+            int ix = gx + (i % f.cols) * CELL, iy = gy + (i / f.cols) * CELL;
+            boolean hover = mx >= ix && mx < ix + CELL && my >= iy && my < iy + CELL;
+            Recipe r = RECIPES.get(list.get(idx));
+            boolean open = r.name().equals(openRecipe);
+            int[] rd = ready(r, have);
+            Draw.roundedRect(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
+                    open ? Draw.alpha(Theme.accent(), 0.35f) : hover ? Theme.hover()
+                            : rd[0] == rd[1] ? Draw.alpha(Theme.pos(), 0.18f) : Theme.raised());
+            ItemStack icon = ICONS.get(r.name());
+            if (icon != null) g.fakeItem(icon, ix + 2, iy + 2);
+            else Draw.text(g, font, r.name().substring(0, 1), ix + 7, iy + 6, Theme.text());
+            if (hover) tooltip(g, font, r, have, mx, my);
+        }
+
+        // Footer: the search box's frame.
+        int by = f.y + f.h - FOOT + 1;
+        Draw.roundedOutline(g, f.gridX(), by, f.gridW(), 17, 5,
+                query.isEmpty() ? Draw.alpha(Theme.line(), 0.8f) : Theme.accent(), Theme.input());
+    }
+
+    private static int chip(GuiGraphicsExtractor g, Font font, String text, int x, int y, int w, int mx, int my) {
+        int cw = w > 0 ? w : font.width(text) + 10;
+        boolean hover = mx >= x && mx < x + cw && my >= y && my < y + 14;
+        Draw.roundedRect(g, x, y, cw, 14, 4, hover ? Theme.hover() : Theme.raised());
+        Draw.textCentered(g, font, text, x + cw / 2, y + 3, hover ? Theme.text() : Theme.muted());
+        return cw;
+    }
+
+    private static void tooltip(GuiGraphicsExtractor g, Font font, Recipe r, Map<String, Integer> have, int mx, int my) {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.literal(r.name()));
+        for (Ingredient i : r.needs()) {
+            int got = have.getOrDefault(i.name(), 0);
+            lines.add(Component.literal((got >= i.count() ? "§a" : "§c") + Math.min(got, 9999) + "/" + i.count() + " §7" + i.name()));
+        }
+        lines.add(Component.literal("§8click: recipe   right-click: uses"));
+        g.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mx, my);
+    }
+
+    /**
+     * The left box. A recipe: its grid as the server draws it, counts on the stacks,
+     * the needs beside it with your count over the recipe's, then everything the
+     * result itself goes into. An item's uses: a grid of the recipes that take it.
+     */
+    private static void drawViewer(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
+        Viewer v = viewer(s);
+        Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, Theme.surface());
+        int x = v.x + PAD, y = v.y + 5;
+        if (!trail.isEmpty()) chip(g, font, "◀ back", x, y, 0, mx, my);
+        chip(g, font, "✕", v.x + v.w - PAD - 14, y, 14, mx, my);
+        if (openRecipe != null) {
+            String label = craftLabel(s);
+            chip(g, font, label, v.x + v.w - PAD - 14 - 4 - font.width(label) - 10, y, 0, mx, my);
+        }
+
+        if (openRecipe != null) {
+            Recipe r = RECIPES.get(openRecipe);
+            if (r == null) return;
+            int ny = y + 20;
+            ItemStack icon = ICONS.get(r.name());
+            if (icon != null) g.fakeItem(icon, x, ny - 4);
+            Draw.text(g, font, fit(font, r.name(), v.w - PAD * 2 - 22), x + 20, ny, Theme.text());
+            if (r.count() > 1) Draw.textRight(g, font, "x" + r.count(), v.x + v.w - PAD, ny, Theme.muted());
+
+            int gx = x, gy = ny + 14;
+            for (int i = 0; i < 9; i++) {
+                int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
+                Ingredient in = r.grid()[i];
+                boolean hover = in != null && mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL;
+                Draw.roundedRect(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 3, hover ? Theme.hover() : Theme.raised());
+                if (in == null) continue;
+                ItemStack st = ICONS.get(in.name());
+                if (st != null) {
+                    g.fakeItem(st, cx + 2, cy + 2);
+                    if (in.count() > 1) g.itemDecorations(font, st.copyWithCount(in.count()), cx + 2, cy + 2);
+                } else {
+                    Draw.text(g, font, String.valueOf(in.count()), cx + 6, cy + 6, Theme.text());
+                }
+                if (RECIPES.containsKey(in.name())) Draw.rect(g, cx + 2, cy + CELL - 3, CELL - 4, 1, Theme.accent());
+                if (hover && st != null) g.setTooltipForNextFrame(font, st, mx, my);
+            }
+            int lx = gx + 3 * CELL + 6, ly = gy + 2;
+            for (Ingredient in : r.needs()) {
+                int got = have.getOrDefault(in.name(), 0);
+                String n = Math.min(got, 9999) + "/" + in.count();
+                Draw.text(g, font, n, lx, ly, got >= in.count() ? Theme.pos() : Theme.neg());
+                Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
+                ly += 10;
+            }
+            int uy = Math.max(ly, gy + 3 * CELL) + 8;
+            Draw.text(g, font, "underlined: has a recipe, click it", x, uy, Theme.dim());
+            usesGrid(g, font, v, r.name(), have, x, uy + 12, mx, my, "Used in");
+        } else {
+            ItemStack icon = ICONS.get(openUses);
+            if (icon != null) g.fakeItem(icon, x, y + 16);
+            Draw.text(g, font, fit(font, openUses, v.w - PAD * 2 - 22), x + 20, y + 20, Theme.text());
+            usesGrid(g, font, v, openUses, have, x, y + 34, mx, my, "Used in");
+        }
+    }
+
+    /**
+     * The one button that crafts. Away from a crafting table it sends /craft, which
+     * opens one; at a crafting table it fills the grid from your inventory, one cell
+     * at a time through the same clicks you would make - pick the stack up, put the
+     * cell's count down, put the rest back - so the result appears as it would by hand.
+     */
+    private static String craftLabel(AbstractContainerScreen<?> s) {
+        return s instanceof CraftingScreen ? "Fill grid" : "/craft";
+    }
+
+    private static void craft(AbstractContainerScreen<?> s, Recipe r) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.getConnection() == null) return;
+        if (!(s instanceof CraftingScreen)) {
+            mc.getConnection().sendCommand("craft");
+            return;
+        }
+        List<Slot> slots = s.getMenu().slots;
+        int id = s.getMenu().containerId;
+        Container inv = mc.player.getInventory();
+        int missing = 0;
+        for (int cell = 0; cell < 9; cell++) {
+            Ingredient in = r.grid()[cell];
+            if (in == null) continue;
+            int gridSlot = 1 + cell;                     // vanilla: 0 is the result, 1-9 the grid
+            if (!slots.get(gridSlot).getItem().isEmpty()) continue;   // already placed
+            int from = -1;
+            for (int i = 0; i < slots.size(); i++) {
+                Slot sl = slots.get(i);
+                if (sl.container != inv) continue;
+                ItemStack st = sl.getItem();
+                if (!st.isEmpty() && name(st).equals(in.name()) && st.getCount() >= in.count()) {
+                    from = i;
+                    break;
+                }
+            }
+            if (from < 0) {
+                missing++;
+                continue;
+            }
+            int have = slots.get(from).getItem().getCount();
+            mc.gameMode.handleContainerInput(id, from, 0, ContainerInput.PICKUP, mc.player);
+            if (have == in.count()) {
+                mc.gameMode.handleContainerInput(id, gridSlot, 0, ContainerInput.PICKUP, mc.player);
+            } else {
+                for (int n = 0; n < in.count(); n++) {
+                    mc.gameMode.handleContainerInput(id, gridSlot, 1, ContainerInput.PICKUP, mc.player);
+                }
+                mc.gameMode.handleContainerInput(id, from, 0, ContainerInput.PICKUP, mc.player);
+            }
+        }
+        if (missing > 0) Toast.warn("Recipes", missing + " ingredient" + (missing == 1 ? "" : "s") + " not in your inventory");
+    }
+
+    private static List<Recipe> usesOf(String item) {
+        List<Recipe> out = new ArrayList<>();
+        for (Recipe r : RECIPES.values()) if (r.uses(item)) out.add(r);
+        return out;
+    }
+
+    private static int usesCols(Viewer v) {
+        return Math.max(3, (v.w - PAD * 2) / CELL);
+    }
+
+    private static void usesGrid(GuiGraphicsExtractor g, Font font, Viewer v, String item, Map<String, Integer> have,
+                                 int x, int y, int mx, int my, String label) {
+        List<Recipe> uses = usesOf(item);
+        Draw.text(g, font, label + (uses.isEmpty() ? ": nothing known" : ""), x, y, Theme.muted());
+        int cols = usesCols(v), gy = y + 11, i = 0;
+        for (Recipe r : uses) {
+            int cx = x + (i % cols) * CELL, cy = gy + (i / cols) * CELL;
+            if (cy + CELL > v.y + v.h) break;
+            boolean hover = mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL;
+            Draw.roundedRect(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 3, hover ? Theme.hover() : Theme.raised());
+            ItemStack st = ICONS.get(r.name());
+            if (st != null) g.fakeItem(st, cx + 2, cy + 2);
+            if (hover) tooltip(g, font, r, have, mx, my);
+            i++;
+        }
+    }
+
+    private static String fit(Font font, String s, int w) {
+        if (font.width(s) <= w) return s;
+        while (s.length() > 1 && font.width(s + "…") > w) s = s.substring(0, s.length() - 1);
+        return s + "…";
+    }
+
+    // ── input ─────────────────────────────────────────────────────────────────
+
+    private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
+        if (!enabled || !panel || RECIPES.isEmpty()) return false;
+        int[] tb = tab(s);
+        if (mx >= tb[0] && mx < tb[0] + TAB_W && my >= tb[1] && my < tb[1] + TAB_H) {
+            shown = !shown;
+            if (box != null) box.setFocused(false);
+            return true;
+        }
+        if (!shown) return false;
+        Frame f = frame(s);
+        boolean inGrid = mx >= f.x && mx < f.x + f.w && my >= f.y && my < f.y + f.h;
+        Viewer v = viewer(s);
+        boolean inViewer = (openRecipe != null || openUses != null)
+                && mx >= v.x && mx < v.x + v.w && my >= v.y && my < v.y + v.h;
+        if (!inGrid && !inViewer) {
+            if (box != null) box.setFocused(false);
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        Font font = mc.font;
+        if (inViewer) return clickViewer(s, v, font, mx, my, button);
+
+        // Header arrows.
+        int hy = f.y + 5;
+        if (my >= hy && my < hy + 14) {
+            if (mx >= f.gridX() && mx < f.gridX() + 14) page--;
+            else if (mx >= f.gridX() + f.gridW() - 14 && mx < f.gridX() + f.gridW()) page++;
+            return true;
+        }
+        // Search box: NOT consumed. The screen's own click is what focuses a widget
+        // in its eyes, and only a widget it sees as focused gets the typed characters
+        // - focusing the box from here made the caret blink and nothing else.
+        int by = f.y + f.h - FOOT + 1;
+        if (my >= by && my < by + 17) return false;
+        if (box != null) box.setFocused(false);
+        // Categories.
+        if (mx >= f.catX() && mx < f.catX() + 18) {
+            int i = (int) ((my - f.gridY()) / CELL);
+            List<String> cats = categories();
+            if (my >= f.gridY() && i >= 0 && i < cats.size()) {
+                cat = cats.get(i);
+                page = 0;
+            }
+            return true;
+        }
+        // The grid.
+        List<String> list = visible();
+        int perPage = f.cols * f.rows;
+        int gx = f.gridX(), gy = f.gridY();
+        if (mx >= gx && mx < gx + f.gridW() && my >= gy && my < gy + f.gridH()) {
+            int i = (int) ((my - gy) / CELL) * f.cols + (int) ((mx - gx) / CELL);
+            int idx = page * perPage + i;
+            if (idx < list.size()) {
+                if (button == 1) openUses(list.get(idx));
+                else openRecipe(list.get(idx));
+            }
+        }
+        return true;
+    }
+
+    private static boolean clickViewer(AbstractContainerScreen<?> s, Viewer v, Font font, double mx, double my, int button) {
+        int x = v.x + PAD, y = v.y + 5;
+        if (my >= y && my < y + 14) {
+            if (mx >= v.x + v.w - PAD - 14) {
+                close();
+                return true;
+            }
+            if (!trail.isEmpty() && mx < x + font.width("◀ back") + 10) {
+                back();
+                return true;
+            }
+            if (openRecipe != null) {
+                String label = craftLabel(s);
+                int cx = v.x + v.w - PAD - 14 - 4 - font.width(label) - 10;
+                if (mx >= cx && mx < cx + font.width(label) + 10) {
+                    Recipe r = RECIPES.get(openRecipe);
+                    if (r != null) craft(s, r);
+                    return true;
+                }
+            }
+        }
+        if (openRecipe != null) {
+            Recipe r = RECIPES.get(openRecipe);
+            if (r == null) {
+                close();
+                return true;
+            }
+            int gx = x, gy = y + 20 + 14;
+            for (int i = 0; i < 9; i++) {
+                int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
+                Ingredient in = r.grid()[i];
+                if (in != null && mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL) {
+                    if (button == 1) openUses(in.name());
+                    else if (RECIPES.containsKey(in.name())) openRecipe(in.name());
+                    return true;
+                }
+            }
+            int ly = gy + 2 + r.needs().size() * 10;
+            int uy = Math.max(ly, gy + 3 * CELL) + 8 + 12 + 11;
+            clickUses(v, r.name(), x, uy, mx, my);
+        } else {
+            clickUses(v, openUses, x, y + 34 + 11, mx, my);
+        }
+        return true;
+    }
+
+    private static void clickUses(Viewer v, String item, int x, int gy, double mx, double my) {
+        int cols = usesCols(v), i = 0;
+        for (Recipe r : usesOf(item)) {
+            int cx = x + (i % cols) * CELL, cy = gy + (i / cols) * CELL;
+            if (mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL) {
+                openRecipe(r.name());
+                return;
+            }
+            i++;
+        }
+    }
+
+    private static void openRecipe(String name) {
+        if (name.equals(openRecipe)) return;
+        if (openRecipe != null) trail.add("r:" + openRecipe);
+        else if (openUses != null) trail.add("u:" + openUses);
+        openRecipe = name;
+        openUses = null;
+    }
+
+    private static void openUses(String name) {
+        if (name.equals(openUses)) return;
+        if (openRecipe != null) trail.add("r:" + openRecipe);
+        else if (openUses != null) trail.add("u:" + openUses);
+        openUses = name;
+        openRecipe = null;
+    }
+
+    /** Back up the trail of what was opened, so a chain of craft-ups unwinds one step at a time. */
+    private static void back() {
+        openRecipe = null;
+        openUses = null;
+        if (trail.isEmpty()) return;
+        String last = trail.remove(trail.size() - 1);
+        if (last.startsWith("r:")) openRecipe = last.substring(2);
+        else openUses = last.substring(2);
+    }
+
+    private static void close() {
+        openRecipe = null;
+        openUses = null;
+        trail.clear();
+    }
+
+    private static boolean scroll(AbstractContainerScreen<?> s, double mx, double my, double dy) {
+        if (!enabled || !panel || !shown) return false;
+        Frame f = frame(s);
+        if (mx < f.x || mx >= f.x + f.w || my < f.y || my >= f.y + f.h) return false;
+        page -= (int) Math.signum(dy);
+        return true;
+    }
+}

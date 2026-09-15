@@ -18,6 +18,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -36,10 +40,14 @@ import java.util.regex.Pattern;
  * version projected corners to the screen and drew with fill, and a flat box over a
  * moving boss read as a HUD glitch rather than an outline.
  *
- * Two things this deliberately does not do. It does not mark the Nukekubi heads: the
- * server outlines those itself, and no head ever appeared in an entity dump to test a
- * name against, so a highlight would have been a guess drawn over something already
- * highlighted. And it does not draw the radiation beams: they are "witch" particles,
+ * The Nukekubi heads are marked too, box filled solid and a tracer to each, but only
+ * while your own boss is up: no head has ever been caught in an entity dump, so they
+ * are taken to be what a head is on every server that has copied this fight - an
+ * armour stand wearing a player head - or anything named for them. Outside your fight
+ * nothing is looked for, which is what keeps a decorative head in the End from
+ * being marked as a threat.
+ *
+ * What is deliberately not drawn: the radiation beams. They are "witch" particles,
  * indistinguishable in the packet from the boss's ordinary sparkle, so a beam renderer
  * drew itself at random round the boss and was dropped.
  */
@@ -51,6 +59,8 @@ public final class VoidgloomHelper {
     private static boolean enabled = false;
     private static boolean onScreen = true;
     private static boolean highlight = true;
+    private static boolean heads = true;
+    private static final double HEAD_RANGE = 40;
 
     /** Yang Glyph: the beacon the boss drops at your feet from tier 2, with five seconds to reach it. */
     private static boolean glyph = true;
@@ -85,6 +95,9 @@ public final class VoidgloomHelper {
                         new Setting.Toggle("Highlight glyph",
                                 "Box and tracer to the Yang Glyph beacon, so you reach it inside the five seconds.",
                                 () -> glyph, v -> glyph = v),
+                        new Setting.Toggle("Highlight Nukekubi",
+                                "A solid box and a tracer on each head while your boss is up.",
+                                () -> heads, v -> heads = v),
                         new Setting.Action("Move readout",
                                 "Drag it, and every other readout, where you want.",
                                 "Move", HudPlacementScreen::open)));
@@ -223,10 +236,34 @@ public final class VoidgloomHelper {
     }
 
     private static void mark(Minecraft mc, AABB box, float width) {
+        mark(mc, box, width, 0x28);
+    }
+
+    private static void mark(Minecraft mc, AABB box, float width, int fillAlpha) {
         int c = Theme.accent() | 0xFF000000;
-        Gizmos.cuboid(box, GizmoStyle.strokeAndFill(c, width, (c & 0x00FFFFFF) | 0x28000000)).setAlwaysOnTop();
+        Gizmos.cuboid(box, GizmoStyle.strokeAndFill(c, width, (c & 0x00FFFFFF) | (fillAlpha << 24))).setAlwaysOnTop();
         Vec3 foot = new Vec3((box.minX + box.maxX) / 2, box.minY, (box.minZ + box.maxZ) / 2);
         Gizmos.line(tracerFrom(mc), foot, c, 1.5f).setAlwaysOnTop();
+    }
+
+    /** A Nukekubi head: named for one, or an armour stand wearing a player head during your fight. */
+    private static boolean isHead(Entity e) {
+        String plain = plainName(e);
+        if (plain != null) {
+            String n = plain.toLowerCase();
+            if (n.contains("nukekubi") || n.contains("nukubi")) return true;
+        }
+        if (!(e instanceof ArmorStand stand)) return false;
+        ItemStack head = stand.getItemBySlot(EquipmentSlot.HEAD);
+        if (head.isEmpty() || !head.is(Items.PLAYER_HEAD)) return false;
+        String hn = Zealots_strip(head.getHoverName().getString()).toLowerCase();
+        if (hn.contains("nukekubi") || hn.contains("nukubi")) return true;
+        // A bare head on a nameless stand, in your fight: the shape of one on every server that has this boss.
+        return e.getCustomName() == null;
+    }
+
+    private static String Zealots_strip(String s) {
+        return s.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
     }
 
     private static void gizmos() {
@@ -240,6 +277,17 @@ public final class VoidgloomHelper {
         }
 
         for (BlockPos b : beacons) mark(mc, new AABB(b), 2.5f);
+
+        if (heads && Slayer.bossUp()) {
+            for (Entity e : mc.level.entitiesForRendering()) {
+                if (e == mc.player || !isHead(e)) continue;
+                if (e.position().distanceTo(mc.player.position()) > HEAD_RANGE) continue;
+                // The head, not the whole stand: its box is mostly empty pole.
+                AABB bb = e.getBoundingBox();
+                double cx = (bb.minX + bb.maxX) / 2, cz = (bb.minZ + bb.maxZ) / 2;
+                mark(mc, new AABB(cx - 0.35, bb.maxY - 0.7, cz - 0.35, cx + 0.35, bb.maxY, cz + 0.35), 2f, 0x70);
+            }
+        }
     }
 
     // ── on the screen ─────────────────────────────────────────────────────────

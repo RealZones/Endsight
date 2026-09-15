@@ -75,35 +75,38 @@ public final class Slayer {
         return bossUp;
     }
     private static boolean bossUp;
-    private static long lastKillMs;
-    /**
-     * Every kill this session added up, for the average.
-     *
-     * The last kill on its own is the least useful number available - one bad spawn or
-     * one lucky burst and it says something that is not true of your night. An average
-     * over the session is what "how fast am I actually killing these" means.
-     */
-    private static long totalKillMs;
-    private static int bossesKilled;
-    /**
-     * When this session's slaying began - 0 until the first slayer line arrives.
-     *
-     * Not the game launch. "Elapsed" has to mean time spent on slayers, or the rate is
-     * quietly divided by however long you spent doing dragons first and reads low for
-     * the rest of the night.
-     */
-    private static long sessionStart;
 
     /**
-     * When a slayer line was last seen, for pausing and hiding.
+     * One slayer's session: zombies in the Crypts and endermen in the End are two
+     * different nights, and one set of numbers across both read as nonsense - a 4s
+     * average from revenants dragged into a Voidgloom fight, kills per hour over a
+     * clock that had run through the other grind. So each slayer keeps its own, and
+     * the readout shows whichever quest you are on.
      *
-     * Elapsed has to stop while you are doing something else, or an afk break silently
-     * halves your rate for the rest of the night - the number would still be arithmetic
-     * but it would stop describing anything. Idle stretches are subtracted from the
-     * clock instead, so elapsed means time actually spent on slayers.
+     * The average, not the last kill: one bad spawn or one lucky burst says nothing
+     * about your night. Elapsed is time spent on THIS slayer, starting at its first
+     * line rather than at launch, with breaks standing still taken off, so the rate
+     * describes something.
      */
-    private static long lastActivity;
-    private static String questMob;
+    private static final class Run {
+        long lastKillMs, totalKillMs;
+        int bossesKilled;
+        long sessionStart;
+        long lastActivity;
+        long lastMoved;
+        Vec3 lastPos;
+    }
+
+    private static final java.util.Map<String, Run> runs = new java.util.LinkedHashMap<>();
+    /** "Zombie", "Enderman" - from the quest line, or the area until one has been seen. */
+    private static String slayer;
+
+    private static Run cur() {
+        String key = slayer != null ? slayer
+                : com.endsight.hud.Area.crypts() ? "Zombie"
+                : com.endsight.hud.Area.where() == com.endsight.hud.Area.Where.END ? "Enderman" : "Slayer";
+        return runs.computeIfAbsent(key, k -> new Run());
+    }
     private static String slayerLevel;
 
 
@@ -127,10 +130,11 @@ public final class Slayer {
     }
 
     private static void resetSession() {
-        bossesKilled = 0;
-        lastKillMs = 0;
-        totalKillMs = 0;
-        sessionStart = 0;
+        Run r = cur();
+        r.bossesKilled = 0;
+        r.lastKillMs = 0;
+        r.totalKillMs = 0;
+        r.sessionStart = 0;
     }
 
     public static void init() {
@@ -158,10 +162,11 @@ public final class Slayer {
         }
         if (line.contains(BOSS_SLAIN)) {
             if (bossUp) {
-                lastKillMs = System.currentTimeMillis() - bossSpawnedAt;
-                totalKillMs += lastKillMs;
-                bossesKilled++;
-                reportKill(lastKillMs);
+                Run r = cur();
+                r.lastKillMs = System.currentTimeMillis() - bossSpawnedAt;
+                r.totalKillMs += r.lastKillMs;
+                r.bossesKilled++;
+                reportKill(r.lastKillMs);
             }
             bossUp = false;
             return;
@@ -173,7 +178,10 @@ public final class Slayer {
 
         Matcher m = TARGET.matcher(line);
         if (m.find()) {
-            questMob = m.group(2);
+            // "Zombies" -> Zombie, "Endermen" -> Enderman: the word the readout is titled with.
+            String mob = m.group(2);
+            slayer = mob.endsWith("men") ? mob.substring(0, mob.length() - 3) + "man"
+                    : mob.endsWith("s") ? mob.substring(0, mob.length() - 1) : mob;
             return;
         }
         m = LEVEL.matcher(line);
@@ -308,8 +316,9 @@ public final class Slayer {
         if (!timerOn) return;
         // Gone, not frozen: a tracker showing a stale average while you fight a dragon
         // is worse than no tracker, because it looks live.
-        if (hideAfterMin > 0 && (lastActivity == 0
-                || System.currentTimeMillis() - lastActivity > idleMs())) return;
+        Run r = cur();
+        if (hideAfterMin > 0 && (r.lastActivity == 0
+                || System.currentTimeMillis() - r.lastActivity > idleMs())) return;
 
         HudLayout.draw("slayer.timer", g, mc.font, false);
     }
@@ -326,6 +335,7 @@ public final class Slayer {
      */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         long now = System.currentTimeMillis();
+        Run r = cur();
 
         String topLabel, topValue;
         boolean hot;
@@ -337,9 +347,9 @@ public final class Slayer {
             topLabel = "Boss";
             topValue = secs(now - bossSpawnedAt);
             hot = true;
-        } else if (bossesKilled > 0) {
+        } else if (r.bossesKilled > 0) {
             topLabel = "Avg kill";
-            topValue = secs(totalKillMs / bossesKilled);
+            topValue = secs(r.totalKillMs / r.bossesKilled);
             hot = false;
         } else {
             topLabel = "Boss";
@@ -352,13 +362,13 @@ public final class Slayer {
                 ? new String[][]{{topLabel, topValue}, {"Kills", "12"},
                                  {"Elapsed", "8m32s"}, {"Rate", "84/h"}}
                 : new String[][]{{topLabel, topValue},
-                                 {"Kills", String.valueOf(bossesKilled)},
-                                 {"Elapsed", sessionStart == 0 ? "-" : secs(elapsedMs())},
+                                 {"Kills", String.valueOf(r.bossesKilled)},
+                                 {"Elapsed", r.sessionStart == 0 ? "-" : secs(elapsedMs(r))},
                                  {"Rate", rate < 0 ? "-" : rate + "/h"}};
 
-        String title = "SLAYER TRACKER";
+        String title = sample ? "SLAYER TRACKER" : (slayer != null ? slayer : "Slayer").toUpperCase() + " SLAYER";
         int w = font.width(title) + 20;
-        for (String[] r : rows) w = Math.max(w, Readout.width(font, r[0], r[1]));
+        for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
         int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
 
         if (g != null) {
@@ -387,9 +397,10 @@ public final class Slayer {
 
     private static void touch() {
         long now = System.currentTimeMillis();
-        if (sessionStart == 0) sessionStart = now;
-        lastActivity = now;
-        lastMoved = now;
+        Run r = cur();
+        if (r.sessionStart == 0) r.sessionStart = now;
+        r.lastActivity = now;
+        r.lastMoved = now;
     }
 
     /**
@@ -401,19 +412,18 @@ public final class Slayer {
      * honest signal - and the same thirty seconds the zealot tracker uses.
      */
     private static final long AFK_MS = 30_000;
-    private static long lastMoved;
-    private static Vec3 lastPos;
 
     /** Every tick: note movement, and once a break passes thirty seconds take it off the clock. */
     private static void watchAfk(Minecraft mc) {
-        if (mc.player == null || sessionStart == 0) return;
+        Run r = cur();
+        if (mc.player == null || r.sessionStart == 0) return;
         Vec3 pos = mc.player.position();
         long now = System.currentTimeMillis();
-        if (lastPos == null || pos.distanceToSqr(lastPos) > 0.01) {
-            if (lastMoved != 0 && now - lastMoved > AFK_MS) sessionStart += now - lastMoved;
-            lastMoved = now;
+        if (r.lastPos == null || pos.distanceToSqr(r.lastPos) > 0.01) {
+            if (r.lastMoved != 0 && now - r.lastMoved > AFK_MS) r.sessionStart += now - r.lastMoved;
+            r.lastMoved = now;
         }
-        lastPos = pos;
+        r.lastPos = pos;
     }
 
     private static long idleMs() {
@@ -421,18 +431,19 @@ public final class Slayer {
     }
 
     /** Time on slayers, with the break you are in right now already stopped. */
-    private static long elapsedMs() {
-        if (sessionStart == 0) return 0;
+    private static long elapsedMs(Run r) {
+        if (r.sessionStart == 0) return 0;
         long now = System.currentTimeMillis();
-        long still = lastMoved == 0 ? 0 : now - lastMoved;
-        return (still > AFK_MS ? lastMoved : now) - sessionStart;
+        long still = r.lastMoved == 0 ? 0 : now - r.lastMoved;
+        return (still > AFK_MS ? r.lastMoved : now) - r.sessionStart;
     }
 
     /** Kills per hour, or -1 while the sample is too short to mean anything. */
     private static int perHour() {
-        long elapsed = elapsedMs();
+        Run r = cur();
+        long elapsed = elapsedMs(r);
         if (elapsed < 60_000) return -1;
-        return (int) Math.round(bossesKilled / (elapsed / 3_600_000.0));
+        return (int) Math.round(r.bossesKilled / (elapsed / 3_600_000.0));
     }
 
     private static String secs(long ms) {

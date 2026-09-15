@@ -60,7 +60,6 @@ public final class HuffPuff {
 
     private static boolean enabled = true;
     private static String mode = SESSION;
-    private static double hideAfterMin = 5;
 
     /** rounds, wagered, won, best - one set for the session, one for all time. */
     private static final long[] session = new long[4];
@@ -71,7 +70,7 @@ public final class HuffPuff {
 
     public static Module module() {
         return new Module("casino.huff", "Huff 'n' Puff",
-                "Profit and loss at the slot, this session or all time.", "Trackers",
+                "Profit and loss at the slot while you play it, this session or all time.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",
@@ -80,9 +79,6 @@ public final class HuffPuff {
                         new Setting.Action("Move readout",
                                 "Drag it, and every other readout, where you want.",
                                 "Move", HudPlacementScreen::open),
-                        new Setting.Slider("Hide when idle",
-                                "Fade out after this long with no pull. 0 keeps it up.",
-                                0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Action("Reset",
                                 "Zero whichever count is showing.",
                                 "Reset", HuffPuff::reset)));
@@ -273,10 +269,10 @@ public final class HuffPuff {
     private static void draw(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        boolean open = mc.screen != null && isSlot(mc.screen);
-        if (!open && hideAfterMin > 0 && (lastActivity == 0
-                || System.currentTimeMillis() - lastActivity > hideAfterMin * 60_000)) return;
-        HudLayout.draw("casino.huff", g, mc.font, false, open);
+        // Only with the machine in front of you: a slot readout over a dragon fight
+        // is the definition of clutter, and the numbers keep without being watched.
+        if (mc.screen == null || !isSlot(mc.screen)) return;
+        HudLayout.draw("casino.huff", g, mc.font, false, true);
     }
 
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {

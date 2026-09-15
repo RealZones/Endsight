@@ -125,6 +125,7 @@ public final class ZealotTracker {
     private static double hideAfterMin = 3;
 
     private static int kills;
+    private static int bruisers;
     private static int eyes;
     private static int golden;
     private static long sessionStart;
@@ -225,6 +226,7 @@ public final class ZealotTracker {
 
     private static void resetSession() {
         kills = 0;
+        bruisers = 0;
         eyes = 0;
         golden = 0;
         sessionStart = 0;
@@ -233,7 +235,7 @@ public final class ZealotTracker {
 
     public static void init() {
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-            if (enabled && Zealots.isZealot(entity)) {
+            if (enabled && Zealots.isTracked(entity)) {
                 Vec3 at = entity.position();
                 strikes.add(new Strike(System.currentTimeMillis(), at, at, SWEEP, SWEEP_MS, entity.getId(), Integer.MAX_VALUE, false));
             }
@@ -259,7 +261,7 @@ public final class ZealotTracker {
         });
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
             Minecraft mc = Minecraft.getInstance();
-            if (!enabled || mc.player == null || !Zealots.isZealot(entity)) return;
+            if (!enabled || mc.player == null || !Zealots.isTracked(entity)) return;
             if (entity.position().distanceTo(mc.player.position()) <= DEATH_RANGE) died(entity);
         });
         ClientTickEvents.END_CLIENT_TICK.register(ZealotTracker::tick);
@@ -321,7 +323,7 @@ public final class ZealotTracker {
             List<Entity> near = new ArrayList<>();
             Strike line = thrown.get(0);
             for (Entity e : mc.level.entitiesForRendering()) {
-                if (Zealots.isZealot(e) && line.distanceTo(e.position()) <= ROSE) near.add(e);
+                if (Zealots.isTracked(e) && line.distanceTo(e.position()) <= ROSE) near.add(e);
             }
             near.sort((a, b) -> Double.compare(score(line, a), score(line, b)));
             for (int i = 0; i < count && i < near.size(); i++) thrown.get(i).targetId = near.get(i).getId();
@@ -354,7 +356,7 @@ public final class ZealotTracker {
     private static void tick(Minecraft mc) {
         if (!enabled || mc.level == null || mc.player == null) return;
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e instanceof LivingEntity le && le.isDeadOrDying() && Zealots.isZealot(e)) died(e);
+            if (e instanceof LivingEntity le && le.isDeadOrDying() && Zealots.isTracked(e)) died(e);
         }
         long now = System.currentTimeMillis();
         strikes.removeIf(s -> now - s.at() > s.window());
@@ -375,7 +377,8 @@ public final class ZealotTracker {
         }
         boolean mine = ours(e.getId(), e.position(), System.currentTimeMillis());
         if (mine) {
-            kills++;
+            if (Zealots.isBruiser(e)) bruisers++;
+            else kills++;
             touch();
         }
     }
@@ -474,9 +477,10 @@ public final class ZealotTracker {
      */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         String[][] rows = sample
-                ? new String[][]{{"Kills", "736/h", "148"}, {"Eyes", "458/h", "92"},
+                ? new String[][]{{"Kills", "736/h", "148"}, {"Bruisers", "31/h", "6"}, {"Eyes", "458/h", "92"},
                                  {"Golden", "14.9/h", "3"}, {"Elapsed", "", "12m04s"}}
                 : new String[][]{{"Kills", perHour(kills), String.valueOf(kills)},
+                                 {"Bruisers", perHour(bruisers), String.valueOf(bruisers)},
                                  {"Eyes", perHour(eyes), String.valueOf(eyes)},
                                  {"Golden", perHour(golden), String.valueOf(golden)},
                                  {"Elapsed", "", sessionStart == 0 ? "-" : secs(elapsedMs())}};

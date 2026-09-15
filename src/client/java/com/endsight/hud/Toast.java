@@ -56,15 +56,39 @@ public final class Toast {
     /** More than this on screen and the oldest goes early - a column of them is clutter. */
     private static final int MAX = 3;
 
-    private record Entry(String title, String state, int color, long born) {
+    /**
+     * @param big the update note: half again as tall, the text larger, and up for
+     *            four times as long. It happens once a version and is the one toast
+     *            that is not an answer to a key you just pressed, so it earns the room.
+     */
+    private record Entry(String title, String state, int color, long born, boolean big) {
 
         long age() {
             return System.currentTimeMillis() - born;
         }
 
-        boolean done() {
-            return age() >= IN_MS + HOLD_MS + OUT_MS;
+        long hold() {
+            return big ? HOLD_MS * 4 : HOLD_MS;
         }
+
+        int height() {
+            return big ? BIG_H : H;
+        }
+
+        boolean done() {
+            return age() >= IN_MS + hold() + OUT_MS;
+        }
+    }
+
+    private static final int BIG_H = 50;
+    private static final float BIG_TEXT = 1.3f;
+
+    /** The update note: bigger, longer, and never bumped out by a stack of key toasts. */
+    public static void big(String title, String state) {
+        live.removeIf(e -> e.title().equals(title));
+        live.add(new Entry(title, state, Theme.accent(), System.currentTimeMillis(), true));
+        while (live.size() > MAX) live.remove(0);
+        while (slot.size() < live.size()) slot.add(Float.NaN);
     }
 
     private static final List<Entry> live = new ArrayList<>();
@@ -94,8 +118,13 @@ public final class Toast {
         // The same key pressed twice is one toast that starts again, not two stacked -
         // otherwise holding a key you meant to tap builds a column.
         live.removeIf(e -> e.title().equals(title));
-        live.add(new Entry(title, state, color, System.currentTimeMillis()));
-        while (live.size() > MAX) live.remove(0);
+        live.add(new Entry(title, state, color, System.currentTimeMillis(), false));
+        while (live.size() > MAX) {
+            // The first small one goes, never the big one.
+            int drop = 0;
+            while (drop < live.size() - 1 && live.get(drop).big()) drop++;
+            live.remove(drop);
+        }
         while (slot.size() < live.size()) slot.add(Float.NaN);
     }
 
@@ -120,10 +149,11 @@ public final class Toast {
 
         // Newest at the bottom, so a new one appears where your eye already is rather
         // than pushing the one you are reading somewhere else.
+        int stack = 0;
         for (int i = live.size() - 1; i >= 0; i--) {
             Entry e = live.get(i);
-            int fromBottom = live.size() - 1 - i;
-            float wantY = screenH - MARGIN - H - fromBottom * (H + GAP);
+            float wantY = screenH - MARGIN - e.height() - stack;
+            stack += e.height() + GAP;
 
             float y = slot.get(i);
             if (Float.isNaN(y)) y = wantY;                 // first frame: no slide from nowhere
@@ -135,8 +165,11 @@ public final class Toast {
     }
 
     private static void draw(GuiGraphicsExtractor g, Font font, Entry e, int screenW, int y) {
-        int w = Math.max(104, PAD + Math.max(font.width(e.title()), font.width(e.state())) + PAD);
+        float ts = e.big() ? BIG_TEXT : 1f;
+        int H = e.height();
+        int w = Math.max(104, PAD + Math.round(Math.max(font.width(e.title()), font.width(e.state())) * ts) + PAD);
         long age = e.age();
+        long HOLD_MS = e.hold();
 
         // 0 fully on screen, 1 fully off to the right. Eased at both ends: out is a hair
         // quicker than in, because arriving wants to be noticed and leaving does not.
@@ -159,8 +192,18 @@ public final class Toast {
         // The accent tick every readout in the mod carries, so this is recognisably ours.
         Draw.roundedRect(g, x + 4, y + 11, 2, H - 22, 1, Draw.alpha(e.color(), alpha));
 
-        Draw.text(g, font, e.title(), x + PAD, y + 7, Draw.alpha(Theme.text(), alpha));
-        Draw.text(g, font, e.state(), x + PAD, y + 18, Draw.alpha(e.color(), alpha));
+        if (e.big()) {
+            var pose = g.pose();
+            pose.pushMatrix();
+            pose.translate((float) (x + PAD), (float) (y + 9));
+            pose.scale(ts, ts);
+            Draw.text(g, font, e.title(), 0, 0, Draw.alpha(Theme.text(), alpha));
+            Draw.text(g, font, e.state(), 0, 13, Draw.alpha(e.color(), alpha));
+            pose.popMatrix();
+        } else {
+            Draw.text(g, font, e.title(), x + PAD, y + 7, Draw.alpha(Theme.text(), alpha));
+            Draw.text(g, font, e.state(), x + PAD, y + 18, Draw.alpha(e.color(), alpha));
+        }
 
         // The bar fills over the hold, so it is full at the moment the toast leaves. Its
         // track is drawn under it at a fraction of the colour, because a bar with nothing

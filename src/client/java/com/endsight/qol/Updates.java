@@ -20,9 +20,10 @@ import java.time.Duration;
  * A word when a newer Endsight is out.
  *
  * Asks GitHub for the latest release - the same one the workflow publishes on every
- * push - shortly after launch and every half hour after that, so someone already
- * playing hears about an update within the half hour of it going live, not the next
- * time they restart. One toast and one chat line per version, with the link; nothing
+ * push - a few seconds after you are in a world and every five minutes after that,
+ * so someone already playing hears about an update within minutes of it going live,
+ * not the next time they restart. Five minutes is a twelfth of GitHub's unsigned
+ * allowance per address, which leaves room for a whole house on one connection. One toast and one chat line per version, with the link; nothing
  * is downloaded and nothing repeats until the version changes again.
  *
  * Off the render thread: the request runs on its own thread and only the result is
@@ -34,8 +35,8 @@ public final class Updates {
     }
 
     private static final String LATEST = "https://api.github.com/repos/RealZones/Endsight/releases/latest";
-    private static final long FIRST_MS = 20_000;
-    private static final long EVERY_MS = 30 * 60_000;
+    private static final long FIRST_MS = 8_000;
+    private static final long EVERY_MS = 5 * 60_000;
 
     private static long startedAt, lastCheck;
     private static String told = "";
@@ -81,7 +82,7 @@ public final class Updates {
     private static void found(String version, String url) {
         if (!newer(version, current()) || version.equals(told)) return;
         told = version;
-        Toast.changed("Update available", current() + " → " + version);
+        Toast.big("Endsight Update Available", "Version " + version);
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         mc.player.sendSystemMessage(Component.literal("")

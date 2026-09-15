@@ -31,6 +31,18 @@ public final class Zealots {
         return plain.contains(MATCH) && !plain.contains(EXCLUDE);
     }
 
+    /** The bruisers, the layer below - counted by the tracker, left alone by everything that aims. */
+    public static boolean isBruiser(Entity e) {
+        if (!(e instanceof EnderMan)) return false;
+        Component name = e.getCustomName();
+        return name != null && strip(name.getString()).contains(EXCLUDE);
+    }
+
+    /** Anything the tracker counts a kill of. */
+    public static boolean isTracked(Entity e) {
+        return isZealot(e) || isBruiser(e);
+    }
+
     public static boolean holdingScythe(Player player) {
         return player.getMainHandItem().getHoverName().getString().contains(SCYTHE);
     }

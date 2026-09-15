@@ -13,7 +13,7 @@ browser; any module can be bound to a key.
 | | |
 |---|---|
 | Minecraft | 26.1.2 |
-| Fabric Loader | 0.19.2+ |
+| Fabric Loader | 0.19.1+ |
 | Fabric API | required |
 | Java | 25 |
 

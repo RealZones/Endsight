@@ -349,7 +349,10 @@ public final class Slayer {
             hot = true;
         } else if (r.bossesKilled > 0) {
             topLabel = "Avg kill";
-            topValue = secs(r.totalKillMs / r.bossesKilled);
+            // One decimal under a minute: revenant kills run 3-5s, and "4s" hides the
+            // half second between a good night and a great one.
+            long avg = r.totalKillMs / r.bossesKilled;
+            topValue = avg < 60_000 ? String.format("%.1fs", avg / 1000.0) : secs(avg);
             hot = false;
         } else {
             topLabel = "Boss";

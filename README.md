@@ -6,6 +6,8 @@ Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storag
 previews and a Voidgloom helper. Press **Right Shift** in game to open the module
 browser (rebind it under Controls → Endsight); any module can be bound to a key.
 
+![Slayer tracker, boss drops, zealot tracker, the Voidgloom hit counter, alerts and the ping pill in the Voidgloom fight](docs/overview.png)
+
 ---
 
 ## Requirements
@@ -48,8 +50,12 @@ any of them into chat.
 **Zealot Tracker** — your zealot kills, Summoning Eyes and Golden Eyes this session,
 each with a per-hour rate. Only your own kills count. Pauses when you stop moving.
 
+![Zealot Tracker](docs/zealots.png)
+
 **Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
 when you stop moving. Each boss's kill time is printed in chat.
+
+![Slayer Tracker](docs/slayer.png)
 
 ### Alerts
 
@@ -65,6 +71,8 @@ name in the item's own rarity colour. Which drops count is set by tier — see *
 **Voidgloom Helper** — your Seraph's hits left on its shield, big on screen, and its
 health once the shield is down. A box and tracer on the boss and on the Yang Glyph
 beacon, drawn in the world. Your own boss only.
+
+![Voidgloom Helper: the boss and a Nukekubi head boxed, hits and health on screen](docs/voidgloom.png)
 
 **Boss Beacon** — a beam over the Endstone Protector and one over the Warden, each its
 own toggle, so they can be found at a glance.
@@ -115,6 +123,8 @@ item in any window opens its recipe, **U** what it goes into. At a crafting
 table, *Fill grid* places the recipe from your inventory; anywhere else the button
 sends `/craft`. Every recipe ships with the mod; *Scan all recipes* re-reads the
 server's menu if they change, into `config/endsight/recipes.txt`.
+
+![Recipes: the panel beside the Storage window, a recipe open at full cost](docs/recipes.png)
 
 **Command Binds** — a key that sends a command you typed, like `/warp end` on F6.
 

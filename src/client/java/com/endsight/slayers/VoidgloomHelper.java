@@ -1,7 +1,6 @@
 package com.endsight.slayers;
 
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.HudPlacementScreen;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -97,10 +96,7 @@ public final class VoidgloomHelper {
                                 () -> glyph, v -> glyph = v),
                         new Setting.Toggle("Highlight Nukekubi",
                                 "A solid box and a tracer on each head while your boss is up.",
-                                () -> heads, v -> heads = v),
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open)));
+                                () -> heads, v -> heads = v)));
     }
 
     public static void init() {

@@ -36,7 +36,8 @@ public final class LootFilter {
     private static boolean bothEnds = true;
 
     /** A bare roll: the number and nothing after it. The arrow of a real drop keeps it from matching. */
-    private static final Pattern ROLL = Pattern.compile("^\\s*loot number:\\s*([\\d.]+)\\s*$");
+    /** Detailed mode adds "(0-100, lower = rarer)" after the number; still the same roll. */
+    private static final Pattern ROLL = Pattern.compile("^\\s*loot number:\\s*([\\d.]+)\\s*(?:\\(0-100[^)]*\\))?\\s*$");
 
     public static Module module() {
         return new Module("qol.lootfilter", "Loot Number Filter",

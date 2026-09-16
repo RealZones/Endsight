@@ -447,6 +447,21 @@ public class EndsightScreen extends Screen {
                 mouseX,
                 mouseY
         );
+
+        // One Move button for every readout, here rather than a row on each module's
+        // page: placing is done with all of them on screen at once, so it belongs to
+        // the whole mod, not to whichever module you happened to open.
+        int[] m = moveButton();
+        boolean hot = contains(m[0], m[1], m[2], m[3], mouseX, mouseY);
+        Draw.roundedRect(g, m[0], m[1], m[2], m[3], Theme.RADIUS - 2, hot ? Theme.hover() : Theme.raised());
+        Draw.textCentered(g, font, "Move readouts", m[0] + m[2] / 2, m[1] + 5, hot ? Theme.text() : Theme.muted());
+    }
+
+    /** Just above the palette row, the width of the sidebar's inset. */
+    private int[] moveButton() {
+        int rows = (Theme.palettes().size() + 4) / 5;
+        int top = panelY() + panelH() - (rows * 25 - 7) - 26;
+        return new int[]{panelX() + 10, top - 26, Theme.SIDEBAR_W - 20, 18};
     }
 
     private void drawHeader(
@@ -1137,6 +1152,11 @@ public class EndsightScreen extends Screen {
         layout();
 
         if (themeRow.click(mx, my)) {
+            return true;
+        }
+        int[] m = moveButton();
+        if (contains(m[0], m[1], m[2], m[3], mx, my)) {
+            com.endsight.hud.HudPlacementScreen.open();
             return true;
         }
 

@@ -1,6 +1,6 @@
 package com.endsight;
 
-import com.endsight.casino.HuffPuff;
+import com.endsight.dragons.BossDrops;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.hud.Alert;
@@ -16,6 +16,7 @@ import com.endsight.qol.CopyChat;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
+import com.endsight.qol.LootRoll;
 import com.endsight.qol.MathSolver;
 import com.endsight.qol.Updates;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -23,6 +24,7 @@ import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
 import com.endsight.slayers.VoidgloomHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.Recipes;
@@ -40,6 +42,7 @@ import com.endsight.ui.ModuleRegistry;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
@@ -55,7 +58,15 @@ import org.lwjgl.glfw.GLFW;
 public class EndsightClient implements ClientModInitializer {
 
     /** Right Shift by default - away from anything vanilla binds and easy to hit. */
-    private static final int OPEN_KEY = GLFW.GLFW_KEY_RIGHT_SHIFT;
+    /**
+     * The menu key, as a real KeyMapping so it sits in Controls like any other mod's
+     * and can be rebound there. Still POLLED rather than consumed: a KeyMapping's own
+     * click counter is dead while a screen is open, and the menu has to be openable
+     * from anywhere. The mapping is only where the choice of key lives.
+     */
+    private static final KeyMapping OPEN = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+            "key.endsight.menu", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT,
+            KeyMapping.Category.register(Identifier.fromNamespaceAndPath("endsight", "endsight"))));
 
     private static ModuleRegistry registry;
     private boolean keyWasDown = false;
@@ -72,8 +83,8 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(VoidgloomHelper.module());
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
+            registry.replace(BossDrops.module());
             registry.replace(Slayer.killTimerModule());
-            registry.replace(HuffPuff.module());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
@@ -82,6 +93,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(LootAlerts.module());
             registry.replace(DebugOnJoin.module());
             registry.replace(LootFilter.module());
+            registry.replace(LootRoll.module());
             registry.replace(AbilitySpam.module());
             registry.replace(CopyChat.module());
             registry.replace(Recipes.module());
@@ -119,10 +131,12 @@ public class EndsightClient implements ClientModInitializer {
         VoidgloomHelper.init();
         DragonTimer.init();
         Protector.init();
+        BossDrops.init();
         EyeGuard.init();
         DamageNumbers.init();
         DebugOnJoin.init();
         LootFilter.init();
+        LootRoll.init();
         AbilitySpam.init();
         CopyChat.init();
         Recipes.init();
@@ -134,7 +148,6 @@ public class EndsightClient implements ClientModInitializer {
         Updates.init();
         Beacon.init();
         Slayer.init();
-        HuffPuff.init();
         ZealotTracker.init();
         extra("init", null);
 
@@ -172,7 +185,10 @@ public class EndsightClient implements ClientModInitializer {
         // Polled rather than registered as a KeyMapping on purpose: a KeyMapping only
         // fires while no screen is open, and this has to be openable from the pause
         // menu later. The edge check is what stops one press opening it every tick.
-        boolean down = InputConstants.isKeyDown(client.getWindow(), OPEN_KEY);
+        InputConstants.Key key = KeyMappingHelper.getBoundKeyOf(OPEN);
+        boolean down = !OPEN.isUnbound() && (key.getType() == InputConstants.Type.MOUSE
+                ? GLFW.glfwGetMouseButton(client.getWindow().handle(), key.getValue()) == GLFW.GLFW_PRESS
+                : InputConstants.isKeyDown(client.getWindow(), key.getValue()));
         if (down && !keyWasDown && client.screen == null && client.level != null) {
             // Back to wherever it was closed from: the browser as it was scrolled, or the
             // settings page that was open, with the browser behind it for Back.

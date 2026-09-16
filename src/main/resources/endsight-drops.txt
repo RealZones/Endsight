@@ -1,5 +1,8 @@
 # Endsight drop tiers. Copied to config/endsight/drops.txt on first run; edit that one.
 #
+# The list Endsight ships is read first and this file on top of it, so an item added
+# to a newer build reaches you without re-copying, and anything you re-tier here stays.
+#
 # One item per line: tier, a tab or spaces, then the item's name as it appears in chat.
 # The name matches anywhere in the drop's name, longest match first, so "Dragon Fragment"
 # covers every dragon's fragment and "Ender Dragon" the pet at any level. Case does not
@@ -77,3 +80,20 @@ common	Crystal Fragment
 common	Dragon Fragment
 common	Travel Scroll
 common	Summoning Eye
+
+# ── slayers: what the Revenant and Voidgloom RNG meters list, tiered by their odds ─
+legendary	Warden Heart
+legendary	Judgement Core
+epic	Scythe Blade
+epic	Shard of the Shredded
+epic	Void Upgrade Stone
+epic	High Class Archfiend Dice
+rare	Beheaded Horror
+rare	Rose of Lies
+rare	Crypt Cache
+rare	Undead Catalyst
+rare	Revenant Catalyst
+rare	Transmission Tuner
+rare	Etherwarp Conduit
+common	Revenant Viscera
+common	Null Atom

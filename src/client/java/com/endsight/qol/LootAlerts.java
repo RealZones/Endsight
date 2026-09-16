@@ -56,7 +56,7 @@ public final class LootAlerts {
             // Just the name, in the item's rarity colour. A word under it saying "drop"
             // told you nothing the colour did not.
             boolean top = d.tier() >= 3;
-            Alert.show(d.item(), "", Drops.colour(d.tier()), top ? 1.4f : 1f, top ? 4 : 3);
+            Alert.show(d.item(), "", Rarity.colour(d.item(), Drops.colour(d.tier())), top ? 1.4f : 1f, top ? 4 : 3);
             Minecraft mc = Minecraft.getInstance();
             if (Alerts.sound() && mc.player != null) {
                 mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, top ? 2f : 1.6f);

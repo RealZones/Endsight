@@ -43,12 +43,12 @@ public final class EndsightDemo {
                 "Eye count and dragon state, read from chat.", "Trackers"));
         r.add(Module.placeholder("dragon.protector", "Protector Stage",
                 "The Protector's tier and how long it has been up.", "Trackers"));
+        r.add(Module.placeholder("dragon.bossdrops", "Boss Drops",
+                "Kills and drops from whichever boss you killed last, sorted by rarity.", "Trackers"));
         r.add(Module.placeholder("zealot.tracker", "Zealot Tracker",
                 "Your zealot kills and rate for the session.", "Trackers"));
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Trackers"));
-        r.add(Module.placeholder("casino.huff", "Huff 'n' Puff",
-                "Profit and loss at the slot, this session or all time.", "Trackers"));
 
         // Alerts: the things that interrupt you.
         r.add(Module.placeholder("alerts", "Alerts",
@@ -59,8 +59,8 @@ public final class EndsightDemo {
         // Visual: drawn in the world or over the game.
         r.add(Module.placeholder("slayer.boss", "Voidgloom Helper",
                 "Your boss's hits and health on screen, boss and Yang Glyph highlights.", "Visual"));
-        r.add(Module.placeholder("visual.beacon", "Protector Beacon",
-                "Beam over the Endstone Protector so it can be found at a glance.", "Visual"));
+        r.add(Module.placeholder("visual.beacon", "Boss Beacon",
+                "Beam over the Endstone Protector and the Warden so they can be found at a glance.", "Visual"));
         r.add(Module.placeholder("qol.damage", "Damage Numbers",
                 "Shortens the damage popups, or takes them away.", "Visual"));
         r.add(Module.placeholder("storage.preview", "Storage Preview",
@@ -73,6 +73,8 @@ public final class EndsightDemo {
                 "Runs /debug for you two seconds after every join.", "Chat"));
         r.add(Module.placeholder("qol.lootfilter", "Loot Number Filter",
                 "Hides loot numbers except the close calls at either end.", "Chat"));
+        r.add(Module.placeholder("qol.lootroll", "Compact Loot Roll",
+                "The detailed /debug roll after a dragon as two lines instead of twelve.", "Chat"));
         r.add(Module.placeholder("qol.abilityspam", "Ability Spam",
                 "One cooldown line with a count instead of a wall of them, or none at all.", "Chat"));
         r.add(Module.placeholder("qol.copychat", "Copy Chat",

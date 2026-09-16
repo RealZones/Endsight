@@ -54,10 +54,7 @@ public final class ServerStats {
                 List.of(
                         new Setting.Toggle("FPS", "Frames per second.", () -> fps, v -> fps = v),
                         new Setting.Toggle("Ping", "Round trip to the server, measured once a second.", () -> ping, v -> ping = v),
-                        new Setting.Toggle("TPS", "Server ticks per second, worked out from its clock.", () -> tps, v -> tps = v),
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open)));
+                        new Setting.Toggle("TPS", "Server ticks per second, worked out from its clock.", () -> tps, v -> tps = v)));
     }
 
     public static void init() {

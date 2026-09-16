@@ -3,7 +3,6 @@ package com.endsight.slayers;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -115,9 +114,6 @@ public final class Slayer {
                 "Kills, time spent and rate for the session.", "Trackers",
                 () -> timerOn, v -> timerOn = v,
                 List.of(
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open),
                         new Setting.Slider("Hide when idle",
                                 "Fade out after this long with no slayer activity. 0 keeps it up.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),

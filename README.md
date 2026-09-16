@@ -4,7 +4,7 @@ A Fabric client mod for **DragSim** — End Simulator / Dragon Sim.
 
 Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storage
 previews and a Voidgloom helper. Press **Right Shift** in game to open the module
-browser; any module can be bound to a key.
+browser (rebind it under Controls → Endsight); any module can be bound to a key.
 
 ---
 
@@ -34,15 +34,19 @@ Golden eyes are marked.
 
 **Protector Stage** — the Endstone Protector's tier, 2 to 5, and how long it has been up.
 
+**Boss Drops** — one readout for whichever boss you killed last — dragons, Warden,
+Protector, zombie and enderman slayers — its kills and the drops it gave you, rarest
+first in the item's own rarity colour, filtered by your tier list. Only your bosses
+count: a dragon you placed an eye for, a Protector or Warden you placed top three on
+(or whose catalyst you placed), your own slayer bosses. Click the chip on its title
+with chat open to flip session / all-time. `/drops` or `/drops dragon` (`warden`,
+`golem`, `zombie`, `enderman`) print any of them into chat.
+
 **Zealot Tracker** — your zealot kills, Summoning Eyes and Golden Eyes this session,
 each with a per-hour rate. Only your own kills count. Pauses when you stop moving.
 
 **Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
 when you stop moving. Each boss's kill time is printed in chat.
-
-**Huff 'n' Puff** — profit and loss at the casino slot: rounds, wagered, won, P/L and
-your best hit, this session or all time. The server only announces wins, so the stake
-is read off the PULL button as you click it.
 
 ### Alerts
 
@@ -50,8 +54,8 @@ is read off the PULL button as you click it.
 Protector spawning, the dragon's fireball and a full inventory. Size, opacity and
 duration are adjustable.
 
-**Loot Alerts** — mid-screen alert and a ping when a drop you care about lands. Which
-drops count is set by tier — see *Drops*.
+**Loot Alerts** — mid-screen alert and a ping when a drop you care about lands, the
+name in the item's own rarity colour. Which drops count is set by tier — see *Drops*.
 
 ### Visual
 
@@ -59,7 +63,8 @@ drops count is set by tier — see *Drops*.
 health once the shield is down. A box and tracer on the boss and on the Yang Glyph
 beacon, drawn in the world. Your own boss only.
 
-**Protector Beacon** — a beam over the Protector so it can be found at a glance.
+**Boss Beacon** — a beam over the Endstone Protector and one over the Warden, each its
+own toggle, so they can be found at a glance.
 
 **Damage Numbers** — shortens damage popups to `8.49M`, or hides them. *Crits only*
 hides the plain numbers — non-crits and ability damage — and keeps the crits.
@@ -79,6 +84,10 @@ loot number.
 **Loot Number Filter** — hides `loot number:` lines except the close calls: rolls under
 a number you set (2.5 to start) and, with *Both ends* on, the same distance from 100 —
 a 99.98 is as rare as a 0.02. Lines that dropped something always show.
+
+**Compact Loot Roll** — the detailed `/debug` roll after a dragon, folded from twelve
+lines into two with just the numbers: dragon, rank, damage, score, MF, pet luck; then
+loot number, armour roll against what it needed, RNG meter, the result and bits.
 
 **Ability Spam** — "This ability is on cooldown" once, with a count, instead of forty
 times; or hidden altogether.

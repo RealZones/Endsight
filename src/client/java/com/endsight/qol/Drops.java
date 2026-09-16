@@ -10,8 +10,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -58,6 +60,10 @@ public final class Drops {
     private static final long REPEAT_MS = 1_500;
     private static String lastItem = "";
     private static long lastAt;
+    /** The last line asked about and its answer, for the next module asking about the same line. */
+    private static String lastRaw = "";
+    private static Drop lastResult;
+    private static long lastRawAt;
 
     /**
      * The drop in this line, or null if it is not one - or if it is the one just seen.
@@ -74,6 +80,18 @@ public final class Drops {
      * the one to trust, and it always follows.
      */
     public static Drop parse(String raw) {
+        // Three modules ask about every line. The repeat check below is what makes
+        // "loot number → X" and "DROP! X" one drop, but it also made the second module
+        // to ask about the SAME line get nothing - the alert went missing on any drop
+        // the boss tracker had already seen. So one line gets one answer, shared.
+        long now = System.currentTimeMillis();
+        if (raw.equals(lastRaw) && now - lastRawAt < 100) return lastResult;
+        lastRaw = raw;
+        lastRawAt = now;
+        return lastResult = read(raw);
+    }
+
+    private static Drop read(String raw) {
         String line = Zealots.strip(raw).trim();
         // Someone pasting their drop into chat is "[MVP+] Name: EPIC DROP! Golden Eye",
         // which is not your drop. The server's own line has no speaker in front of it.
@@ -116,6 +134,11 @@ public final class Drops {
 
     // ── the list ──────────────────────────────────────────────────────────────
 
+    /** The tier from your list, or common. */
+    public static int tierOf(String item) {
+        return Math.max(0, tierOf(item, 0));
+    }
+
     private static int tierOf(String item, int fallback) {
         if (rules == null) rules = load();
         String hay = item.toLowerCase(Locale.ROOT);
@@ -152,8 +175,18 @@ public final class Drops {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("drops.txt");
     }
 
+    /**
+     * The bundled list first, then yours on top of it - so an item added to the shipped
+     * list reaches everyone who copied an older one, and anything you re-tiered stays
+     * the way you put it. The same name in both: yours wins.
+     */
     private static List<Rule> load() {
-        List<Rule> out = new ArrayList<>();
+        Map<String, Rule> rules = new LinkedHashMap<>();
+        try (InputStream in = Drops.class.getResourceAsStream("/endsight-drops.txt")) {
+            if (in != null) read(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList(), rules);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not read the bundled drops.txt: " + e);
+        }
         try {
             Path f = file();
             if (!Files.exists(f)) {
@@ -162,25 +195,32 @@ public final class Drops {
                     if (in != null) Files.copy(in, f);
                 }
             }
-            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
-                String t = line.trim();
-                if (t.isEmpty() || t.startsWith("#")) continue;
-                String[] parts = t.split("\\s+", 2);
-                if (parts.length < 2) continue;
-                int tier = switch (parts[0].toLowerCase(Locale.ROOT)) {
-                    case "legendary" -> 3;
-                    case "epic" -> 2;
-                    case "rare" -> 1;
-                    case "common" -> 0;
-                    default -> -1;
-                };
-                if (tier >= 0) out.add(new Rule(parts[1].trim(), parts[1].trim().toLowerCase(Locale.ROOT), tier));
-            }
+            read(Files.readAllLines(f, StandardCharsets.UTF_8), rules);
         } catch (IOException e) {
             System.err.println("[Endsight] could not read drops.txt: " + e);
         }
+        List<Rule> out = new ArrayList<>(rules.values());
         out.sort((x, y) -> y.needle().length() - x.needle().length());
         return out;
+    }
+
+    private static void read(List<String> lines, Map<String, Rule> into) {
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) continue;
+            String[] parts = t.split("\\s+", 2);
+            if (parts.length < 2) continue;
+            int tier = switch (parts[0].toLowerCase(Locale.ROOT)) {
+                case "legendary" -> 3;
+                case "epic" -> 2;
+                case "rare" -> 1;
+                case "common" -> 0;
+                default -> -1;
+            };
+            if (tier < 0) continue;
+            String needle = parts[1].trim().toLowerCase(Locale.ROOT);
+            into.put(needle, new Rule(parts[1].trim(), needle, tier));
+        }
     }
 
     // ── fallbacks ─────────────────────────────────────────────────────────────

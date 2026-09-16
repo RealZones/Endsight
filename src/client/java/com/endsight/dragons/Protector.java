@@ -4,7 +4,6 @@ import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -77,10 +76,7 @@ public final class Protector {
         return new Module("dragon.protector", "Protector Stage",
                 "The Protector's tier and how long it has been up.", "Trackers",
                 () -> enabled, v -> enabled = v,
-                List.of(
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open)));
+                List.of());
     }
 
     public static void init() {

@@ -43,6 +43,12 @@ public final class HudLayout {
     /** Size per element, 1 being drawn as designed; the wheel over one in the placement screen. */
     private static final Map<String, Float> SCALE = new LinkedHashMap<>();
     private static final Map<String, Long> LOGGED = new LinkedHashMap<>();
+    /** Where each element was last drawn, {x, y, w, h}, for anything that wants to be clicked. */
+    private static final Map<String, int[]> BOUNDS = new LinkedHashMap<>();
+
+    public static int[] bounds(String id) {
+        return BOUNDS.get(id);
+    }
     public static final float MIN_SCALE = 0.5f, MAX_SCALE = 2f;
 
     public static float scale(String id) {
@@ -85,6 +91,7 @@ public final class HudLayout {
         int w = Math.round(size[0] * s), h = Math.round(size[1] * s);
         int x = x(id, w, sw), y = y(id, h, sh);
         Readout.mirror = x + w / 2 > sw / 2;
+        BOUNDS.put(id, new int[]{x, y, w, h});
         // A line every half minute per readout saying where it went, so "it is not
         // showing" can be read off the log instead of argued about.
         long now = System.currentTimeMillis();

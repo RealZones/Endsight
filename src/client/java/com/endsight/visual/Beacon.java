@@ -35,19 +35,23 @@ public final class Beacon {
     private Beacon() {
     }
 
-    private static final String MATCH = "Endstone Protector";
+    private static final String PROTECTOR = "Endstone Protector";
+    private static final String WARDEN = "Warden";
 
     private static boolean enabled = true;
+    private static boolean protector = true, warden = true;
     private static double range = 128;
     private static double beamBlocks = 40;
     private static double brightness = 100;
 
     public static Module module() {
-        return new Module("visual.beacon", "Protector Beacon",
-                "Beam over the Endstone Protector so it can be found at a glance.",
+        return new Module("visual.beacon", "Boss Beacon",
+                "Beam over the Endstone Protector and the Warden so they can be found at a glance.",
                 "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Toggle("Protector", "A beam over the Endstone Protector.", () -> protector, v -> protector = v),
+                        new Setting.Toggle("Warden", "A beam over the Warden.", () -> warden, v -> warden = v),
                         new Setting.Slider("Range",
                                 "How far away it still draws.",
                                 16, 256, 8, () -> range, v -> range = v, "m"),
@@ -71,11 +75,21 @@ public final class Beacon {
         if (player == null || mc.level == null || mc.options.hideGui) return;
         if (!com.endsight.hud.Area.end()) return;
 
-        Entity target = find(player);
-        if (target == null) return;
+        // One beam each; both when both are up, which is exactly when you want them.
+        if (protector) beam(g, mc, player, find(player, PROTECTOR), sw(mc), sh(mc));
+        if (warden) beam(g, mc, player, find(player, WARDEN), sw(mc), sh(mc));
+    }
 
-        int sw = mc.getWindow().getGuiScaledWidth();
-        int sh = mc.getWindow().getGuiScaledHeight();
+    private static int sw(Minecraft mc) {
+        return mc.getWindow().getGuiScaledWidth();
+    }
+
+    private static int sh(Minecraft mc) {
+        return mc.getWindow().getGuiScaledHeight();
+    }
+
+    private static void beam(GuiGraphicsExtractor g, Minecraft mc, LocalPlayer player, Entity target, int sw, int sh) {
+        if (target == null) return;
 
         AABB bb = target.getBoundingBox();
         Vec3 base = new Vec3((bb.minX + bb.maxX) / 2, bb.maxY, (bb.minZ + bb.maxZ) / 2);
@@ -163,16 +177,16 @@ public final class Beacon {
         Draw.rect(g, x, cy - half, 1, half * 2, color);
     }
 
-    /** Nearest Endstone Protector in range, or null. */
-    private static Entity find(LocalPlayer player) {
+    /** Nearest entity named for the boss in range, or null. The Warden's items are not entities, so "Warden" is safe. */
+    private static Entity find(LocalPlayer player, String match) {
         Minecraft mc = Minecraft.getInstance();
         Entity best = null;
         double bestDist = range * range;
 
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (e == player) continue;
+            if (e == player || e instanceof net.minecraft.world.entity.player.Player) continue;
             String name = plainName(e);
-            if (name == null || !name.contains(MATCH)) continue;
+            if (name == null || !name.contains(match)) continue;
 
             double d = e.position().distanceToSqr(player.position());
             if (d < bestDist) {

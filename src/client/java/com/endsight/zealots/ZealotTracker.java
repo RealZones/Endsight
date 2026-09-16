@@ -3,7 +3,6 @@ package com.endsight.zealots;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -125,7 +124,6 @@ public final class ZealotTracker {
     private static double hideAfterMin = 3;
 
     private static int kills;
-    private static int bruisers;
     private static int eyes;
     private static int golden;
     private static long sessionStart;
@@ -213,9 +211,6 @@ public final class ZealotTracker {
                 "Your zealot kills, eye drops and rates for the session.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open),
                         new Setting.Slider("Hide when idle",
                                 "Fade out after this long without a kill or drop. 0 keeps it up.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
@@ -226,7 +221,6 @@ public final class ZealotTracker {
 
     private static void resetSession() {
         kills = 0;
-        bruisers = 0;
         eyes = 0;
         golden = 0;
         sessionStart = 0;
@@ -377,8 +371,7 @@ public final class ZealotTracker {
         }
         boolean mine = ours(e.getId(), e.position(), System.currentTimeMillis());
         if (mine) {
-            if (Zealots.isBruiser(e)) bruisers++;
-            else kills++;
+            kills++;
             touch();
         }
     }
@@ -477,10 +470,9 @@ public final class ZealotTracker {
      */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         String[][] rows = sample
-                ? new String[][]{{"Kills", "736/h", "148"}, {"Bruisers", "31/h", "6"}, {"Eyes", "458/h", "92"},
+                ? new String[][]{{"Kills", "736/h", "148"}, {"Eyes", "458/h", "92"},
                                  {"Golden", "14.9/h", "3"}, {"Elapsed", "", "12m04s"}}
                 : new String[][]{{"Kills", perHour(kills), String.valueOf(kills)},
-                                 {"Bruisers", perHour(bruisers), String.valueOf(bruisers)},
                                  {"Eyes", perHour(eyes), String.valueOf(eyes)},
                                  {"Golden", perHour(golden), String.valueOf(golden)},
                                  {"Elapsed", "", sessionStart == 0 ? "-" : secs(elapsedMs())}};

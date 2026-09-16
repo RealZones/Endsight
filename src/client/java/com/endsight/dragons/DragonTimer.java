@@ -4,7 +4,6 @@ import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -124,9 +123,6 @@ public final class DragonTimer {
                         new Setting.Toggle("Show on HUD",
                                 "Keep the readout on screen.",
                                 () -> showHud, v -> showHud = v),
-                        new Setting.Action("Move readout",
-                                "Drag it, and every other readout, where you want.",
-                                "Move", HudPlacementScreen::open),
                         new Setting.Toggle("Details",
                                 "List who placed each eye this cycle.",
                                 () -> details, v -> details = v)));

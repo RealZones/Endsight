@@ -148,7 +148,6 @@ public final class Recipes {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
             ScreenEvents.afterTick(screen).register(s -> tick(container));
-            if (StoragePreview.isStorageWindow(container)) return;     // that window has its own panel
             attachPanel(client, screen, container);
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
@@ -288,6 +287,31 @@ public final class Recipes {
 
     static String name(ItemStack s) {
         return Zealots.strip(s.getHoverName().getString()).trim();
+    }
+
+    /** A stack of this name the mod has seen, with its lore intact, or null. */
+    public static ItemStack icon(String item) {
+        ItemStack s = ICONS.get(item);
+        if (s != null) return s;
+        String key = recipeFor(item);
+        return key == null ? null : ICONS.get(key);
+    }
+
+    /** A stack of this name you are holding or have in storage, or null. */
+    public static ItemStack held(String item) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) {
+                if (!s.isEmpty() && name(s).equalsIgnoreCase(item)) return s;
+            }
+        }
+        for (PageSnapshot snap : StoragePreview.snapshots().values()) {
+            for (ItemStack s : snap.items()) if (!s.isEmpty() && name(s).equalsIgnoreCase(item)) return s;
+        }
+        for (List<ItemStack> chest : CHESTS.values()) {
+            for (ItemStack s : chest) if (!s.isEmpty() && name(s).equalsIgnoreCase(item)) return s;
+        }
+        return null;
     }
 
     /**
@@ -593,6 +617,8 @@ public final class Recipes {
         int sw = mc.getWindow().getGuiScaledWidth();
         int sh = mc.getWindow().getGuiScaledHeight();
         int left = s.leftPos + s.imageWidth + GAP;
+        // The storage window hangs its own preview off its right side; leave that room.
+        if (StoragePreview.isStorageWindow(s)) left += 9 * 18 + 16;
         int avail = sw - 4 - left;
         int cols = Math.max(4, Math.min(9, (avail - PAD * 2 - CATS) / CELL));
         int w = cols * CELL + PAD * 2 + CATS;

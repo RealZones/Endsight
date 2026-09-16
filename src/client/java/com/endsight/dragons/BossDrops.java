@@ -80,13 +80,26 @@ public final class BossDrops {
 
     static final String DRAGON = "Dragon", WARDEN = "Warden", GOLEM = "Golem", ZOMBIE = "Zombie", ENDERMAN = "Enderman";
     private static final List<String> BOSSES = List.of(DRAGON, WARDEN, GOLEM, ZOMBIE, ENDERMAN);
-    private static final Pattern DRAGON_DEAD = Pattern.compile("^☠ The (.+?) Dragon has de-spawned");
+    /**
+     * Each kind of dragon is its own boss - "Golden Dragon", "Protector Dragon" - because
+     * the drops worth counting are the kind's own: a Golden Dragon Chestplate is one in
+     * so many Golden dragons, and a kill count over every dragon says nothing about it.
+     * The readout follows the last kind killed; /drops dragon adds them all up.
+     */
+    private static final List<String> KINDS = List.of("Young", "Old", "Strong", "Wise", "Unstable", "Superior", "Protector", "Golden");
+    private static final Pattern DRAGON_DEAD = Pattern.compile("^☠ The (?:(.+?) )?Dragon has de-spawned");
     private static final Pattern OBTAINED = Pattern.compile("^(?:\\[[^\\]]+\\] )?(\\S+?)(?: \\S)? has obtained (.+?)!$");
     private static final Pattern TARGET = Pattern.compile("Slay [\\d,]+ Combat XP worth of (\\w+)");
     /** The summary box: one message of many lines, "THE WARDEN DOWN!" and your place near the end. */
     private static final Pattern BOX = Pattern.compile(
             "(THE WARDEN|ENDSTONE PROTECTOR|(?:[A-Z]+ )?DRAGON) DOWN!.*?Your Damage: [\\d,.]+[KMB]? \\(Position #(\\d+)\\)", Pattern.DOTALL);
-    private static final String EYE_PLACED = "You placed a Summoning Eye";
+    /** Your eye going in - a Summoning Eye or, for a Golden dragon, a Golden Eye. */
+    private static final Pattern EYE_PLACED = Pattern.compile("You placed a (?:Summoning|Golden) Eye");
+    /**
+     * Printed to you when the dragon rises, if any of its eyes were yours. The placing
+     * lines are not always shown, so this is the one that settles it.
+     */
+    private static final String AWOKEN = "Your Sleeping Eyes have been awoken";
     private static final String EGG_SPAWNED = "Egg has Spawned";
     private static final String WARDEN_DEAD = "The Warden has been defeated";
     private static final String GOLEM_DEAD = "The Endstone Protector has been defeated";
@@ -132,14 +145,30 @@ public final class BossDrops {
         }
     }
 
-    private static final Map<String, Count> session = new LinkedHashMap<>(), total = new LinkedHashMap<>();
+    /**
+     * This session's numbers, and what the file held when it was last read. All-time is
+     * the two added together, never kept on its own - so the file can be edited, or put
+     * back from a backup, while the game runs, and the next save adds only what happened
+     * since the last one to whatever is there, rather than stamping over it.
+     */
+    private static final Map<String, Count> session = new LinkedHashMap<>(), loaded = new LinkedHashMap<>();
+    /** Since the last write: what the next write adds to whatever the file holds by then. */
+    private static final Map<String, Count> unsaved = new LinkedHashMap<>();
+    private static long fileStamp;
     /**
      * The tier each item was announced at, for anything your list does not name: the
      * server's own word is the only rarity a new item has.
      */
     private static final Map<String, Integer> seen = new LinkedHashMap<>();
-    /** The boss on the readout: the last one killed. */
+    /** The boss on the readout: the last one killed. Any dragon is DRAGON here. */
     private static String showing = DRAGON;
+    /** The last dragon killed, by kind, for the "has obtained" lines that follow it. */
+    private static String lastDragon = DRAGON;
+    /** Which dragons the readout adds up: every kind, or one. Cycled by the chip on the title. */
+    private static final String ALL = "all";
+    private static String kind = ALL;
+    /** The two chips on the title row, as offsets from the readout's left edge, for the click. */
+    private static int modeL, modeR, kindL, kindR;
     private static String slayer = ZOMBIE;
     private static Death death;
     /** The last drop line, for a kill line that arrives just after it. */
@@ -152,6 +181,59 @@ public final class BossDrops {
 
     private static Count of(Map<String, Count> m, String boss) {
         return m.computeIfAbsent(boss, k -> new Count());
+    }
+
+    private static boolean isDragon(String boss) {
+        return boss.equals(DRAGON) || boss.endsWith(" Dragon");
+    }
+
+    /** Every kind of dragon added up. */
+    private static Count dragons(Map<String, Count> m) {
+        Count sum = new Count();
+        m.forEach((k, c) -> {
+            if (!isDragon(k)) return;
+            sum.kills += c.kills;
+            c.drops.forEach((item, n) -> sum.drops.merge(item, n, Integer::sum));
+        });
+        return sum;
+    }
+
+    /** All-time: the file's numbers plus what has not been written yet. */
+    private static Map<String, Count> totals() {
+        return sum(loaded, unsaved);
+    }
+
+    private static Map<String, Count> sum(Map<String, Count> a, Map<String, Count> b) {
+        Map<String, Count> out = new LinkedHashMap<>();
+        for (Map<String, Count> m : List.of(a, b)) {
+            m.forEach((boss, c) -> {
+                Count sum = of(out, boss);
+                sum.kills += c.kills;
+                c.drops.forEach((item, n) -> sum.drops.merge(item, n, Integer::sum));
+            });
+        }
+        return out;
+    }
+
+    /** The numbers the readout is set to: this session's, or all-time. */
+    private static Map<String, Count> view() {
+        return TOTAL.equals(mode) ? totals() : session;
+    }
+
+    /** What the readout shows for a boss: for dragons, all kinds or the one the chip picks. */
+    private static Count count(Map<String, Count> m, String boss) {
+        if (!DRAGON.equals(boss)) return of(m, boss);
+        return ALL.equals(kind) ? dragons(m) : of(m, kind + " Dragon");
+    }
+
+    /** All, then each kind killed in the mode showing, then all again. */
+    private static void nextKind() {
+        Map<String, Count> m = view();
+        List<String> kinds = new ArrayList<>();
+        kinds.add(ALL);
+        for (String k : KINDS) if (of(m, k + " Dragon").kills > 0) kinds.add(k);
+        int i = kinds.indexOf(kind);
+        kind = kinds.get((i + 1) % kinds.size());
     }
 
     public static Module module() {
@@ -189,8 +271,12 @@ public final class BossDrops {
                 slayer = m.group(1).toLowerCase(Locale.ROOT).startsWith("ender") ? ENDERMAN : ZOMBIE;
                 return;
             }
-            if (line.contains(EYE_PLACED)) {
+            if (EYE_PLACED.matcher(line).find()) {
                 eyes++;
+                return;
+            }
+            if (line.contains(AWOKEN)) {
+                eyes = Math.max(eyes, 1);
                 return;
             }
             if (line.contains(EGG_SPAWNED)) {
@@ -201,11 +287,12 @@ public final class BossDrops {
                 catalyst = now - catalystAt < CATALYST_MS;
                 return;
             }
-            if (DRAGON_DEAD.matcher(line).find()) {
+            m = DRAGON_DEAD.matcher(line);
+            if (m.find()) {
                 // Yours if you put an eye in. Its drops are announced by name, seconds
                 // later, so there is nothing to hold the death open for.
                 if (eyes > 0) {
-                    open(DRAGON, now, false).place = 1;
+                    open(m.group(1) == null ? DRAGON : m.group(1) + " Dragon", now, false).place = 1;
                     settle();
                 }
                 eyes = 0;
@@ -237,7 +324,7 @@ public final class BossDrops {
                 Minecraft mc = Minecraft.getInstance();
                 if (mc.player != null && m.group(1).equalsIgnoreCase(mc.player.getName().getString())) {
                     String item = m.group(2).trim();
-                    drop(DRAGON, new Drops.Drop(item, Drops.tierOf(item)));
+                    drop(lastDragon, new Drops.Drop(item, Drops.tierOf(item)));
                 }
             }
         });
@@ -260,12 +347,20 @@ public final class BossDrops {
         });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, ctx) -> {
             var root = ClientCommands.literal("drops").executes(c -> {
-                for (String boss : BOSSES) if (of(TOTAL.equals(mode) ? total : session, boss).kills > 0) say(boss);
+                Map<String, Count> m = view();
+                for (String boss : BOSSES) if ((DRAGON.equals(boss) ? dragons(m) : of(m, boss)).kills > 0) say(boss);
                 return 1;
             });
+            // /drops dragon is every kind together; /drops golden one kind.
             for (String boss : BOSSES) {
                 root.then(ClientCommands.literal(boss.toLowerCase(Locale.ROOT)).executes(c -> {
                     say(boss);
+                    return 1;
+                }));
+            }
+            for (String k : KINDS) {
+                root.then(ClientCommands.literal(k.toLowerCase(Locale.ROOT)).executes(c -> {
+                    say(k + " Dragon");
                     return 1;
                 }));
             }
@@ -277,8 +372,15 @@ public final class BossDrops {
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
                 int[] b = HudLayout.bounds("drops.boss");
                 if (b == null) return true;
-                if (click.x() >= b[0] && click.x() < b[0] + b[2] && click.y() >= b[1] && click.y() < b[1] + Readout.ROW_H + 2) {
+                float sc = HudLayout.scale("drops.boss");
+                if (click.y() < b[1] || click.y() >= b[1] + (Readout.ROW_H + 2) * sc) return true;
+                double lx = (click.x() - b[0]) / sc;     // the chips are known as offsets in the readout's own pixels
+                if (lx >= modeL && lx < modeR) {
                     mode = TOTAL.equals(mode) ? SESSION : TOTAL;
+                    return false;
+                }
+                if (kindR > kindL && lx >= kindL && lx < kindR) {
+                    nextKind();
                     return false;
                 }
                 return true;
@@ -318,17 +420,27 @@ public final class BossDrops {
 
     private static void kill(String boss) {
         of(session, boss).kills++;
-        of(total, boss).kills++;
-        showing = boss;
+        of(unsaved, boss).kills++;
+        show(boss);
         save();
     }
 
     private static void drop(String boss, Drops.Drop d) {
         of(session, boss).drops.merge(d.item(), 1, Integer::sum);
-        of(total, boss).drops.merge(d.item(), 1, Integer::sum);
+        of(unsaved, boss).drops.merge(d.item(), 1, Integer::sum);
         seen.merge(d.item(), d.tier(), Math::max);
-        showing = boss;
+        show(boss);
         save();
+    }
+
+    /** The readout turns to the boss that just did something; a dragon of any kind is the dragon readout. */
+    private static void show(String boss) {
+        if (isDragon(boss)) {
+            lastDragon = boss;
+            showing = DRAGON;
+        } else {
+            showing = boss;
+        }
     }
 
     /** Your list's tier, or the one the server announced it at. */
@@ -336,13 +448,36 @@ public final class BossDrops {
         return Math.max(Drops.tierOf(item), seen.getOrDefault(item, 0));
     }
 
+    /**
+     * Where an item sorts: its own rarity when its lore has been seen, else the tier it
+     * was listed or announced at, on the same scale. Without the fallback an item never
+     * held - a talisman straight into the bag - ranked below everything, and a Golden
+     * Ghoul Talisman sat under a Zombie Talisman while drawn in epic purple.
+     */
+    private static int rankOf(String item) {
+        int r = Rarity.rank(item);
+        if (r > 0) return r;
+        return switch (tier(item)) {
+            case 3 -> 5;
+            case 2 -> 4;
+            case 1 -> 3;
+            default -> 1;
+        };
+    }
+
     /** One boss's numbers into chat, the same order and colours as the readout. */
     private static void say(String boss) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        Count c = of(TOTAL.equals(mode) ? total : session, boss);
+        Map<String, Count> m = view();
+        Count c = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
         mc.player.sendSystemMessage(Component.literal("§d" + boss + " §7- §f" + c.kills + (c.kills == 1 ? " kill" : " kills")
                 + " §8(" + (TOTAL.equals(mode) ? "all time" : "this session") + ")"));
+        if (DRAGON.equals(boss)) {
+            StringBuilder kinds = new StringBuilder("§8  ");
+            for (String k : KINDS) if (of(m, k + " Dragon").kills > 0) kinds.append(k).append(' ').append(of(m, k + " Dragon").kills).append("  ");
+            if (kinds.length() > 4) mc.player.sendSystemMessage(Component.literal(kinds.toString().trim()));
+        }
         List<Map.Entry<String, Integer>> list = sorted(c.drops);
         if (list.isEmpty()) {
             mc.player.sendSystemMessage(Component.literal("§8  nothing worth a row yet"));
@@ -363,9 +498,14 @@ public final class BossDrops {
     }
 
     private static void save() {
+        // Someone else wrote the file since we read it: take theirs as the base.
+        try {
+            if (Files.exists(file()) && Files.getLastModifiedTime(file()).toMillis() != fileStamp) load();
+        } catch (IOException ignored) {
+        }
         List<String> lines = new ArrayList<>();
-        lines.add("# all-time: kill<TAB>boss<TAB>count, drop<TAB>boss<TAB>item<TAB>count, tier<TAB>item<TAB>0-3 as announced");
-        total.forEach((boss, c) -> {
+        lines.add("# all-time: kill<TAB>boss<TAB>count, drop<TAB>boss<TAB>item<TAB>count, tier<TAB>item<TAB>0-3 as announced; dragons by kind");
+        totals().forEach((boss, c) -> {
             lines.add("kill\t" + boss + "\t" + c.kills);
             c.drops.forEach((item, n) -> lines.add("drop\t" + boss + "\t" + item + "\t" + n));
         });
@@ -373,20 +513,28 @@ public final class BossDrops {
         try {
             Files.createDirectories(file().getParent());
             Files.write(file(), lines, StandardCharsets.UTF_8);
+            fileStamp = Files.getLastModifiedTime(file()).toMillis();
+            // Written, so from here it is part of the base.
+            Map<String, Count> base = sum(loaded, unsaved);
+            loaded.clear();
+            loaded.putAll(base);
+            unsaved.clear();
         } catch (IOException e) {
             System.err.println("[Endsight] could not write boss-drops.txt: " + e);
         }
     }
 
     private static void load() {
+        loaded.clear();
         if (!Files.exists(file())) return;
         try {
             for (String line : Files.readAllLines(file(), StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
-                if (p[0].equals("kill") && p.length == 3) of(total, p[1]).kills = Integer.parseInt(p[2]);
-                else if (p[0].equals("drop") && p.length == 4) of(total, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
+                if (p[0].equals("kill") && p.length == 3) of(loaded, p[1]).kills = Integer.parseInt(p[2]);
+                else if (p[0].equals("drop") && p.length == 4) of(loaded, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
                 else if (p[0].equals("tier") && p.length == 3) seen.put(p[1], Integer.parseInt(p[2]));
             }
+            fileStamp = Files.getLastModifiedTime(file()).toMillis();
         } catch (IOException | RuntimeException e) {
             System.err.println("[Endsight] could not read boss-drops.txt: " + e);
         }
@@ -398,7 +546,7 @@ public final class BossDrops {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui) return;
         // Nothing to say until something has died this session.
-        if (of(session, showing).kills == 0 && !TOTAL.equals(mode)) return;
+        if (count(session, showing).kills == 0 && !TOTAL.equals(mode)) return;
         HudLayout.draw("drops.boss", g, mc.font, false);
     }
 
@@ -410,7 +558,7 @@ public final class BossDrops {
             if (tier(e.getKey()) >= floor) out.add(e);
         }
         out.sort((a, b) -> {
-            int r = Integer.compare(Rarity.rank(b.getKey()), Rarity.rank(a.getKey()));
+            int r = Integer.compare(rankOf(b.getKey()), rankOf(a.getKey()));
             if (r != 0) return r;
             int t = Integer.compare(tier(b.getKey()), tier(a.getKey()));
             if (t != 0) return t;
@@ -422,35 +570,51 @@ public final class BossDrops {
 
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         String boss = showing;
-        Count c = of(TOTAL.equals(mode) ? total : session, boss);
+        Count c = count(view(), boss);
         int kills = c.kills;
         Map<String, Integer> drops = c.drops;
+        String kindChip = DRAGON.equals(boss) ? (ALL.equals(kind) ? ALL : kind.toLowerCase(Locale.ROOT)) : null;
         if (sample) {
             boss = DRAGON;
+            kindChip = ALL;
             kills = 12;
             drops = new LinkedHashMap<>();
             drops.put("Golden Dragon Chestplate", 1);
             drops.put("Aspect of the Dragons", 3);
         }
-        String title = boss.toUpperCase(Locale.ROOT) + " DROPS";
+        String title = (DRAGON.equals(boss) && kindChip != null && !ALL.equals(kindChip) ? kind.toUpperCase(Locale.ROOT) + " " : "")
+                + boss.toUpperCase(Locale.ROOT) + " DROPS";
         String chip = TOTAL.equals(mode) ? "total" : "session";
         String killLine = kills + (kills == 1 ? " kill" : " kills");
         List<Map.Entry<String, Integer>> list = sample ? new ArrayList<>(drops.entrySet()) : sorted(drops);
 
-        int w = font.width(title) + 20 + font.width(chip) + 12;
+        int w = font.width(title) + 20 + font.width(chip) + 12 + (kindChip == null ? 0 : font.width(kindChip) + 12);
         for (Map.Entry<String, Integer> e : list) w = Math.max(w, 8 + font.width(e.getKey()) + 12 + font.width(String.valueOf(e.getValue())));
         int h = Readout.ROW_H + 3 + (Readout.ROW_H + 2) + Math.max(1, list.size()) * (Readout.ROW_H + 2);
 
         if (g != null) {
             Readout.tick(g, x, y, w, Theme.accent());
             Draw.text(g, font, title, Readout.left(x), y, Theme.muted());
-            // Session or total, as a small chip at the title's end: click it with chat
-            // open to flip. On the readout and not the settings page because you decide
-            // which you want to look at while looking at it.
+            // Session or total as a small chip at the title's end, and for dragons a
+            // second one saying which kinds are added up: click either with chat open.
+            // On the readout and not the settings page because you decide which you
+            // want to look at while looking at it.
             int cw = font.width(chip) + 8;
             int cx = Readout.right(x, w) - cw;
             Draw.roundedRect(g, cx, y - 2, cw, 11, 3, Draw.alpha(Theme.accent(), 0.22f));
             Draw.text(g, font, chip, cx + 4, y, Theme.accent());
+            modeL = cx - x;
+            modeR = cx + cw - x;
+            if (kindChip != null) {
+                int kw = font.width(kindChip) + 8;
+                int kx = cx - 4 - kw;
+                Draw.roundedRect(g, kx, y - 2, kw, 11, 3, Draw.alpha(Theme.muted(), 0.22f));
+                Draw.text(g, font, kindChip, kx + 4, y, Theme.muted());
+                kindL = kx - x;
+                kindR = kx + kw - x;
+            } else {
+                kindL = kindR = 0;
+            }
             int ry = y + Readout.ROW_H + 3;
             Draw.text(g, font, killLine, Readout.left(x), ry, Theme.dim());
             ry += Readout.ROW_H + 2;

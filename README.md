@@ -39,8 +39,11 @@ Protector, zombie and enderman slayers — its kills and the drops it gave you, 
 first in the item's own rarity colour, filtered by your tier list. Only your bosses
 count: a dragon you placed an eye for, a Protector or Warden you placed top three on
 (or whose catalyst you placed), your own slayer bosses. Click the chip on its title
-with chat open to flip session / all-time. `/drops` or `/drops dragon` (`warden`,
-`golem`, `zombie`, `enderman`) print any of them into chat.
+with chat open to flip session / all-time; the chip beside it switches the dragon
+readout between every kind added up and one kind, since a Golden Dragon Chestplate is
+one in so many Golden dragons, not one in every dragon. `/drops` or `/drops dragon`
+(`golden`, `protector`, `superior`…, `warden`, `golem`, `zombie`, `enderman`) print
+any of them into chat.
 
 **Zealot Tracker** — your zealot kills, Summoning Eyes and Golden Eyes this session,
 each with a per-hour rate. Only your own kills count. Pauses when you stop moving.
@@ -158,3 +161,7 @@ The jar lands in `build/libs/`.
 ---
 
 Built by Fear.
+
+## Licence
+
+All rights reserved - see [LICENSE](LICENSE). Read it, play with it, do not redistribute or reuse it.

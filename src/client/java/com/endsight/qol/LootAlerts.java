@@ -27,6 +27,13 @@ public final class LootAlerts {
 
     private static boolean enabled = true;
     private static String minTier = "Epic and up";
+    /** Drops inside this window of each other share one alert. */
+    private static final long BURST_MS = 1_000;
+    private static final List<String> burst = new java.util.ArrayList<>();
+    private static long burstAt;
+    private static int burstTier;
+    /** The drop that is always there, so it never headlines over what came with it. */
+    private static final String GIVEN = "Golden Eye";
 
     public static Module module() {
         return new Module("dragon.loot", "Loot Alerts",
@@ -53,12 +60,31 @@ public final class LootAlerts {
             if (!enabled || overlay) return;
             Drops.Drop d = Drops.parse(message.getString());
             if (d == null || !Drops.passes(d, minTier)) return;
+            // Drops that land together - a special zealot's Golden Eye and Warden
+            // Catalyst, a boss's pair - are one moment, so they get one alert with both
+            // names and one ping. Shown one after another, the second wiped the first
+            // before it could be read and the pings doubled up.
+            long now = System.currentTimeMillis();
+            if (now - burstAt > BURST_MS) {
+                burst.clear();
+                burstTier = 0;
+            }
+            burst.add(d.item());
+            burstAt = now;
+            burstTier = Math.max(burstTier, d.tier());
+            // A special zealot always gives a Golden Eye; the news is what came with it.
+            // So the eye alerts on its own, and steps aside for a catalyst beside it.
+            List<String> show = burst.size() > 1 ? burst.stream().filter(i -> !i.equalsIgnoreCase(GIVEN)).toList() : burst;
+            if (show.isEmpty()) show = burst;
+            String item = show.get(show.size() - 1);
+            int tier = show.size() == 1 ? Math.max(Drops.tierOf(item), d.tier()) : burstTier;
+            boolean top = tier >= 3;
             // Just the name, in the item's rarity colour. A word under it saying "drop"
             // told you nothing the colour did not.
-            boolean top = d.tier() >= 3;
-            Alert.show(d.item(), "", Rarity.colour(d.item(), Drops.colour(d.tier())), top ? 1.4f : 1f, top ? 4 : 3);
+            int colour = show.size() == 1 ? Rarity.colour(item, Drops.colour(tier)) : Drops.colour(tier);
+            Alert.show(String.join(" + ", show), "", colour, top ? 1.4f : 1f, top ? 4 : 3);
             Minecraft mc = Minecraft.getInstance();
-            if (Alerts.sound() && mc.player != null) {
+            if (burst.size() == 1 && Alerts.sound() && mc.player != null) {
                 mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, top ? 2f : 1.6f);
             }
         });

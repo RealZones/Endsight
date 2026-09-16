@@ -112,6 +112,8 @@ public final class Recipes {
     private static final String INV = "Inventory only";
     private static final String ALL = "Inventory + storage";
     private static String scope = ALL;
+    /** The needs list as raw materials, every sub-recipe expanded, instead of the recipe's own cells. */
+    private static boolean fullCost = false;
     /** Height of the "Counting:" chip row under a recipe's title. */
     private static final int SCOPE_H = 18;
     private static final Map<String, Recipe> RECIPES = new LinkedHashMap<>();
@@ -574,6 +576,42 @@ public final class Recipes {
         return new int[]{ok, needs.size()};
     }
 
+    /**
+     * What a recipe comes down to in raw materials, every sub-recipe expanded, less
+     * what you already hold of the intermediates: a Zombie Heart on you is one you do
+     * not need the viscera for. Eight Zombie Hearts and a Crystallized Heart is a
+     * shopping list of two lines that says nothing about the two thousand viscera
+     * under it; this is the two thousand, against what you have.
+     */
+    static List<Ingredient> fullCost(Recipe r, Map<String, Integer> have) {
+        Map<String, Integer> stock = new HashMap<>(have);
+        Map<String, Integer> raw = new LinkedHashMap<>();
+        Set<String> path = new HashSet<>();
+        path.add(r.name());
+        for (Ingredient i : r.needs()) expand(i.name(), i.count(), stock, raw, path);
+        List<Ingredient> out = new ArrayList<>();
+        raw.forEach((n, c) -> out.add(new Ingredient(n, c)));
+        return out;
+    }
+
+    private static void expand(String item, int count, Map<String, Integer> stock, Map<String, Integer> raw, Set<String> path) {
+        Recipe sub = RECIPES.get(item);
+        // No recipe, or a recipe that loops back on itself: this is as far down as it goes.
+        if (sub == null || path.contains(item)) {
+            raw.merge(item, count, Integer::sum);
+            return;
+        }
+        int held = stock.getOrDefault(item, 0);
+        int used = Math.min(held, count);
+        stock.put(item, held - used);
+        int left = count - used;
+        if (left == 0) return;
+        int crafts = (left + sub.count() - 1) / sub.count();
+        path.add(item);
+        for (Ingredient i : sub.needs()) expand(i.name(), i.count() * crafts, stock, raw, path);
+        path.remove(item);
+    }
+
     // ── the panel ─────────────────────────────────────────────────────────────
 
     /**
@@ -953,10 +991,14 @@ public final class Recipes {
             if (icon != null) g.fakeItem(icon, x, ny - 4);
             Draw.text(g, font, fit(font, r.name(), v.w - PAD * 2 - 22), x + 20, ny, Theme.text());
             if (r.count() > 1) Draw.textRight(g, font, "x" + r.count(), v.x + v.w - PAD, ny, Theme.muted());
-            // What the numbers count, said in words, and a click away from the other.
+            // What the numbers count, said in words, and a click away from the other;
+            // beside it, whether the list is the recipe's own cells or everything under them.
+            // Two rows, not one: side by side they ran off the box, and a chip that
+            // hangs outside it lights up but takes no click.
             chip(g, font, "Counting: " + scope.toLowerCase(), x, ny + 12, 0, mx, my);
+            chip(g, font, fullCost ? "Cost: full, less what you hold" : "Cost: the recipe's cells", x, ny + 12 + SCOPE_H, 0, mx, my);
 
-            int gx = x, gy = ny + 14 + SCOPE_H;
+            int gx = x, gy = ny + 14 + 2 * SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -974,9 +1016,11 @@ public final class Recipes {
                 if (hover && st != null) itemTip(st, mx, my);
             }
             int lx = gx + 3 * CELL + 6, ly = gy + 2;
-            for (Ingredient in : r.needs()) {
+            List<Ingredient> list = fullCost ? fullCost(r, have) : r.needs();
+            if (list.isEmpty()) Draw.text(g, font, "all of it on you", lx, ly, Theme.pos());
+            for (Ingredient in : list) {
                 int got = have.getOrDefault(in.name(), 0);
-                String n = Math.min(got, 9999) + "/" + in.count();
+                String n = Math.min(got, 99999) + "/" + in.count();
                 Draw.text(g, font, n, lx, ly, got >= in.count() ? Theme.pos() : Theme.neg());
                 Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
                 if (mx >= lx && mx < v.x + v.w - PAD && my >= ly - 1 && my < ly + 9) {
@@ -1178,11 +1222,18 @@ public final class Recipes {
                 return true;
             }
             int cy0 = y + 20 + 12;
-            if (my >= cy0 && my < cy0 + 14 && mx < x + font.width("Counting: " + scope.toLowerCase()) + 10) {
+            int cw = font.width("Counting: " + scope.toLowerCase()) + 10;
+            if (my >= cy0 && my < cy0 + 14 && mx < x + cw) {
                 scope = ALL.equals(scope) ? INV : ALL;
                 return true;
             }
-            int gx = x, gy = y + 20 + 14 + SCOPE_H;
+            int cy1 = cy0 + SCOPE_H;
+            int fw = font.width(fullCost ? "Cost: full, less what you hold" : "Cost: the recipe's cells") + 10;
+            if (my >= cy1 && my < cy1 + 14 && mx < x + fw) {
+                fullCost = !fullCost;
+                return true;
+            }
+            int gx = x, gy = y + 20 + 14 + 2 * SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -1192,7 +1243,8 @@ public final class Recipes {
                     return true;
                 }
             }
-            int ly = gy + 2 + r.needs().size() * 10;
+            int rows = fullCost ? fullCost(r, holdings()).size() : r.needs().size();
+            int ly = gy + 2 + rows * 10;
             int uy = Math.max(ly, gy + 3 * CELL) + 8 + 12 + 11;
             clickUses(v, r.name(), x, uy, mx, my);
         } else {

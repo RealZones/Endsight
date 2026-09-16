@@ -218,8 +218,12 @@ public final class Drops {
                 default -> -1;
             };
             if (tier < 0) continue;
-            String needle = parts[1].trim().toLowerCase(Locale.ROOT);
-            into.put(needle, new Rule(parts[1].trim(), needle, tier));
+            // "Warden (pet)": the note in brackets is for the reader, not the match -
+            // the drop line says "[Lvl 1] Warden", and a bare "Warden" in a list of
+            // legendaries reads like the boss.
+            String name = parts[1].trim();
+            String needle = name.replaceFirst("\\s*\\([^)]*\\)\\s*$", "").toLowerCase(Locale.ROOT);
+            into.put(needle, new Rule(name, needle, tier));
         }
     }
 

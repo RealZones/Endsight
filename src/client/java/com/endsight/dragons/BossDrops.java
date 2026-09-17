@@ -117,6 +117,8 @@ public final class BossDrops {
     /** What zealots and the golden ones drop: never a boss's, whatever the timing says. */
     private static final Set<String> NEST = Set.of("summoning eye", "enderman", "null ovoid", "ender pearl",
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
+    /** Fodder nobody wants a row for, at any setting. */
+    private static final Set<String> HIDDEN = Set.of("dragon scale", "pure seeds", "aspect of the dragons");
     private static final String SESSION = "Session";
     private static final String TOTAL = "Total";
 
@@ -257,7 +259,11 @@ public final class BossDrops {
 
             Drops.Drop d = Drops.parse(raw);
             if (d != null) {
-                if (!NEST.contains(d.item().toLowerCase(Locale.ROOT))) {
+                // Dragon loot is announced by name and credited that way; a dragon's
+                // "loot number → Golden Dragon Leggings" landing in the second a Warden
+                // died is the dragon's, not the Warden's.
+                String lower = d.item().toLowerCase(Locale.ROOT);
+                if (!NEST.contains(lower) && !lower.contains("dragon")) {
                     if (death != null) death.drops.add(d);
                     else {
                         held = d;
@@ -426,6 +432,7 @@ public final class BossDrops {
     }
 
     private static void drop(String boss, Drops.Drop d) {
+        if (HIDDEN.contains(d.item().toLowerCase(Locale.ROOT))) return;
         of(session, boss).drops.merge(d.item(), 1, Integer::sum);
         of(unsaved, boss).drops.merge(d.item(), 1, Integer::sum);
         seen.merge(d.item(), d.tier(), Math::max);
@@ -555,7 +562,7 @@ public final class BossDrops {
         List<Map.Entry<String, Integer>> out = new ArrayList<>();
         int floor = Drops.TIERS.indexOf(minTier);
         for (Map.Entry<String, Integer> e : drops.entrySet()) {
-            if (tier(e.getKey()) >= floor) out.add(e);
+            if (tier(e.getKey()) >= floor && !HIDDEN.contains(e.getKey().toLowerCase(Locale.ROOT))) out.add(e);
         }
         out.sort((a, b) -> {
             int r = Integer.compare(rankOf(b.getKey()), rankOf(a.getKey()));

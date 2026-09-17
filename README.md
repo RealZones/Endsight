@@ -4,7 +4,8 @@ A Fabric client mod for **DragSim**
 
 Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storage
 previews and a Voidgloom helper. Press **Right Shift** in game to open the module
-browser (rebind it under Controls → Endsight); any module can be bound to a key.
+browser (rebind it under Controls → Endsight), or type `/endsight` or `/es`; any
+module can be bound to a key.
 
 ![Slayer tracker, boss drops, zealot tracker, the Voidgloom hit counter, alerts and the ping pill in the Voidgloom fight](docs/overview.png)
 

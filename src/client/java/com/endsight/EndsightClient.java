@@ -1,5 +1,6 @@
 package com.endsight;
 
+import com.endsight.dragons.Altar;
 import com.endsight.dragons.BossDrops;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
@@ -86,6 +87,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(BossDrops.module());
+            registry.replace(Altar.module());
             registry.replace(Slayer.killTimerModule());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
@@ -136,6 +138,7 @@ public class EndsightClient implements ClientModInitializer {
         DragonTimer.init();
         Protector.init();
         BossDrops.init();
+        Altar.init();
         EyeGuard.init();
         DamageNumbers.init();
         DebugOnJoin.init();
@@ -170,6 +173,18 @@ public class EndsightClient implements ClientModInitializer {
         // Saved on exit, and again whenever an Endsight screen closes - quitting the
         // game is not the only way a session ends, and a crash after an hour of tuning
         // should not cost the hour.
+        // /endsight or /es opens the browser too - a key can be eaten by another mod or
+        // an overlay, and a command cannot. Opened next tick, because the chat screen
+        // that ran the command closes itself after this returns.
+        net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register((dispatcher, ctx) -> {
+            for (String name : new String[]{"endsight", "es"}) {
+                dispatcher.register(net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal(name).executes(c -> {
+                    Minecraft mc = Minecraft.getInstance();
+                    mc.schedule(() -> open(mc));
+                    return 1;
+                }));
+            }
+        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> Config.save(registry()));
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (screen instanceof EndsightScreen || screen instanceof SettingsScreen) {
@@ -185,6 +200,18 @@ public class EndsightClient implements ClientModInitializer {
         registry();
     }
 
+    /**
+     * Back to wherever it was closed from: the browser as it was scrolled, or the
+     * settings page that was open, with the browser behind it for Back.
+     */
+    private static void open(Minecraft client) {
+        EndsightScreen browser = new EndsightScreen("Endsight", registry());
+        String open = SettingsScreen.openModule();
+        Module page = open == null ? null
+                : registry().all().stream().filter(m -> m.id().equals(open)).findFirst().orElse(null);
+        client.setScreen(page == null ? browser : new SettingsScreen(browser, "Endsight", page));
+    }
+
     private void onTick(Minecraft client) {
         if (client.getWindow() == null) return;
 
@@ -195,15 +222,7 @@ public class EndsightClient implements ClientModInitializer {
         boolean down = !OPEN.isUnbound() && (key.getType() == InputConstants.Type.MOUSE
                 ? GLFW.glfwGetMouseButton(client.getWindow().handle(), key.getValue()) == GLFW.GLFW_PRESS
                 : InputConstants.isKeyDown(client.getWindow(), key.getValue()));
-        if (down && !keyWasDown && client.screen == null && client.level != null) {
-            // Back to wherever it was closed from: the browser as it was scrolled, or the
-            // settings page that was open, with the browser behind it for Back.
-            EndsightScreen browser = new EndsightScreen("Endsight", registry());
-            String open = SettingsScreen.openModule();
-            Module page = open == null ? null
-                    : registry().all().stream().filter(m -> m.id().equals(open)).findFirst().orElse(null);
-            client.setScreen(page == null ? browser : new SettingsScreen(browser, "Endsight", page));
-        }
+        if (down && !keyWasDown && client.screen == null && client.level != null) open(client);
         keyWasDown = down;
 
         // Bound keys are polled here too, and only with no screen open - otherwise the

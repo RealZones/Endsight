@@ -1,6 +1,6 @@
 # Endsight
 
-A Fabric client mod for **DragSim** — End Simulator / Dragon Sim.
+A Fabric client mod for **DragSim**
 
 Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storage
 previews and a Voidgloom helper. Press **Right Shift** in game to open the module

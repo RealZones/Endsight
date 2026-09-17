@@ -119,6 +119,7 @@ public final class BossDrops {
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
     /** Fodder nobody wants a row for, at any setting. */
     private static final Set<String> HIDDEN = Set.of("dragon scale", "pure seeds", "aspect of the dragons");
+
     private static final String SESSION = "Session";
     private static final String TOTAL = "Total";
 
@@ -431,8 +432,16 @@ public final class BossDrops {
         save();
     }
 
+    /** Fodder and every dragon armour piece: no row, whatever the tier says. */
+    private static boolean hidden(String item) {
+        String s = item.toLowerCase(Locale.ROOT);
+        if (HIDDEN.contains(s)) return true;
+        return s.contains("dragon")
+                && (s.contains("helmet") || s.contains("chestplate") || s.contains("leggings") || s.contains("boots"));
+    }
+
     private static void drop(String boss, Drops.Drop d) {
-        if (HIDDEN.contains(d.item().toLowerCase(Locale.ROOT))) return;
+        if (hidden(d.item())) return;
         of(session, boss).drops.merge(d.item(), 1, Integer::sum);
         of(unsaved, boss).drops.merge(d.item(), 1, Integer::sum);
         seen.merge(d.item(), d.tier(), Math::max);
@@ -562,7 +571,7 @@ public final class BossDrops {
         List<Map.Entry<String, Integer>> out = new ArrayList<>();
         int floor = Drops.TIERS.indexOf(minTier);
         for (Map.Entry<String, Integer> e : drops.entrySet()) {
-            if (tier(e.getKey()) >= floor && !HIDDEN.contains(e.getKey().toLowerCase(Locale.ROOT))) out.add(e);
+            if (tier(e.getKey()) >= floor && !hidden(e.getKey())) out.add(e);
         }
         out.sort((a, b) -> {
             int r = Integer.compare(rankOf(b.getKey()), rankOf(a.getKey()));

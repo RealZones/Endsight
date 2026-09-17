@@ -48,8 +48,6 @@ public final class EndsightDemo {
                 "Eye count and dragon state, read from chat.", "Trackers"));
         r.add(Module.placeholder("dragon.protector", "Protector Stage",
                 "The Protector's tier and how long it has been up.", "Trackers"));
-        r.add(Module.placeholder("dragon.altar", "Altar Tracker",
-                "Sacrifices, essence and bonus items from the Draconic Altar.", "Trackers"));
 
         // Alerts.
         r.add(Module.placeholder("alerts", "Alerts",

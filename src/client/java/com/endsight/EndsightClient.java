@@ -1,6 +1,5 @@
 package com.endsight;
 
-import com.endsight.dragons.Altar;
 import com.endsight.dragons.BossDrops;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
@@ -87,7 +86,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(DragonTimer.module());
             registry.replace(Protector.module());
             registry.replace(BossDrops.module());
-            registry.replace(Altar.module());
             registry.replace(Slayer.killTimerModule());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
@@ -138,7 +136,6 @@ public class EndsightClient implements ClientModInitializer {
         DragonTimer.init();
         Protector.init();
         BossDrops.init();
-        Altar.init();
         EyeGuard.init();
         DamageNumbers.init();
         DebugOnJoin.init();

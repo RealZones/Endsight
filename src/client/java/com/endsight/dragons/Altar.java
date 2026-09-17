@@ -15,11 +15,14 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,7 +46,7 @@ public final class Altar {
 
     private static final Pattern ESSENCE = Pattern.compile("^\\+([\\d,]+) Dragon Essence$");
     private static final Pattern BONUS = Pattern.compile("^BONUS! You received (\\d+)x (.+?)!$");
-    private static final String CONFIRM = "Confirm Sacrifice";
+    private static final String BUTTON = "Draconic Altar";
     private static final long AFTER_MS = 2_500;
 
     private static boolean enabled = true;
@@ -62,9 +65,15 @@ public final class Altar {
 
     public static void init() {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
-            if (!Zealots.strip(screen.getTitle().getString()).trim().equals(CONFIRM)) return;
-            confirmOpen = true;
+            if (!(screen instanceof AbstractContainerScreen<?> c)) return;
+            // The title first; failing that, the "Draconic Altar" button among the slots,
+            // which only arrive a tick or two after the window does.
+            if (isConfirm(c)) confirmOpen = true;
+            else ScreenEvents.afterTick(screen).register(s -> {
+                if (!confirmOpen && isConfirm(c)) confirmOpen = true;
+            });
             ScreenEvents.remove(screen).register(s -> {
+                if (!confirmOpen) return;
                 confirmOpen = false;
                 closedAt = System.currentTimeMillis();
             });
@@ -89,6 +98,14 @@ public final class Altar {
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "altar"), (g, delta) -> draw(g));
         HudLayout.register("altar.tracker", "Altar Tracker", 0.006f, 0.62f, (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
+    }
+
+    private static boolean isConfirm(AbstractContainerScreen<?> c) {
+        if (Zealots.strip(c.getTitle().getString()).toLowerCase(Locale.ROOT).contains("sacrifice")) return true;
+        for (Slot s : c.getMenu().slots) {
+            if (!s.getItem().isEmpty() && Zealots.strip(s.getItem().getHoverName().getString()).trim().equals(BUTTON)) return true;
+        }
+        return false;
     }
 
     /** 2600 as is, 12,400 as 12.4k, the way the readouts write big numbers. */

@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "com.endsight.hooks",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ContainerSlotMixin",
+		"HotbarSlotMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

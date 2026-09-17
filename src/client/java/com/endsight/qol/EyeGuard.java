@@ -46,7 +46,7 @@ public final class EyeGuard {
 
     public static Module module() {
         return new Module("qol.eyeguard", "Protect Placed Eyes",
-                "Ignores clicks on an eye you just placed, so it stays in.", "Quality of Life",
+                "Ignores clicks on an eye you just placed.", "Quality of Life",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) lastClick = null;        // never leave a guard armed behind you

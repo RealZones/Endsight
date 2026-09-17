@@ -132,14 +132,14 @@ public final class Recipes {
 
     public static Module module() {
         return new Module("storage.recipes", "Recipes",
-                "Every recipe beside your inventory, with what you already have for it.", "Quality of Life",
+                "Every recipe beside your inventory, with what you have for it.", "Quality of Life",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Panel",
-                                "The item grid beside any inventory window. Click one for its recipe, right-click for what uses it. R or U over any item does the same.",
+                                "Recipe grid beside your inventory. Click an item for its recipe, right-click for its uses.",
                                 () -> panel, v -> panel = v),
                         new Setting.Toggle("Glass",
-                                "See-through boxes with a slight tint, instead of solid.",
+                                "See-through boxes.",
                                 () -> glass, v -> glass = v),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
                                 + CATEGORY.size() + " categories, in config/endsight/recipes.txt")));
@@ -996,7 +996,7 @@ public final class Recipes {
             // Two rows, not one: side by side they ran off the box, and a chip that
             // hangs outside it lights up but takes no click.
             chip(g, font, "Counting: " + scope.toLowerCase(), x, ny + 12, 0, mx, my);
-            chip(g, font, fullCost ? "Cost: full, less what you hold" : "Cost: the recipe's cells", x, ny + 12 + SCOPE_H, 0, mx, my);
+            chip(g, font, fullCost ? "Cost: full" : "Cost: recipe", x, ny + 12 + SCOPE_H, 0, mx, my);
 
             int gx = x, gy = ny + 14 + 2 * SCOPE_H;
             for (int i = 0; i < 9; i++) {
@@ -1017,7 +1017,7 @@ public final class Recipes {
             }
             int lx = gx + 3 * CELL + 6, ly = gy + 2;
             List<Ingredient> list = fullCost ? fullCost(r, have) : r.needs();
-            if (list.isEmpty()) Draw.text(g, font, "all of it on you", lx, ly, Theme.pos());
+            if (list.isEmpty()) Draw.text(g, font, "nothing needed", lx, ly, Theme.pos());
             for (Ingredient in : list) {
                 int got = have.getOrDefault(in.name(), 0);
                 String n = Math.min(got, 99999) + "/" + in.count();
@@ -1228,7 +1228,7 @@ public final class Recipes {
                 return true;
             }
             int cy1 = cy0 + SCOPE_H;
-            int fw = font.width(fullCost ? "Cost: full, less what you hold" : "Cost: the recipe's cells") + 10;
+            int fw = font.width(fullCost ? "Cost: full" : "Cost: recipe") + 10;
             if (my >= cy1 && my < cy1 + 14 && mx < x + fw) {
                 fullCost = !fullCost;
                 return true;

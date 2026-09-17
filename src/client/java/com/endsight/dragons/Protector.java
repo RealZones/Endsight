@@ -74,7 +74,7 @@ public final class Protector {
 
     public static Module module() {
         return new Module("dragon.protector", "Protector Stage",
-                "The Protector's tier and how long it has been up.", "Trackers",
+                "Protector tier and time up.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of());
     }

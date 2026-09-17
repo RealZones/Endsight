@@ -111,11 +111,11 @@ public final class Slayer {
 
     public static Module killTimerModule() {
         return new Module("slayer.timer", "Slayer Tracker",
-                "Kills, time spent and rate for the session.", "Trackers",
+                "Kills, average kill time and rate.", "Trackers",
                 () -> timerOn, v -> timerOn = v,
                 List.of(
                         new Setting.Slider("Hide when idle",
-                                "Fade out after this long with no slayer activity. 0 keeps it up.",
+                                "Fade out after this long idle. 0 never.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Toggle("Kill time in chat",
                                 "Print each boss's own time when it dies.",

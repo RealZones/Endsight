@@ -31,3 +31,11 @@ accessible	field	net/minecraft/client/gui/components/ChatComponent	chatScrollbar
 # window's own size - protected, and nothing public says it.
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageWidth	I
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageHeight	I
+
+# Ability Cooldowns reads the action bar - "-100 Mana (Giant's Slam)" is the one line
+# that says an ability fired. A server sets it with its own packet, which never passes
+# the chat listener, so no message event sees it: the text has to be read off the Gui.
+# The timer resets whenever a new one is set, which is how a repeat of the same text
+# is told from the old one still showing.
+accessible	field	net/minecraft/client/gui/Gui	overlayMessageString	Lnet/minecraft/network/chat/Component;
+accessible	field	net/minecraft/client/gui/Gui	overlayMessageTime	I

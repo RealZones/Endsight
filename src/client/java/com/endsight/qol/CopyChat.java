@@ -38,14 +38,14 @@ public final class CopyChat {
 
     public static Module module() {
         return new Module("qol.copychat", "Copy Chat",
-                "Right-click a chat line to copy it. Drops can copy themselves.", "Chat",
+                "Right-click a chat line to copy it.", "Chat",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Toggle("Drops automatically",
                                 "Each drop's name goes to the clipboard as it lands.",
                                 () -> drops, v -> drops = v),
                         new Setting.Choice("Copy from",
-                                "Lowest tier worth copying. Crazy rare and RNGesus count as legendary.",
+                                "Lowest tier that gets copied.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v)),
                         Drops.tierNotes()));
     }

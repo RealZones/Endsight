@@ -208,11 +208,11 @@ public final class ZealotTracker {
 
     public static Module module() {
         return new Module("zealot.tracker", "Zealot Tracker",
-                "Your zealot kills, eye drops and rates for the session.", "Trackers",
+                "Zealot kills, eyes and golden eyes, with rates.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Slider("Hide when idle",
-                                "Fade out after this long without a kill or drop. 0 keeps it up.",
+                                "Fade out after this long idle. 0 never.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Action("Reset session",
                                 "Zero the counts and the clock.",

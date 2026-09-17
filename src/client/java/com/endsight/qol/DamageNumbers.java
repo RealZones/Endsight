@@ -95,14 +95,14 @@ public final class DamageNumbers {
 
     public static Module module() {
         return new Module("qol.damage", "Damage Numbers",
-                "Shortens the damage popups, or takes them away.", "Visual",
+                "Shorten damage popups, crits only, or hide them.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",
-                                "Shorten them to 8.49M, or remove them completely.",
+                                "Shorten to 8.49M, or hide them.",
                                 List.of(COMPACT, HIDE), () -> mode, v -> mode = v),
                         new Setting.Toggle("Crits only",
-                                "Hide the plain numbers - non-crits and ability damage - and keep the crits.",
+                                "Hide non-crit and ability damage.",
                                 () -> critsOnly, v -> critsOnly = v)));
     }
 

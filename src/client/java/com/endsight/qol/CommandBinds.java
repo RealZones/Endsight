@@ -32,10 +32,10 @@ public final class CommandBinds {
 
     public static Module module() {
         settings.add(new Setting.Action("New bind",
-                "Add a row: type the command, then click its key chip and press a key.",
+                "Type a command, click its key chip, press a key.",
                 "New", CommandBinds::add));
         return new Module("qol.commands", "Command Binds",
-                "Keys that send a command for you.", "Quality of Life",
+                "Set keybinds for each command.", "Quality of Life",
                 () -> enabled, v -> enabled = v, settings);
     }
 

@@ -117,7 +117,7 @@ public final class DragonTimer {
 
     public static Module module() {
         return new Module("dragon.timer", "Dragon Timer",
-                "Eye count and dragon state, read from chat.", "Trackers",
+                "Eye counts and dragon spawn time.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Show on HUD",

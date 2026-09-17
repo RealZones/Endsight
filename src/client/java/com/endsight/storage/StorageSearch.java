@@ -61,7 +61,7 @@ public final class StorageSearch {
         return List.of(
                 new Setting.Section("Item search"),
                 new Setting.Toggle("Search box",
-                        "A search box in the Storage window that marks which pages hold the item.",
+                        "Search box in the Storage window that marks matching pages.",
                         () -> enabled, v -> {
                             enabled = v;
                             // The box is a real widget on a screen that is already open,

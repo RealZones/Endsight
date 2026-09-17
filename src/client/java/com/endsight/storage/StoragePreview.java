@@ -81,7 +81,7 @@ public final class StoragePreview {
 
     public static Module module() {
         return new Module("storage.preview", "Storage Preview",
-                "Hover a storage page to see inside it.", "Visual",
+                "Hover a storage page to see inside. Item search.", "Visual",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Toggle("Snapshot on close",
@@ -94,7 +94,7 @@ public final class StoragePreview {
                                 "Draw the count on each stack.",
                                 () -> showCounts, v -> showCounts = v),
                         new Setting.Action("Reposition preview",
-                                "Drag it where you want it, against the real window.",
+                                "Drag the preview where you want it.",
                                 "Move", StoragePreview::openPlacement)),
                         StorageSearch.settings()));
     }

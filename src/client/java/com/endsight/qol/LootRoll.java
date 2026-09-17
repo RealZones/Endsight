@@ -70,11 +70,11 @@ public final class LootRoll {
 
     public static Module module() {
         return new Module("qol.lootroll", "Compact Loot Roll",
-                "The detailed /debug roll after a dragon as two lines instead of twelve.", "Chat",
+                "The dragon's /debug roll in two lines.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Hide drop tables",
-                                "The mob line, drop chances, loot number ranges and empty results that detailed mode prints under every kill.",
+                                "Hide the mob, odds and 'result: nothing' lines under every kill.",
                                 () -> hideTables, v -> hideTables = v)));
     }
 

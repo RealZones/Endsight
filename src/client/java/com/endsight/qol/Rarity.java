@@ -31,7 +31,12 @@ public final class Rarity {
     private Rarity() {
     }
 
-    private static final Pattern LINE = Pattern.compile("^(VERY SPECIAL|SPECIAL|DIVINE|MYTHIC|LEGENDARY|EPIC|RARE|UNCOMMON|COMMON)\\b");
+    /**
+     * The word can sit anywhere on the line: the server puts its own marks round it -
+     * "⚝ MYTHIC SWORD ⟳", "✧ EPIC SWORD V" - and what sits between mark and word is not
+     * always a plain space. Upper case only, so a sentence with "rare" in it never matches.
+     */
+    private static final Pattern LINE = Pattern.compile("\\b(VERY SPECIAL|SPECIAL|DIVINE|MYTHIC|LEGENDARY|EPIC|RARE|UNCOMMON|COMMON)\\b");
     private static final Map<String, Integer> cache = new HashMap<>();
 
     /** The rarity colour, or {@code fallback} if the item has never been seen. */
@@ -39,8 +44,24 @@ public final class Rarity {
         Integer c = cache.get(item);
         if (c != null) return c == 0 ? fallback : c;
         int found = find(item);
-        cache.put(item, found);
+        // Not found is not remembered: the item may be held, or seen in a chest, a
+        // minute from now, and it would have stayed grey until a restart.
+        if (found != 0) cache.put(item, found);
         return found == 0 ? fallback : found;
+    }
+
+    /**
+     * The rarity colour of this very stack, or 0 for an item with no rarity line.
+     * Cached by name, so a full window costs one tooltip per new item, not per frame.
+     */
+    public static int of(ItemStack s) {
+        if (s.isEmpty()) return 0;
+        String name = s.getHoverName().getString();
+        Integer c = cache.get(name);
+        if (c != null) return c;
+        int found = lore(s);
+        cache.put(name, found);
+        return found;
     }
 
     /** Sort key: higher is rarer; -1 for unknown. */
@@ -61,7 +82,10 @@ public final class Rarity {
     private static int find(String item) {
         ItemStack s = Recipes.icon(item);
         if (s == null) s = Recipes.held(item);
-        if (s == null) return 0;
+        return s == null ? 0 : lore(s);
+    }
+
+    private static int lore(ItemStack s) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return 0;
         List<Component> lines = s.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.NORMAL);

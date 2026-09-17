@@ -55,7 +55,7 @@ public final class Alerts {
 
     public static Module module() {
         return new Module("alerts", "Alerts",
-                "Mid-screen alerts for bosses, fireballs and a full inventory.", "Alerts",
+                "Alerts for minibosses, slayer bosses, the Protector, fireballs and a full inventory.", "Alerts",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) Alert.clear();          // an alert already showing goes too
@@ -66,13 +66,13 @@ public final class Alerts {
                                 "Revenant Champion, Deformed Revenant and friends.",
                                 () -> miniboss, v -> miniboss = v),
                         new Setting.Toggle("Slayer boss spawning",
-                                "Your own slayer boss arriving.",
+                                "Your slayer boss is spawning.",
                                 () -> slayerBoss, v -> slayerBoss = v),
                         new Setting.Toggle("Endstone Protector",
                                 "When it finishes rising and spawns.",
                                 () -> protector, v -> protector = v),
                         new Setting.Toggle("Dragon fireball",
-                                "The dragon calling its fireball.",
+                                "The dragon's fireball is coming.",
                                 () -> fireball, v -> fireball = v),
                         new Setting.Toggle("Full inventory",
                                 "The moment the last slot fills.",
@@ -80,7 +80,7 @@ public final class Alerts {
 
                         new Setting.Section("How they look"),
                         new Setting.Slider("Size",
-                                "Share of Minecraft's own title size.",
+                                "Text size.",
                                 40, 130, 5, Alert::scale, Alert::setScale, "%"),
                         new Setting.Slider("Opacity",
                                 "How solid the text is.",

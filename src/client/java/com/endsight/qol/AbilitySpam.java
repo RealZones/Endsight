@@ -46,11 +46,11 @@ public final class AbilitySpam {
 
     public static Module module() {
         return new Module("qol.abilityspam", "Ability Spam",
-                "One cooldown line with a count instead of a wall of them, or none at all.", "Chat",
+                "Stack ability cooldown messages into one, or remove them.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",
-                                "Stack keeps the newest refusal with a count; Hide drops them all.",
+                                "Stack: one line with a count. Hide: none.",
                                 List.of(STACK, HIDE), () -> mode, v -> mode = v)));
     }
 

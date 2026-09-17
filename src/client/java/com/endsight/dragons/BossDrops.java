@@ -238,11 +238,11 @@ public final class BossDrops {
 
     public static Module module() {
         return new Module("dragon.bossdrops", "Boss Drops",
-                "Kills and drops from whichever boss you killed last - dragons, Warden, Protector, slayers - sorted by rarity.", "Trackers",
+                "Kills and drops per boss, sorted by rarity.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Show from",
-                                "Lowest tier worth a row, by your list in config/endsight/drops.txt. Everything is still counted.",
+                                "Lowest tier that gets a row.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v)));
     }
 

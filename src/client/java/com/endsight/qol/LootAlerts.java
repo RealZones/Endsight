@@ -37,11 +37,11 @@ public final class LootAlerts {
 
     public static Module module() {
         return new Module("dragon.loot", "Loot Alerts",
-                "Mid-screen alert and a ping for the drops you pick.", "Alerts",
+                "Alert and ping for drops of your chosen tier.", "Alerts",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Choice("Alert from",
-                                "Lowest tier worth a call. Set in config/endsight/drops.txt.",
+                                "Lowest tier that alerts.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v),
                         new Setting.Action("Reload tiers",
                                 "Re-read config/endsight/drops.txt after editing it.",

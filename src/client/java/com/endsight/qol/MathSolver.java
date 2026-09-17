@@ -38,7 +38,7 @@ public final class MathSolver {
 
     public static Module module() {
         return new Module("qol.math", "Math Solver",
-                "Works out the Golden Dragon's sum and puts the answer under it.", "Chat",
+                "Answers the Golden Dragon's math question.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Copy to clipboard",

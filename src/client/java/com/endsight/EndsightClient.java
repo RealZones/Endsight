@@ -31,6 +31,8 @@ import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
+import com.endsight.visual.Cooldowns;
+import com.endsight.visual.RarityOutline;
 import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.Keybinds;
@@ -90,6 +92,8 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(EyeGuard.module());
             registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
+            registry.replace(RarityOutline.module());
+            registry.replace(Cooldowns.module());
             registry.replace(LootAlerts.module());
             registry.replace(DebugOnJoin.module());
             registry.replace(LootFilter.module());
@@ -147,6 +151,8 @@ public class EndsightClient implements ClientModInitializer {
         MathSolver.init();
         Updates.init();
         Beacon.init();
+        RarityOutline.init();
+        Cooldowns.init();
         Slayer.init();
         ZealotTracker.init();
         extra("init", null);

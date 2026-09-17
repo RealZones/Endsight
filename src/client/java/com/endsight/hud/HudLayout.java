@@ -42,7 +42,6 @@ public final class HudLayout {
     private static final Map<String, float[]> POS = new LinkedHashMap<>();
     /** Size per element, 1 being drawn as designed; the wheel over one in the placement screen. */
     private static final Map<String, Float> SCALE = new LinkedHashMap<>();
-    private static final Map<String, Long> LOGGED = new LinkedHashMap<>();
     /** Where each element was last drawn, {x, y, w, h}, for anything that wants to be clicked. */
     private static final Map<String, int[]> BOUNDS = new LinkedHashMap<>();
 
@@ -92,13 +91,6 @@ public final class HudLayout {
         int x = x(id, w, sw), y = y(id, h, sh);
         Readout.mirror = x + w / 2 > sw / 2;
         BOUNDS.put(id, new int[]{x, y, w, h});
-        // A line every half minute per readout saying where it went, so "it is not
-        // showing" can be read off the log instead of argued about.
-        long now = System.currentTimeMillis();
-        if (now - LOGGED.getOrDefault(id, 0L) > 30_000) {
-            LOGGED.put(id, now);
-            System.out.println("[Endsight] hud " + id + " at " + x + "," + y + " size " + w + "x" + h + " scale " + s);
-        }
         if (Math.abs(s - 1f) < 0.01f) {
             // As designed: drawn straight at its place, the way every readout always was.
             e.renderer().draw(g, font, x, y, sample);

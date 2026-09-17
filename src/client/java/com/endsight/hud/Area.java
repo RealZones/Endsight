@@ -75,10 +75,7 @@ public final class Area {
             for (String line : sidebar(mc)) {
                 Where w = placeLine(line);
                 if (w != Where.UNKNOWN) {
-                    if (!line.equals(lastPlace)) {
-                        lastPlace = line;
-                        System.out.println("[Endsight] area: " + line + " -> " + w);
-                    }
+                    lastPlace = line;
                     where = w;
                     return;
                 }

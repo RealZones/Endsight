@@ -46,7 +46,7 @@ public final class Beacon {
 
     public static Module module() {
         return new Module("visual.beacon", "Boss Beacon",
-                "Beam over the Endstone Protector and the Warden so they can be found at a glance.",
+                "Beam over the Protector and the Warden.",
                 "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
@@ -59,7 +59,7 @@ public final class Beacon {
                                 "How far the beam rises.",
                                 8, 96, 4, () -> beamBlocks, v -> beamBlocks = v, "m"),
                         new Setting.Slider("Brightness",
-                                "How strongly the beam burns.",
+                                "How bright the beam is.",
                                 30, 130, 5, () -> brightness, v -> brightness = v, "%")));
     }
 

@@ -82,20 +82,20 @@ public final class VoidgloomHelper {
 
     public static Module module() {
         return new Module("slayer.boss", "Voidgloom Helper",
-                "Your boss's hits and health on screen, boss and Yang Glyph highlights.", "Visual",
+                "Hits, phase and health display. Boss and glyph highlight and tracer.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("On screen",
-                                "Hits left on the shield, big; the boss's health when the shield is down.",
+                                "Shield hits left, then boss health.",
                                 () -> onScreen, v -> onScreen = v),
                         new Setting.Toggle("Highlight boss",
-                                "A box round the boss and a line to it, so it is never lost in the crowd.",
+                                "Box and line to your boss.",
                                 () -> highlight, v -> highlight = v),
                         new Setting.Toggle("Highlight glyph",
-                                "Box and tracer to the Yang Glyph beacon, so you reach it inside the five seconds.",
+                                "Box and line to the Yang Glyph.",
                                 () -> glyph, v -> glyph = v),
                         new Setting.Toggle("Highlight Nukekubi",
-                                "A solid box and a tracer on each head while your boss is up.",
+                                "Box and line to each Nukekubi head.",
                                 () -> heads, v -> heads = v)));
     }
 

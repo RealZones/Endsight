@@ -41,14 +41,14 @@ public final class LootFilter {
 
     public static Module module() {
         return new Module("qol.lootfilter", "Loot Number Filter",
-                "Hides loot numbers except the close calls at either end.", "Chat",
+                "Hides loot numbers except the close calls.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Slider("Show under",
-                                "Loot numbers under this stay in chat; the rest are hidden. Drops always show.",
+                                "Only loot numbers under this show. Drops always show.",
                                 0, 50, 0.5, () -> showUnder, v -> showUnder = v, ""),
                         new Setting.Toggle("Both ends",
-                                "Also keep rolls the same distance from 100 - a 99.98 is as rare as a 0.02.",
+                                "Also show rolls just as close to 100.",
                                 () -> bothEnds, v -> bothEnds = v)));
     }
 

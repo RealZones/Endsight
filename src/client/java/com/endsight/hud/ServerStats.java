@@ -49,12 +49,12 @@ public final class ServerStats {
 
     public static Module module() {
         return new Module("hud.stats", "Ping / TPS",
-                "FPS, your ping and the server's tick rate, in a pill.", "Visual",
+                "FPS, ping and TPS in a pill.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("FPS", "Frames per second.", () -> fps, v -> fps = v),
-                        new Setting.Toggle("Ping", "Round trip to the server, measured once a second.", () -> ping, v -> ping = v),
-                        new Setting.Toggle("TPS", "Server ticks per second, worked out from its clock.", () -> tps, v -> tps = v)));
+                        new Setting.Toggle("Ping", "Round trip to the server.", () -> ping, v -> ping = v),
+                        new Setting.Toggle("TPS", "Server ticks per second.", () -> tps, v -> tps = v)));
     }
 
     public static void init() {

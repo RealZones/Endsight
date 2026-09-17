@@ -3,11 +3,18 @@ name: Release
 # One push to the default branch = one GitHub release and ONE Discord post: an embed
 # carrying the commit message and the release link, with the jar attached to it.
 # Nothing for other branches, and no separate commit / jar / release messages.
+# A push that only touches the README, the screenshots under docs, the licence or
+# this workflow is not a release either: nobody needs a jar for a paragraph.
 
 on:
   push:
     branches:
       - '**'
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/**'
 
 permissions:
   contents: write

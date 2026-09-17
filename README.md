@@ -72,7 +72,7 @@ name in the item's own rarity colour. Which drops count is set by tier — see *
 health once the shield is down. A box and tracer on the boss and on the Yang Glyph
 beacon, drawn in the world. Your own boss only.
 
-![Voidgloom Helper: the boss and a Nukekubi head boxed, hits and health on screen](docs/voidgloom.png)
+![Voidgloom Helper: the boss and the Yang Glyph boxed, hits big on screen](docs/voidgloom.png)
 
 **Boss Beacon** — a beam over the Endstone Protector and one over the Warden, each its
 own toggle, so they can be found at a glance.

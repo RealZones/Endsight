@@ -47,7 +47,8 @@ public final class Altar {
     private static final Pattern ESSENCE = Pattern.compile("^\\+([\\d,]+) Dragon Essence$");
     private static final Pattern BONUS = Pattern.compile("^BONUS! You received (\\d+)x (.+?)!$");
     private static final String BUTTON = "Draconic Altar";
-    private static final long AFTER_MS = 2_500;
+    private static final long DRAGON_MS = 15_000;
+    private static long dragonAt;
 
     private static boolean enabled = true;
     private static int sacrifices, bonuses;
@@ -81,8 +82,14 @@ public final class Altar {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!enabled || overlay) return;
             long now = System.currentTimeMillis();
-            if (!confirmOpen && now - closedAt > AFTER_MS) return;
             String line = Zealots.strip(message.getString()).trim();
+            // Essence also comes off a dragon, seconds after it dies, and in a quest's box
+            // - the box is many lines in one message, which the anchored match refuses.
+            if (line.contains("has de-spawned")) {
+                dragonAt = now;
+                return;
+            }
+            if (now - dragonAt < DRAGON_MS) return;
             Matcher m = ESSENCE.matcher(line);
             if (m.find()) {
                 if (sessionStart == 0) sessionStart = now;

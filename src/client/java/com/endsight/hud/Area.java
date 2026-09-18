@@ -34,7 +34,7 @@ public final class Area {
     private Area() {
     }
 
-    public enum Where { END, CRYPTS, HUB, UNKNOWN }
+    public enum Where { END, CRYPTS, VOID_SEPULTURE, HUB, UNKNOWN }
 
     private static Where where = Where.UNKNOWN;
     private static long lastRead;
@@ -46,11 +46,15 @@ public final class Area {
 
     /** The End, or nobody has said otherwise yet. */
     public static boolean end() {
-        return where == Where.END || where == Where.UNKNOWN;
+        return where == Where.END || where == Where.VOID_SEPULTURE || where == Where.UNKNOWN;
     }
 
     public static boolean crypts() {
         return where == Where.CRYPTS;
+    }
+
+    public static boolean voidSepulture() {
+        return where == Where.VOID_SEPULTURE;
     }
 
     public static void init() {
@@ -87,6 +91,7 @@ public final class Area {
     private static Where placeLine(String line) {
         String s = line.replaceAll("^[^\\p{L}]+", "").trim().toLowerCase();
         if (s.equals("crypts") || s.startsWith("crypts ")) return Where.CRYPTS;
+        if (s.equals("void sepulture") || s.startsWith("void sepulture ")) return Where.VOID_SEPULTURE;
         if (s.equals("dragon's den") || s.equals("dragons den") || s.equals("the end")) return Where.END;
         if (s.equals("village") || s.equals("hub") || s.equals("spawn")) return Where.HUB;
         return Where.UNKNOWN;

@@ -256,6 +256,8 @@ public class SettingsScreen extends Screen {
                         Draw.lerp(Draw.alpha(Theme.accent(), 0.18f), Theme.accent(), a));
                 Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
                         Draw.lerp(Theme.accent(), Theme.bg(), a));
+            } else if (r.setting instanceof Setting.KeyAction act) {
+                drawKeyAction(g, font, r, act, mouseX, mouseY);
             }
         }
 
@@ -371,6 +373,21 @@ public class SettingsScreen extends Screen {
         Draw.textCentered(g, font, "x", xx + REMOVE_W / 2, fy + 6, Draw.lerp(Theme.dim(), Theme.neg(), ax));
     }
 
+    // A keyed action row: label/description on the left, [ run ] [ key ] on the right.
+    private void drawKeyAction(GuiGraphicsExtractor g, Font font, Row r, Setting.KeyAction a, int mouseX, int mouseY) {
+        int bw = font.width(a.button()) + 20;
+        int by = r.y + r.h / 2 - 10;
+        int bx = r.x + r.w - CHIP_W - 8 - bw;
+        float on = anim("keyact:" + a.id())
+                .to(contains(bx, by, bw, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
+        Draw.roundedRect(g, bx, by, bw, 20, Theme.RADIUS - 2,
+                Draw.lerp(Draw.alpha(Theme.accent(), 0.18f), Theme.accent(), on));
+        Draw.textCentered(g, font, a.button(), bx + bw / 2, by + 6,
+                Draw.lerp(Theme.accent(), Theme.bg(), on));
+
+        drawChip(g, font, a.id(), r.x + r.w - CHIP_W, r.y + r.h / 2 - CHIP_H / 2, mouseX, mouseY);
+    }
+
     private void drawToggle(GuiGraphicsExtractor g, int x, int y, float t) {
         int w = 20, h = 10;
         Draw.roundedRect(g, x, y, w, h, h / 2, Draw.lerp(Theme.line(), Theme.pos(), t));
@@ -444,6 +461,16 @@ public class SettingsScreen extends Screen {
             }
             if (r.setting instanceof Setting.Choice c) {
                 c.next(event.button() == 1 ? -1 : 1);
+                return true;
+            }
+            if (r.setting instanceof Setting.KeyAction a) {
+                int bw = font.width(a.button()) + 20;
+                int by2 = r.y + r.h / 2 - 10;
+                int bx2 = r.x + r.w - CHIP_W - 8 - bw;
+                if (contains(r.x + r.w - CHIP_W, r.y + r.h / 2 - CHIP_H / 2, CHIP_W, CHIP_H, mx, my)) {
+                    return listen(a.id(), event);
+                }
+                if (contains(bx2, by2, bw, 20, mx, my)) a.run().run();
                 return true;
             }
             if (r.setting instanceof Setting.Action a) {

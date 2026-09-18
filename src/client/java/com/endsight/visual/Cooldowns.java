@@ -20,15 +20,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The Giant's Sword and the tuba, each as its item in a circle with a ring that
- * fills while its cooldown runs. Two readouts, each with its own toggle and place.
+ * The Giant's Sword and the tuba, each as its item with a fading overlay while its
+ * cooldown runs. Two readouts, each with its own toggle and place.
  *
  * The server says an ability fired in the action bar - "-100 Mana (Giant's Slam)",
  * "-150 Mana (Howl)". A server sets the action bar with its own packet, which never
@@ -36,13 +35,7 @@ import java.util.regex.Pattern;
  * off the Gui every tick, and its timer resetting is how a repeat of the same text is
  * told from the old one still up. The tuba's "HOWL!" chat line counts too. The length
  * is the item's own "Cooldown: 5s" lore line, and "This ability is on cooldown for
- * 3.7s" - the early press - corrects the ring to what the server says is left.
- *
- * The circle and the ring are drawn pixel by pixel with coverage at the edges, the
- * way a real renderer would anti-alias them, because a 28-pixel circle built from
- * hard rows looks like a coin from a bad arcade port. The ring's colour is the
- * palette's accent, dim at the start and full at the end; ready is the full ring with
- * a thin light edge, and the readout stays up so ready is something you see.
+ * 3.7s" - the early press - corrects the overlay to what the server says is left.
  */
 public final class Cooldowns {
 
@@ -54,11 +47,7 @@ public final class Cooldowns {
     private static final Pattern MANA = Pattern.compile("-[\\d,]+ Mana \\((.+?)\\)");
     private static final Pattern COOLDOWN = Pattern.compile("^Cooldown: ([\\d.]+)s");
     private static final Pattern WAIT = Pattern.compile("on cooldown for ([\\d.]+)s");
-    /** Outer radius; the ring is the outer RING pixels of it, the item sits inside. */
-    private static final int R = 14;
-    private static final int RING = 3;
-
-    /** One of the two: what it matches, its readout, and where its ring is right now. */
+    /** One of the two: what it matches, its readout, and where its cooldown is right now. */
     private static final class Timer {
         final String id, label, item, ability;
         final double fallback;
@@ -88,11 +77,11 @@ public final class Cooldowns {
 
     public static Module module() {
         return new Module("visual.cooldowns", "Ability Cooldowns",
-                "Cooldown rings for the Giant's Sword and the tuba.", "Visual",
+                "Fading cooldown icons for the Giant's Sword and the tuba.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Toggle("Giant's Sword", "A ring for Giant's Slam.", () -> SWORD.on, v -> SWORD.on = v),
-                        new Setting.Toggle("Tuba", "A ring for Howl.", () -> TUBA.on, v -> TUBA.on = v)));
+                        new Setting.Toggle("Giant's Sword", "A cooldown icon for Giant's Slam.", () -> SWORD.on, v -> SWORD.on = v),
+                        new Setting.Toggle("Tuba", "A cooldown icon for Howl.", () -> TUBA.on, v -> TUBA.on = v)));
     }
 
     public static void init() {
@@ -181,108 +170,37 @@ public final class Cooldowns {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.options.hideGui) return;
         long now = System.currentTimeMillis();
-        // Always up, not only while cooling: a full green ring is the "ready" you glance at.
-        for (Timer t : TIMERS) if (t.on) HudLayout.draw(t.id, g, mc.font, false);
+        for (Timer t : TIMERS) if (t.on && now < t.until) HudLayout.draw(t.id, g, mc.font, false);
     }
 
     private static int[] drawOne(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample, Timer t) {
         long now = System.currentTimeMillis();
-        float p;
-        double left;
         if (t.icon == null) t.icon = carried(t);
         ItemStack icon = t.icon;
         if (icon == null) icon = Recipes.icon(t.label);
         if (icon == null) icon = new ItemStack(t == TUBA ? Items.GOAT_HORN : Items.DIAMOND_SWORD);
-        boolean ready = !sample && now >= t.until;
-        if (sample) {
-            p = 0.6f;
-            left = 2.0;
-        } else if (ready) {
-            p = 1f;
-            left = 0;
-        } else {
-            long total = Math.max(1, t.until - t.start);
-            p = Math.max(0f, Math.min(1f, (now - t.start) / (float) total));
-            left = Math.max(0, t.until - now) / 1000.0;
-        }
-        String text = left <= 0 ? "" : left < 10 ? String.format("%.1fs", left) : Math.round(left) + "s";
-        int d = 2 * R + 2, pillH = 11;
-        int w = d, h = d + 3 + pillH;
+
+        float left = sample ? 0.55f : remaining(t, now);
+        int w = 27, h = 38;
         if (g == null) return new int[]{w, h};
 
-        int cx = x + R + 1, cy = y + R + 1;
-        // The face, the track, the ring over it - dim at the start, the full accent at
-        // the end - then the item on top.
-        int ringColour = Draw.lerp(Draw.alpha(Theme.accent(), 0.55f), Theme.accent() | 0xFF000000, p);
-        disc(g, cx, cy, R, Draw.alpha(Theme.surface(), 0.94f));
-        ring(g, cx, cy, R - RING, R, 1f, Draw.alpha(Theme.text(), 0.10f));
-        ring(g, cx, cy, R - RING, R, p, ringColour);
-        // Ready: the full ring gets a thin light edge round it, lit rather than recoloured.
-        if (ready) ring(g, cx, cy, R, R + 1, 1f, Draw.alpha(Theme.text(), 0.35f));
-        if (icon != null) g.fakeItem(icon, cx - 8, cy - 8);
-        if (!text.isEmpty()) {
-            int pw = font.width(text) + 8;
-            int px = cx - pw / 2, py = y + d + 3;
-            Draw.roundedRect(g, px, py, pw, pillH, 3, Draw.alpha(Theme.surface(), 0.94f));
-            Draw.textCentered(g, font, text, cx, py + 2, Theme.text());
+        Draw.roundedRect(g, x, y, 27, 27, 5, Draw.alpha(Theme.surface(), 0.78f));
+        Draw.roundedOutline(g, x, y, 27, 27, 5, Draw.alpha(Theme.text(), 0.10f), Theme.surface());
+        if (icon != null) g.fakeItem(icon, x + 5, y + 5);
+
+        if (left > 0) {
+            Draw.roundedRect(g, x + 2, y + 2, 23, 23, 4, Draw.alpha(Theme.bg(), 0.62f * left));
+            int bar = Math.round(23 * (1f - left));
+            Draw.roundedRect(g, x + 2, y + 23, Math.max(2, bar), 2, 1, Theme.accent());
+            double seconds = sample ? t.fallback * left : Math.max(0, t.until - now) / 1000.0;
+            String text = seconds < 10 ? String.format("%.1fs", seconds) : Math.round(seconds) + "s";
+            Draw.textCentered(g, font, text, x + 13, y + 31, Theme.text());
         }
         return new int[]{w, h};
     }
 
-    /** A filled circle with a soft edge: each pixel's alpha is how much of it the circle covers. */
-    private static void disc(GuiGraphicsExtractor g, int cx, int cy, int r, int colour) {
-        for (int py = -r; py < r; py++) {
-            double dy = py + 0.5;
-            int runStart = Integer.MIN_VALUE;
-            int runColour = 0;
-            for (int px = -r; px <= r; px++) {
-                int c = 0;
-                if (px < r) {
-                    double dx = px + 0.5;
-                    double cov = Math.max(0, Math.min(1, r - Math.sqrt(dx * dx + dy * dy) + 0.5));
-                    if (cov > 0.02) c = scaleAlpha(colour, cov);
-                }
-                if (c != runColour) {
-                    if (runStart != Integer.MIN_VALUE) Draw.rect(g, cx + runStart, cy + py, px - runStart, 1, runColour);
-                    runStart = c == 0 ? Integer.MIN_VALUE : px;
-                    runColour = c;
-                }
-            }
-        }
-    }
-
-    /**
-     * The part of a ring from the top, clockwise, up to {@code turn} of a full turn -
-     * both edges soft, drawn as runs of pixels that share a colour.
-     */
-    private static void ring(GuiGraphicsExtractor g, int cx, int cy, int rIn, int rOut, float turn, int colour) {
-        if (turn <= 0) return;
-        for (int py = -rOut; py < rOut; py++) {
-            double dy = py + 0.5;
-            int runStart = Integer.MIN_VALUE;
-            int runColour = 0;
-            for (int px = -rOut; px <= rOut; px++) {
-                int c = 0;
-                if (px < rOut) {
-                    double dx = px + 0.5;
-                    double d = Math.sqrt(dx * dx + dy * dy);
-                    double cov = Math.max(0, Math.min(1, Math.min(d - rIn + 0.5, rOut - d + 0.5)));
-                    if (cov > 0.02) {
-                        double a = (Math.atan2(dx, -dy) / (2 * Math.PI) + 1) % 1;
-                        if (a <= turn) c = scaleAlpha(colour, cov);
-                    }
-                }
-                if (c != runColour) {
-                    if (runStart != Integer.MIN_VALUE) Draw.rect(g, cx + runStart, cy + py, px - runStart, 1, runColour);
-                    runStart = c == 0 ? Integer.MIN_VALUE : px;
-                    runColour = c;
-                }
-            }
-        }
-    }
-
-    private static int scaleAlpha(int colour, double by) {
-        int a = (colour >>> 24) == 0 ? 255 : colour >>> 24;
-        return ((int) Math.round(a * by) << 24) | (colour & 0xFFFFFF);
+    private static float remaining(Timer t, long now) {
+        if (now >= t.until || t.until <= t.start) return 0;
+        return Math.max(0f, Math.min(1f, (t.until - now) / (float) (t.until - t.start)));
     }
 }

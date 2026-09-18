@@ -78,8 +78,8 @@ public final class BossDrops {
     private BossDrops() {
     }
 
-    static final String DRAGON = "Dragon", WARDEN = "Warden", GOLEM = "Golem", ZOMBIE = "Zombie", ENDERMAN = "Enderman";
-    private static final List<String> BOSSES = List.of(DRAGON, WARDEN, GOLEM, ZOMBIE, ENDERMAN);
+    static final String DRAGON = "Dragon", WARDEN = "Warden", GOLEM = "Golem", REVENANT = "Revenant", VOIDGLOOM = "Voidgloom";
+    private static final List<String> BOSSES = List.of(DRAGON, WARDEN, GOLEM, REVENANT, VOIDGLOOM);
     /**
      * Each kind of dragon is its own boss - "Golden Dragon", "Protector Dragon" - because
      * the drops worth counting are the kind's own: a Golden Dragon Chestplate is one in
@@ -172,7 +172,7 @@ public final class BossDrops {
     private static String kind = ALL;
     /** The two chips on the title row, as offsets from the readout's left edge, for the click. */
     private static int modeL, modeR, kindL, kindR;
-    private static String slayer = ZOMBIE;
+    private static String slayer = REVENANT;
     private static Death death;
     /** The last drop line, for a kill line that arrives just after it. */
     private static Drops.Drop held;
@@ -183,7 +183,14 @@ public final class BossDrops {
     private static int catalysts = -1;
 
     private static Count of(Map<String, Count> m, String boss) {
+        boss = bossKey(boss);
         return m.computeIfAbsent(boss, k -> new Count());
+    }
+
+    private static String bossKey(String boss) {
+        if ("Zombie".equals(boss)) return REVENANT;
+        if ("Enderman".equals(boss)) return VOIDGLOOM;
+        return boss;
     }
 
     private static boolean isDragon(String boss) {
@@ -264,8 +271,10 @@ public final class BossDrops {
                 // "loot number → Golden Dragon Leggings" landing in the second a Warden
                 // died is the dragon's, not the Warden's.
                 String lower = d.item().toLowerCase(Locale.ROOT);
-                if (!NEST.contains(lower) && !lower.contains("dragon")) {
-                    if (death != null) death.drops.add(d);
+                if (!NEST.contains(lower)) {
+                    if (death != null) {
+                        if (isDragon(death.boss) || !lower.contains("dragon")) death.drops.add(d);
+                    }
                     else {
                         held = d;
                         heldAt = now;
@@ -275,7 +284,7 @@ public final class BossDrops {
             }
             Matcher m = TARGET.matcher(line);
             if (m.find()) {
-                slayer = m.group(1).toLowerCase(Locale.ROOT).startsWith("ender") ? ENDERMAN : ZOMBIE;
+                slayer = m.group(1).toLowerCase(Locale.ROOT).startsWith("ender") ? VOIDGLOOM : REVENANT;
                 return;
             }
             if (EYE_PLACED.matcher(line).find()) {
@@ -297,10 +306,11 @@ public final class BossDrops {
             m = DRAGON_DEAD.matcher(line);
             if (m.find()) {
                 // Yours if you put an eye in. Its drops are announced by name, seconds
-                // later, so there is nothing to hold the death open for.
+                // later, or as a debug loot line right after the summary box.
                 if (eyes > 0) {
-                    open(m.group(1) == null ? DRAGON : m.group(1) + " Dragon", now, false).place = 1;
-                    settle();
+                    String boss = m.group(1) == null ? DRAGON : m.group(1) + " Dragon";
+                    open(boss, now, false).place = 1;
+                    show(boss);
                 }
                 eyes = 0;
                 return;
@@ -365,6 +375,14 @@ public final class BossDrops {
                     return 1;
                 }));
             }
+            root.then(ClientCommands.literal("zombie").executes(c -> {
+                say(REVENANT);
+                return 1;
+            }));
+            root.then(ClientCommands.literal("enderman").executes(c -> {
+                say(VOIDGLOOM);
+                return 1;
+            }));
             for (String k : KINDS) {
                 root.then(ClientCommands.literal(k.toLowerCase(Locale.ROOT)).executes(c -> {
                     say(k + " Dragon");

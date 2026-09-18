@@ -92,6 +92,16 @@ public sealed interface Setting {
     record Action(String label, String description, String button, Runnable run) implements Setting {
     }
 
+    /**
+     * A verb with its own key chip.
+     *
+     * Module keys toggle the module itself. Some modules also have small, immediate
+     * verbs - use this item, mark this spot - where a whole module per key would make
+     * the browser worse. The id is the stable keybind id saved under bind.<id>.
+     */
+    record KeyAction(String id, String label, String description, String button, Runnable run) implements Setting {
+    }
+
     /** Not a control - a heading that breaks a long page into groups. */
     record Section(String label) implements Setting {
         @Override

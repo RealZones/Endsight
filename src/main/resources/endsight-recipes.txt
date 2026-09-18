@@ -143,9 +143,102 @@ Lament	1	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endsto
 Endstone Rose Bush	1		10*End Stone Rose		10*End Stone Rose	10*End Stone Rose	10*End Stone Rose		10*End Stone Rose	
 Void Upgrade Stone	1	32*Null Atom		32*Null Atom		1*Shard of the Shredded		32*Null Atom		32*Null Atom
 Weird Tuba	1	4*Frozen Fragment		4*Frozen Fragment	4*Frozen Fragment		4*Frozen Fragment		4*Frozen Fragment	
+Amethyst Helmet	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
+Amethyst Leggings	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst
+Crystal Cluster	1		10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment	
+Frozen Urn	1	5*Frozen Fragment		5*Frozen Fragment	5*Frozen Fragment		5*Frozen Fragment	5*Frozen Fragment	5*Frozen Fragment	5*Frozen Fragment
+Gilded Ring	1	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Golden Hot Potato Book	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel
+Personal Compactor 4000	1	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone		8*Enchanted End Stone	8*Enchanted End Stone	1*Refined End Stone	8*Enchanted End Stone
+Personal Compactor 5000	1	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone		1*Refined End Stone	1*Refined End Stone	1*Personal Compactor 4000	1*Refined End Stone
+Personal Compactor 6000	1	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian		1*Refined Obsidian	1*Refined Obsidian	1*Personal Compactor 5000	1*Refined Obsidian
+Personal Compactor 7000	1	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian		1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Personal Compactor 6000	1*Refined Crying Obsidian
+Ritualist's Artifact	1	3*Ritual Residue	3*Ritual Residue	3*Ritual Residue	3*Ritual Residue	1*Ritualist's Ring	3*Ritual Residue	3*Ritual Residue	3*Ritual Residue	3*Ritual Residue
+Ritualist's Ring	1	1*Ritual Residue	1*Ritual Residue	1*Ritual Residue	1*Ritual Residue	1*Ritualist's Talisman	1*Ritual Residue	1*Ritual Residue	1*Ritual Residue	1*Ritual Residue
+Soulflow Battery	1		18*Null Ovoid			1*Soulflow Pile			18*Null Ovoid	
+Soulflow Supercell	1	4*Null Atom		4*Null Atom		1*Soulflow Battery		4*Null Atom		4*Null Atom
+[Lvl 1] Endermite	1	32*End Stone	32*End Stone	32*End Stone	32*End Stone	1*Null Ovoid	32*End Stone	32*End Stone	32*End Stone	32*End Stone
+[Lvl 1] Obsidian Golem	1	32*Obsidian	32*Obsidian	32*Obsidian	32*Obsidian	1*Null Ovoid	32*Obsidian	32*Obsidian	32*Obsidian	32*Obsidian
+[Lvl 1] Silverfish	1	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	1*Null Ovoid	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone
+Amethyst Chestplate	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst
+Amethyst Boots	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
+Crying Obsidian Helmet	1	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Enderite Helmet	1*Refined Crying Obsidian			
+Crying Obsidian Chestplate	1	1*Refined Crying Obsidian	1*Enderite Chestplate	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian
+Crying Obsidian Leggings	1	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Enderite Leggings	1*Refined Crying Obsidian	1*Refined Crying Obsidian		1*Refined Crying Obsidian
+Crying Obsidian Boots	1	1*Refined Crying Obsidian		1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Enderite Boots	1*Refined Crying Obsidian			
+Enderite Helmet	1	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Obsidian Miner Helmet	1*Refined End Stone			
+Enderite Chestplate	1	1*Refined End Stone	1*Obsidian Miner Chestplate	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone
+Enderite Leggings	1	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone	1*Obsidian Miner Leggings	1*Refined End Stone	1*Refined End Stone		1*Refined End Stone
+Enderite Boots	1	1*Refined End Stone		1*Refined End Stone	1*Refined End Stone	1*Obsidian Miner Boots	1*Refined End Stone			
+Obsidian Miner Helmet	1	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Prospector's Helmet	1*Refined Obsidian			
+Obsidian Miner Chestplate	1	1*Refined Obsidian	1*Prospector's Chestplate	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian
+Obsidian Miner Leggings	1	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian	1*Prospector's Leggings	1*Refined Obsidian	1*Refined Obsidian		1*Refined Obsidian
+Obsidian Miner Boots	1	1*Refined Obsidian		1*Refined Obsidian	1*Refined Obsidian	1*Prospector's Boots	1*Refined Obsidian			
+Prospector's Helmet	1	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone		4*Enchanted End Stone			
+Prospector's Chestplate	1	4*Enchanted End Stone		4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone
+Prospector's Leggings	1	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone	4*Enchanted End Stone		4*Enchanted End Stone	4*Enchanted End Stone		4*Enchanted End Stone
+Prospector's Boots	1	4*Enchanted End Stone		4*Enchanted End Stone	4*Enchanted End Stone		4*Enchanted End Stone			
+Helmet of the Void	1	2*Void Fragment	2*Void Fragment	2*Void Fragment	4*Fine Amethyst		4*Fine Amethyst			
+Chestplate of the Void	1	4*Fine Amethyst		4*Fine Amethyst	2*Void Fragment	2*Void Fragment	2*Void Fragment	2*Void Fragment	2*Void Fragment	2*Void Fragment
+Leggings of the Void	1	2*Void Fragment	2*Void Fragment	2*Void Fragment	2*Fine Amethyst		2*Fine Amethyst	2*Fine Amethyst		2*Fine Amethyst
+Boots of the Void	1	2*Void Fragment		2*Void Fragment	4*Fine Amethyst		4*Fine Amethyst			
+Amethyst Geode	1		16*Flawed Amethyst						64*Enchanted End Stone	
+Amethyst Jewel	1		16*Flawed Amethyst						4*Refined Obsidian	
+Pure Obsidian	1					2*Refined Obsidian				
+Void Shard	1		1*Fine Amethyst			1*Refined End Stone			2*Refined Obsidian	
+Amethyst Drill AX-15	1		24*Flawed Amethyst			1*Drill Motor			1*Fuel Tank	
+Amethyst Drill AX-522	1		3*Amethyst Mixture			1*Amethyst Drill AX-15				
+Amethyst Fuel Tank	1		10*Amethyst Mixture			1*Obsidian-Infused Fuel Tank			4*Obsidian Plate	
+Amethyst Gauntlet	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	16*Refined Obsidian	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst
+Amethyst Mixture	1		16*Flawed Amethyst						32*Enchanted Obsidian	
+Amethyst-Polished Engine	1		5*Drill Motor		4*Obsidian Plate	1*Obsidian-Plated Engine	1*Fine Amethyst			
+Bejeweled Handle	1					4*Enchanted Obsidian				
+Blazing Omelette	1		1*Fine Amethyst		64*Enchanted Crying Obsidian	1*Ender Omelette	32*Enchanted Crying Obsidian			
+Crying Drill CD-12	1		3*Amethyst Mixture		1*Fine Amethyst	1*Amethyst Drill AX-522	5*Refined Crying Obsidian			
+Crying Obsidian Pickaxe	1		2*Refined Crying Obsidian			1*Refined Obsidian Pickaxe			8*Flawed Amethyst	
+Crying-Polished Engine	1		16*Refined Crying Obsidian		5*Drill Motor	1*Amethyst-Polished Engine	3*Fine Amethyst		8*Obsidian Plate	
+Dragon Seasoning	1		64*Enchanted Obsidian						16*Null Atom	
+Drill Motor	1		4*Refined End Stone			2*Refined Obsidian			8*Null Ovoid	
+Enchanted Crying Obsidian	1		32*Crying Obsidian		32*Crying Obsidian	32*Crying Obsidian	32*Crying Obsidian		32*Crying Obsidian	
+Enchanted End Stone	1		32*End Stone		32*End Stone	32*End Stone	32*End Stone		32*End Stone	
+Enchanted Obsidian	1		32*Obsidian		32*Obsidian	32*Obsidian	32*Obsidian		32*Obsidian	
+End-Infused Fuel Tank	1		10*Refined End Stone			5*Flawed Amethyst			5*Fuel Tank	
+End-Plated Engine	1		2*Drill Motor						1*Void Plate	
+Ender Omelette	1		64*Enchanted End Stone			32*Enchanted End Stone			16*Null Ovoid	
+Enderite Drill EX-226	1		3*Refined End Stone			1*Drill Motor			1*Fuel Tank	
+Enderite Drill EX-326	1		5*Void Plate			1*Enderite Drill EX-226			1*Obsidian Plate	
+Enderite Pickaxe	1	1*Refined End Stone	1*Refined End Stone	1*Refined End Stone		1*Bejeweled Handle			1*Bejeweled Handle	
+Fine Amethyst	1		16*Flawed Amethyst		16*Flawed Amethyst	16*Flawed Amethyst	16*Flawed Amethyst		16*Flawed Amethyst	
+Flawed Amethyst	1		16*Rough Amethyst		16*Rough Amethyst	16*Rough Amethyst	16*Rough Amethyst		16*Rough Amethyst	
+Flawless Amethyst	1		16*Fine Amethyst		16*Fine Amethyst	16*Fine Amethyst	16*Fine Amethyst		16*Fine Amethyst	
+Fuel Tank	1		2*Refined Obsidian						32*Enchanted End Stone	
+Obsidian Drill OD-355	1		6*Void Plate		8*Refined Obsidian	1*Drill Motor	8*Refined End Stone		1*Fuel Tank	
+Obsidian Drill OD-455	1		4*Fine Amethyst		12*Refined Obsidian	1*Obsidian Drill OD-355	5*Obsidian Plate			
+Obsidian Drill OD-555	1		8*Fine Amethyst		10*Obsidian Plate	1*Obsidian Drill OD-455	8*Refined Crying Obsidian		16*Refined Obsidian	
+Obsidian Drill OD-655	1		1*Flawless Amethyst		16*Amethyst Mixture	1*Obsidian Drill OD-555	30*Null Atom	10*Obsidian Plate		12*Refined Obsidian
+Obsidian-Infused Fuel Tank	1		10*Refined Obsidian		5*Flawed Amethyst	1*End-Infused Fuel Tank	5*Fuel Tank			
+Obsidian Pickaxe	1	1*Refined Obsidian	1*Refined Obsidian	1*Refined Obsidian		1*Bejeweled Handle			1*Bejeweled Handle	
+Obsidian Plate	1		5*Refined Obsidian			1*Void Plate			1*Refined Crying Obsidian	
+Obsidian-Plated Engine	1		8*Refined Obsidian			1*End-Plated Engine			2*Drill Motor	
+Perfect Amethyst	1					5*Flawless Amethyst				
+Perfectly-Cut Fuel Tank	1		32*Refined Crying Obsidian		25*Amethyst Mixture	1*Amethyst Fuel Tank	16*Obsidian Plate			
+Refined Crying Obsidian	1					16*Enchanted Crying Obsidian				
+Refined End Stone	1					16*Enchanted End Stone				
+Refined Enderite Pickaxe	1		2*Refined End Stone			1*Enderite Pickaxe				
+Refined Obsidian	1					16*Enchanted Obsidian				
+Refined Obsidian Pickaxe	1		1*Refined Obsidian			1*Obsidian Pickaxe				
+Void Alloy	1		2*Perfect Amethyst		16*Refined Crying Obsidian	1*Void Core	8*Obsidian Plate		8*Void Fragment	
+Void Canister	1		32*Enchanted End Stone		32*Enchanted End Stone	1*Null Ovoid	32*Enchanted End Stone		32*Enchanted End Stone	
+Void Cell	1		5*Void Canister						3*Enchanted Crying Obsidian	
+Void Drill	1		1*Void Alloy			1*Obsidian Drill OD-655				
+Void Omelette	1		1*Fine Amethyst		64*Enchanted Obsidian	1*Ender Omelette	32*Enchanted Obsidian			
+Void Plate	1		2*Refined End Stone			1*Refined Obsidian			5*Flawed Amethyst	
+Void-Polished Engine	1		32*Refined Crying Obsidian		5*Drill Motor	1*Crying-Polished Engine	1*Perfect Amethyst		16*Obsidian Plate	
+Void Powder Coating	1		16*Amethyst Mixture			16*Refined Crying Obsidian			5*Void Fragment	
 
 # categories, as the server's menu lists them
-@Combat	Crystal Helmet	Crystal Chestplate	Crystal Leggings	Crystal Boots	Frozen Blaze Helmet	Frozen Blaze Chestplate	Frozen Blaze Leggings	Frozen Blaze Boots	Storm Helmet	Storm Chestplate	Storm Leggings	Storm Boots	Maxor's Helmet	Maxor's Chestplate	Maxor's Leggings	Maxor's Boots	Necron Helmet	Necron Chestplate	Necron Leggings	Necron Boots	Sorrow Helmet	Sorrow Chestplate	Sorrow Leggings	Sorrow Boots	Axe of the Shredded	Blinding Sword	Bouquet of Lies	Edible Mace	Flower of Truth	Frozen Scythe	Giant's Sword	Golden Sceptre	Midas Staff	Golden Cannon	
-@Slayer	Aspect of the Void	Atomsplit Katana	Bigger Teeth	Gold Claws	Null Atom	Reaper Falchion	Reaper Scythe	Revenant Falchion	Serrated Claws	Terminator	Voidedge Katana	Voodoo Doll	Vorpal Katana	Wand of Healing	Wand of Mending	Wand of Restoration	Wand of Atonement	Crystallized Heart	Final Destination Helmet	Final Destination Chestplate	Final Destination Leggings	Final Destination Boots	Reaper Mask	Reaper Chestplate	Reaper Leggings	Reaper Boots	Revenant Chestplate	Revenant Leggings	Revenant Boots	Revived Heart	Warden Helmet	Zombie Heart	
-@Dragon & Draconic	Golden Dragon Helmet	Golden Dragon Chestplate	Golden Dragon Leggings	Golden Dragon Boots	Old Dragon Helmet	Old Dragon Chestplate	Old Dragon Leggings	Old Dragon Boots	Protector Dragon Helmet	Protector Dragon Chestplate	Protector Dragon Leggings	Protector Dragon Boots	Strong Dragon Helmet	Strong Dragon Chestplate	Strong Dragon Leggings	Strong Dragon Boots	Superior Dragon Helmet	Superior Dragon Chestplate	Superior Dragon Leggings	Superior Dragon Boots	Unstable Dragon Helmet	Unstable Dragon Chestplate	Unstable Dragon Leggings	Unstable Dragon Boots	Wise Dragon Helmet	Wise Dragon Chestplate	Wise Dragon Leggings	Wise Dragon Boots	Young Dragon Helmet	Young Dragon Chestplate	Young Dragon Leggings	Young Dragon Boots	[Lvl 1] Golden Dragon	Reinforced Scales	
-@Accessories	Average Greed	Big Loan	Draconic Artifact	Draconic Ring	Draconic Talisman	Ender Artifact	Ender Relic	Ender Ring	Ender Talisman	The Greediest of Them All	High Greed	Low Greed	Protector's Shield	Reaper Orb	Revenant Talisman	Revenant Ring	Revenant Artifact	Rose Artifact	Rose Ring	Rose Talisman	Small Loan	Spare Change Talisman	Void Artifact	Void Relic	Void Ring	Void Talisman	Warden Talisman	Warden's Blade	Weak Greedness	Wilted Rose Artifact	Wilted Rose Ring	Wilted Rose Talisman	Zealot Artifact	Zealot Ring	Zealot Talisman	Zombie Artifact	Zombie Relic	Zombie Ring	
+@Combat	Crystal Helmet	Crystal Chestplate	Crystal Leggings	Crystal Boots	Frozen Blaze Helmet	Frozen Blaze Chestplate	Frozen Blaze Leggings		Frozen Blaze Boots	Storm Helmet	Storm Chestplate	Storm Leggings	Storm Boots	Maxor's Helmet	Maxor's Chestplate	Maxor's Leggings	Maxor's Boots	Necron Helmet	Necron Chestplate	Necron Leggings	Necron Boots	Sorrow Helmet	Sorrow Chestplate	Sorrow Leggings	Sorrow Boots	Axe of the Shredded	Blinding Sword	Bouquet of Lies	Edible Mace	Flower of Truth	Frozen Scythe	Giant's Sword	Golden Sceptre	Midas Staff	Golden Cannon
+@Slayer	Aspect of the Void	Atomsplit Katana	Bigger Teeth	Gold Claws	Null Atom	Reaper Falchion	Reaper Scythe		Revenant Falchion	Serrated Claws	Terminator	Voidedge Katana	Voodoo Doll	Vorpal Katana	Wand of Healing	Wand of Mending	Wand of Restoration	Wand of Atonement	Crystallized Heart	Final Destination Helmet	Final Destination Chestplate	Final Destination Leggings	Final Destination Boots	Reaper Mask	Reaper Chestplate	Reaper Leggings	Reaper Boots	Revenant Chestplate	Revenant Leggings	Revenant Boots	Revived Heart	Warden Helmet	Zombie Heart
+@Dragon & Draconic	Golden Dragon Helmet	Golden Dragon Chestplate	Golden Dragon Leggings	Golden Dragon Boots	Old Dragon Helmet	Old Dragon Chestplate	Old Dragon Leggings		Old Dragon Boots	Protector Dragon Helmet	Protector Dragon Chestplate	Protector Dragon Leggings	Protector Dragon Boots	Strong Dragon Helmet	Strong Dragon Chestplate	Strong Dragon Leggings	Strong Dragon Boots	Superior Dragon Helmet	Superior Dragon Chestplate	Superior Dragon Leggings	Superior Dragon Boots	Unstable Dragon Helmet	Unstable Dragon Chestplate	Unstable Dragon Leggings	Unstable Dragon Boots	Wise Dragon Helmet	Wise Dragon Chestplate	Wise Dragon Leggings	Wise Dragon Boots	Young Dragon Helmet	Young Dragon Chestplate	Young Dragon Leggings	Young Dragon Boots	[Lvl 1] Golden Dragon	Reinforced Scales
+@Mining	Prospector's Helmet	Prospector's Chestplate	Prospector's Leggings	Prospector's Boots	Obsidian Miner Helmet	Obsidian Miner Chestplate	Obsidian Miner Leggings	Obsidian Miner Boots	Enderite Helmet	Enderite Chestplate	Enderite Leggings	Enderite Boots	Crying Obsidian Helmet	Crying Obsidian Chestplate	Crying Obsidian Leggings	Crying Obsidian Boots	Amethyst Helmet	Amethyst Chestplate	Amethyst Leggings	Amethyst Boots	Helmet of the Void	Chestplate of the Void	Leggings of the Void	Boots of the Void	Obsidian Pickaxe	Refined Obsidian Pickaxe	Crying Obsidian Pickaxe	Enderite Pickaxe	Refined Enderite Pickaxe	Amethyst Drill AX-15	Amethyst Drill AX-522	Enderite Drill EX-226	Enderite Drill EX-326	Obsidian Drill OD-355	Obsidian Drill OD-455	Obsidian Drill OD-555	Obsidian Drill OD-655	Crying Drill CD-12	Void Drill	Amethyst Gauntlet	Fuel Tank	End-Infused Fuel Tank	Obsidian-Infused Fuel Tank	Amethyst Fuel Tank	Perfectly-Cut Fuel Tank	Drill Motor	Bejeweled Handle	End-Plated Engine	Obsidian-Plated Engine	Amethyst-Polished Engine	Crying-Polished Engine	Void-Polished Engine	Ender Omelette	Blazing Omelette	Void Omelette	Dragon Seasoning	Void Powder Coating	Amethyst Geode	Amethyst Jewel	Flawed Amethyst	Fine Amethyst	Flawless Amethyst	Perfect Amethyst	Amethyst Mixture	Enchanted End Stone	Enchanted Obsidian	Enchanted Crying Obsidian	Refined End Stone	Refined Obsidian	Refined Crying Obsidian	Pure Obsidian	Obsidian Plate	Void Plate	Void Shard	Void Canister	Void Cell	Void Alloy
+@Accessories	Average Greed	Big Loan	Crystal Cluster	Draconic Artifact	Draconic Ring	Draconic Talisman	Ender Artifact		Ender Relic	Ender Ring	Ender Talisman	Frozen Urn	Gilded Ring	The Greediest of Them All	High Greed	Low Greed	Personal Compactor 4000	Personal Compactor 5000	Personal Compactor 6000	Personal Compactor 7000	Protector's Shield	Reaper Orb	Revenant Talisman	Revenant Ring	Revenant Artifact	Ritualist's Artifact	Ritualist's Ring	Rose Artifact	Rose Ring	Rose Talisman	Small Loan	Soulflow Battery	Soulflow Supercell	Spare Change Talisman	Void Artifact	Void Relic	Void Ring	Void Talisman	Warden Talisman	Warden's Blade	Weak Greedness	Wilted Rose Artifact	Wilted Rose Ring	Wilted Rose Talisman	Zealot Artifact	Zealot Ring	Zealot Talisman	Zombie Artifact	Zombie Relic	Zombie Ring
+@Consumables & Misc	[Lvl 1] Endermite	[Lvl 1] Obsidian Golem	Tier Boost	[Lvl 1] Silverfish	Golden Hot Potato Book	Lament	Endstone Rose Bush		Void Upgrade Stone	Weird Tuba

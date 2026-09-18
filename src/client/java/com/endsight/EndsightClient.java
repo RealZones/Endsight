@@ -7,6 +7,7 @@ import com.endsight.hud.Alert;
 import com.endsight.hud.Toast;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.Area;
+import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.ServerStats;
 import com.endsight.qol.AbilitySpam;
 import com.endsight.qol.CommandBinds;
@@ -184,7 +185,7 @@ public class EndsightClient implements ClientModInitializer {
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> Config.save(registry()));
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
-            if (screen instanceof EndsightScreen || screen instanceof SettingsScreen) {
+            if (screen instanceof EndsightScreen || screen instanceof SettingsScreen || screen instanceof HudPlacementScreen) {
                 ScreenEvents.remove(screen).register(s -> Config.save(registry()));
             }
         });
@@ -244,6 +245,14 @@ public class EndsightClient implements ClientModInitializer {
             if (pressed(down, Keybinds.get(Keybinds.moduleId(m))) && m.implemented()) {
                 m.toggle();
                 Toast.toggled(m.title(), m.isEnabled());
+            }
+        }
+        for (Module m : registry().all()) {
+            if (!m.implemented() || !m.isEnabled() || !m.hasSettings()) continue;
+            for (Setting s : m.settings()) {
+                if (s instanceof Setting.KeyAction a && pressed(down, Keybinds.get(a.id()))) {
+                    a.run().run();
+                }
             }
         }
         for (Setting.Command c : CommandBinds.all()) {

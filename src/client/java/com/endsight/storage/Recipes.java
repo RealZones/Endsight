@@ -34,6 +34,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,15 +59,14 @@ import java.util.regex.Pattern;
  *
  * The recipes are not in any file the client gets - they exist only as the menu the
  * server draws: "Recipes (1/6)", pages of items, and clicking one opens "<Item>
- * Recipe", a 3x3 grid with the result beside it. So they are read off those screens
- * as they appear, and "Scan all recipes" walks the menu for you: each category in
- * the left column in turn, every page of it read for what belongs there, each item
- * whose grid is not yet known clicked, read, and backed out of. Everything learned
- * goes to config/endsight/recipes.txt, so a scan is a once-a-patch job.
+ * Recipe", a 3x3 grid with the result beside it. A private scan pass reads each
+ * category in the left column in turn, every page of it read for what belongs there,
+ * each item whose grid is not yet known clicked, read, and backed out of. Everything
+ * learned goes to config/endsight/recipes.txt, so a scan is a once-a-patch job.
  *
  * Reading, not guessing, the screen's layout: the left column of a list page is the
  * categories (the star is "All Recipes"), the recipes sit in columns 1-8 of rows 1-4,
- * the bottom row is furniture - page arrows at 48 and 53, a barrier to close. On a
+ * and the last row has another category plus furniture. On a
  * recipe page the grid is rows 1-3 of columns 1-3, the result is slot 25 and the
  * arrow at 45 goes back.
  */
@@ -81,8 +81,8 @@ public final class Recipes {
     private static final int RESULT = 25;
     private static final int BACK = 45;
     private static final int NEXT = 53;
-    /** The category column: the star (All) and the four under it. */
-    private static final int[] CATEGORIES = {9, 18, 27, 36, 0};
+    /** The category column: the star (All) and the five under it. */
+    private static final int[] CATEGORIES = {9, 18, 27, 36, 45, 0};
 
     /** One cell of a grid, or the result: what and how many. */
     record Ingredient(String name, int count) {
@@ -266,24 +266,52 @@ public final class Recipes {
     private static void loadIcons() {
         Minecraft mc = Minecraft.getInstance();
         Path f = iconsFile();
-        seed("endsight-recipes-items.nbt", f);
-        if (mc.level == null || !Files.exists(f)) return;
+        if (mc.level == null) return;
+        boolean hadFile = Files.exists(f);
+        if (hadFile) readIconFile(f, true);
+        boolean merged = mergeBundledIcons();
+        if (!hadFile || merged) saveIcons();
+    }
+
+    private static boolean readIconFile(Path f, boolean includeChests) {
+        Minecraft mc = Minecraft.getInstance();
         try {
             CompoundTag root = NbtIo.readCompressed(f, NbtAccounter.create(16L * 1024 * 1024));
             RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess());
+            boolean changed = false;
             for (Tag tag : root.getListOrEmpty("icons")) {
                 ItemStack s = ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY);
-                if (!s.isEmpty()) ICONS.putIfAbsent(name(s), s);
+                if (!s.isEmpty() && ICONS.putIfAbsent(name(s), s) == null) changed = true;
             }
-            for (CompoundTag c : root.getListOrEmpty("chests").compoundStream().toList()) {
-                List<ItemStack> items = new ArrayList<>();
-                for (Tag tag : c.getListOrEmpty("items")) {
-                    items.add(ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY));
+            if (includeChests) {
+                for (CompoundTag c : root.getListOrEmpty("chests").compoundStream().toList()) {
+                    List<ItemStack> items = new ArrayList<>();
+                    for (Tag tag : c.getListOrEmpty("items")) {
+                        items.add(ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY));
+                    }
+                    CHESTS.put(c.getStringOr("title", "Ender Chest"), items);
                 }
-                CHESTS.put(c.getStringOr("title", "Ender Chest"), items);
             }
+            return changed;
         } catch (IOException | RuntimeException e) {
             System.err.println("[Endsight] could not read recipe items: " + e);
+            return false;
+        }
+    }
+
+    private static boolean mergeBundledIcons() {
+        try (InputStream in = Recipes.class.getResourceAsStream("/endsight-recipes-items.nbt")) {
+            if (in == null) return false;
+            Path temp = Files.createTempFile("endsight-recipes-items", ".nbt");
+            try {
+                Files.copy(in, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                return readIconFile(temp, false);
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[Endsight] could not read bundled recipe items: " + e);
+            return false;
         }
     }
 
@@ -372,6 +400,7 @@ public final class Recipes {
         scanned = 0;
         categoryAt = -1;
         category = null;
+        CATEGORY.clear();
         skipped.clear();
         busyUntil = System.currentTimeMillis() + 60_000;     // a minute to open the menu
         Toast.changed("Recipes", "Open the recipe menu");
@@ -500,47 +529,49 @@ public final class Recipes {
         }
     }
 
-    /**
-     * The scan's results ship inside the jar, so nobody but Fear ever has to run one:
-     * the first launch copies them out to config, and from then on the config copy is
-     * the one that counts - a scan of your own updates it, the jar's never overwrites it.
-     */
-    private static void seed(String resource, Path to) {
-        if (Files.exists(to)) return;
-        try (java.io.InputStream in = Recipes.class.getResourceAsStream("/" + resource)) {
-            if (in == null) return;
-            Files.createDirectories(to.getParent());
-            Files.copy(in, to);
-        } catch (IOException e) {
-            System.err.println("[Endsight] could not seed " + resource + ": " + e);
-        }
-    }
-
     private static void load() {
         Path f = dir().resolve("recipes.txt");
-        seed("endsight-recipes.txt", f);
-        if (!Files.exists(f)) return;
+        boolean hadFile = Files.exists(f);
         try {
-            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
-                if (line.isBlank() || line.startsWith("#")) continue;
-                String[] p = line.split("\t", -1);
-                if (line.startsWith("@")) {
-                    LinkedHashSet<String> in = CATEGORY.computeIfAbsent(p[0].substring(1), k -> new LinkedHashSet<>());
-                    for (int i = 1; i < p.length; i++) if (!p[i].isBlank()) in.add(p[i]);
-                    continue;
-                }
-                if (p.length < 11) continue;
-                Ingredient[] grid = new Ingredient[9];
-                for (int i = 0; i < 9; i++) {
-                    String cell = p[2 + i];
-                    int star = cell.indexOf('*');
-                    if (star > 0) grid[i] = new Ingredient(cell.substring(star + 1), Integer.parseInt(cell.substring(0, star)));
-                }
-                RECIPES.put(p[0], new Recipe(p[0], Integer.parseInt(p[1]), grid));
-            }
+            if (hadFile) readRecipes(Files.readAllLines(f, StandardCharsets.UTF_8), false);
+            boolean merged = mergeBundledRecipes();
+            if (!hadFile || merged) save();
         } catch (IOException | NumberFormatException e) {
             System.err.println("[Endsight] could not read recipes: " + e);
         }
+    }
+
+    private static boolean mergeBundledRecipes() throws IOException {
+        try (InputStream in = Recipes.class.getResourceAsStream("/endsight-recipes.txt")) {
+            if (in == null) return false;
+            String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return readRecipes(text.lines().toList(), true);
+        }
+    }
+
+    private static boolean readRecipes(List<String> lines, boolean missingOnly) {
+        boolean changed = false;
+        for (String line : lines) {
+            if (line.isBlank() || line.startsWith("#")) continue;
+            String[] p = line.split("\t", -1);
+            if (line.startsWith("@")) {
+                LinkedHashSet<String> in = CATEGORY.computeIfAbsent(p[0].substring(1), k -> new LinkedHashSet<>());
+                for (int i = 1; i < p.length; i++) if (!p[i].isBlank() && in.add(p[i])) changed = true;
+                continue;
+            }
+            if (p.length < 11) continue;
+            Ingredient[] grid = new Ingredient[9];
+            for (int i = 0; i < 9; i++) {
+                String cell = p[2 + i];
+                int star = cell.indexOf('*');
+                if (star > 0) grid[i] = new Ingredient(cell.substring(star + 1), Integer.parseInt(cell.substring(0, star)));
+            }
+            Recipe r = new Recipe(p[0], Integer.parseInt(p[1]), grid);
+            if (missingOnly && RECIPES.containsKey(r.name())) continue;
+            Recipe old = RECIPES.put(r.name(), r);
+            if (old == null || !Arrays.equals(old.grid(), r.grid()) || old.count() != r.count()) changed = true;
+        }
+        return changed;
     }
 
     // ── what you have ─────────────────────────────────────────────────────────

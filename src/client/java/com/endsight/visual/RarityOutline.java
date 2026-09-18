@@ -29,13 +29,17 @@ public final class RarityOutline {
     }
 
     private static boolean enabled = true;
-    private static double opacity = 0.85;
+    private static final List<String> STYLES = List.of("Corners", "Outline", "Glow");
+    private static String style = "Corners";
+    private static double opacity = 0.75;
 
     public static Module module() {
         return new Module("visual.rarity", "Rarity Outlines",
                 "Rarity colour round every item, in windows and on the hotbar.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Choice("Style", "Corners are quieter; glow is the loud old-school look.",
+                                STYLES, () -> style, v -> style = v),
                         new Setting.Slider("Opacity", "How solid the outline is.",
                                 0.2, 1, 0.05, () -> opacity, v -> opacity = v, "")));
     }
@@ -57,7 +61,12 @@ public final class RarityOutline {
         if (!enabled || stack.isEmpty()) return;
         int colour = Rarity.of(stack);
         if (colour == 0) return;
-        frame(g, x - 1, y - 1, 18, 18, Draw.alpha(colour | 0xFF000000, (float) opacity));
+        int c = Draw.alpha(colour | 0xFF000000, (float) opacity);
+        switch (style) {
+            case "Outline" -> frame(g, x - 1, y - 1, 18, 18, c);
+            case "Glow" -> glow(g, x - 2, y - 2, 20, 20, colour | 0xFF000000);
+            default -> corners(g, x - 1, y - 1, 18, 18, c);
+        }
     }
 
     /** A one-pixel ring with its corner pixels left out, which is what makes it read rounded. */
@@ -66,5 +75,24 @@ public final class RarityOutline {
         Draw.rect(g, x + 1, y + h - 1, w - 2, 1, colour);
         Draw.rect(g, x, y + 1, 1, h - 2, colour);
         Draw.rect(g, x + w - 1, y + 1, 1, h - 2, colour);
+    }
+
+    /** Four short Ls: enough to identify rarity without boxing every icon in. */
+    private static void corners(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
+        int n = 5;
+        Draw.rect(g, x + 1, y, n, 1, colour);
+        Draw.rect(g, x, y + 1, 1, n, colour);
+        Draw.rect(g, x + w - 1 - n, y, n, 1, colour);
+        Draw.rect(g, x + w - 1, y + 1, 1, n, colour);
+        Draw.rect(g, x + 1, y + h - 1, n, 1, colour);
+        Draw.rect(g, x, y + h - 1 - n, 1, n, colour);
+        Draw.rect(g, x + w - 1 - n, y + h - 1, n, 1, colour);
+        Draw.rect(g, x + w - 1, y + h - 1 - n, 1, n, colour);
+    }
+
+    /** The loud version: a faint halo plus the normal frame. */
+    private static void glow(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
+        frame(g, x, y, w, h, Draw.alpha(colour, (float) opacity * 0.35f));
+        frame(g, x + 1, y + 1, w - 2, h - 2, Draw.alpha(colour, (float) opacity));
     }
 }

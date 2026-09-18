@@ -16,6 +16,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
@@ -59,11 +60,13 @@ public final class Slayer {
     private static final String BOSS_SLAIN = "SLAYER BOSS SLAIN";
     private static final String QUEST_DONE = "SLAYER QUEST COMPLETE";
     private static final String QUEST_FAILED = "SLAYER QUEST FAILED";
+    private static final String REVENANT = "Revenant", VOIDGLOOM = "Voidgloom", SLAYER = "Slayer";
 
     // ── module state ──────────────────────────────────────────────────────────
 
     private static boolean timerOn = true;
     private static boolean killTimeInChat = true;
+    private static boolean questReminder = true;
     private static double hideAfterMin = 3;
 
     // ── tracked ───────────────────────────────────────────────────────────────
@@ -74,6 +77,13 @@ public final class Slayer {
         return bossUp;
     }
     private static boolean bossUp;
+    private static boolean questActive;
+    private static String reminderArea = "";
+    private static long reminderEnteredAt;
+    private static long lastReminderAt;
+    private static boolean reminderQueued;
+    private static final long REMINDER_DELAY_MS = 1_000;
+    private static final long REMINDER_COOLDOWN_MS = 45_000;
 
     /**
      * One slayer's session: zombies in the Crypts and endermen in the End are two
@@ -97,13 +107,13 @@ public final class Slayer {
     }
 
     private static final java.util.Map<String, Run> runs = new java.util.LinkedHashMap<>();
-    /** "Zombie", "Enderman" - from the quest line, or the area until one has been seen. */
+    /** "Revenant", "Voidgloom" - from the quest line, or the area until one has been seen. */
     private static String slayer;
 
     private static Run cur() {
         String key = slayer != null ? slayer
-                : com.endsight.hud.Area.crypts() ? "Zombie"
-                : com.endsight.hud.Area.where() == com.endsight.hud.Area.Where.END ? "Enderman" : "Slayer";
+                : com.endsight.hud.Area.crypts() ? REVENANT
+                : com.endsight.hud.Area.voidSepulture() ? VOIDGLOOM : SLAYER;
         return runs.computeIfAbsent(key, k -> new Run());
     }
     private static String slayerLevel;
@@ -120,6 +130,9 @@ public final class Slayer {
                         new Setting.Toggle("Kill time in chat",
                                 "Print each boss's own time when it dies.",
                                 () -> killTimeInChat, v -> killTimeInChat = v),
+                        new Setting.Toggle("Quest reminder",
+                                "When you enter a slayer area without a quest, print a clickable /slayer reminder.",
+                                () -> questReminder, v -> questReminder = v),
                         new Setting.Action("Reset session",
                                 "Zero the kill count and the clock.",
                                 "Reset", Slayer::resetSession)));
@@ -151,6 +164,7 @@ public final class Slayer {
         if (isPlayerChat(line)) return;
         if (isSlayerLine(line)) touch();
         if (line.contains(BOSS_SPAWN)) {
+            questActive = true;
             bossUp = true;
             bossSpawnedAt = System.currentTimeMillis();
             if (Alerts.slayerBoss()) fire("SLAYER BOSS", "spawning", true);
@@ -168,16 +182,19 @@ public final class Slayer {
             return;
         }
         if (line.contains(QUEST_START) || line.contains(QUEST_DONE) || line.contains(QUEST_FAILED)) {
+            questActive = line.contains(QUEST_START);
             bossUp = false;
+            if (line.contains(QUEST_FAILED) && reminderSlayer() != null) {
+                reminderEnteredAt = System.currentTimeMillis();
+                reminderQueued = true;
+            }
             return;
         }
 
         Matcher m = TARGET.matcher(line);
         if (m.find()) {
-            // "Zombies" -> Zombie, "Endermen" -> Enderman: the word the readout is titled with.
-            String mob = m.group(2);
-            slayer = mob.endsWith("men") ? mob.substring(0, mob.length() - 3) + "man"
-                    : mob.endsWith("s") ? mob.substring(0, mob.length() - 1) : mob;
+            questActive = true;
+            slayer = slayerName(m.group(2));
             return;
         }
         m = LEVEL.matcher(line);
@@ -415,6 +432,7 @@ public final class Slayer {
     /** Every tick: note movement, and once a break passes thirty seconds take it off the clock. */
     private static void watchAfk(Minecraft mc) {
         Run r = cur();
+        watchQuestReminder(mc);
         if (mc.player == null || r.sessionStart == 0) return;
         Vec3 pos = mc.player.position();
         long now = System.currentTimeMillis();
@@ -423,6 +441,45 @@ public final class Slayer {
             r.lastMoved = now;
         }
         r.lastPos = pos;
+    }
+
+    /**
+     * The easy mistake in slayer areas is not forgetting how to start the quest, it is
+     * forgetting that one has to be started every time. This is deliberately chat and
+     * not a HUD readout: once you click it, the problem is gone.
+     */
+    private static void watchQuestReminder(Minecraft mc) {
+        String area = reminderSlayer();
+        long now = System.currentTimeMillis();
+        if (!area.equals(reminderArea)) {
+            reminderArea = area;
+            reminderEnteredAt = now;
+            reminderQueued = !area.isEmpty();
+        }
+        if (area.isEmpty() || !questReminder || questActive || bossUp || mc.player == null) return;
+        if (!reminderQueued || now - reminderEnteredAt < REMINDER_DELAY_MS) return;
+        if (now - lastReminderAt < REMINDER_COOLDOWN_MS) return;
+        reminderQueued = false;
+        lastReminderAt = now;
+        mc.player.sendSystemMessage(Component.literal("")
+                .append(Component.literal("[Endsight] ").withStyle(ChatFormatting.DARK_PURPLE))
+                .append(Component.literal("No " + area + " quest detected. ").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal("Open /slayer").withStyle(s -> s
+                        .withColor(ChatFormatting.AQUA).withUnderlined(true)
+                        .withClickEvent(new ClickEvent.RunCommand("/slayer")))));
+    }
+
+    private static String reminderSlayer() {
+        if (com.endsight.hud.Area.crypts()) return REVENANT;
+        if (com.endsight.hud.Area.voidSepulture()) return VOIDGLOOM;
+        return "";
+    }
+
+    private static String slayerName(String target) {
+        String s = target.toLowerCase();
+        if (s.contains("zombie")) return REVENANT;
+        if (s.contains("endermen") || s.contains("enderman")) return VOIDGLOOM;
+        return target.endsWith("s") ? target.substring(0, target.length() - 1) : target;
     }
 
     private static long idleMs() {

@@ -28,6 +28,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
+import com.endsight.storage.ForgeRecipes;
+import com.endsight.storage.MiningSession;
 import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
@@ -101,6 +103,8 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(LootRoll.module());
             registry.replace(AbilitySpam.module());
             registry.replace(CopyChat.module());
+            registry.replace(MiningSession.module());
+            registry.replace(ForgeRecipes.module());
             registry.replace(Recipes.module());
             registry.replace(ServerStats.module());
             registry.replace(MathSolver.module());
@@ -144,7 +148,9 @@ public class EndsightClient implements ClientModInitializer {
         LootRoll.init();
         AbilitySpam.init();
         CopyChat.init();
+        MiningSession.init();
         Recipes.init();
+        ForgeRecipes.init();
         ServerStats.init();
         Area.init();
         LootAlerts.init();

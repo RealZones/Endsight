@@ -221,6 +221,8 @@ public final class DragonTimer {
         resetCycle();
         dragon = null;
         dragonSince = 0;
+        lastDragon = null;
+        lastDragonEnded = 0;
         eggAt = 0;
     }
 

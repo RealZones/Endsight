@@ -1,5 +1,6 @@
 package com.endsight.visual;
 
+import com.endsight.dragons.Protector;
 import com.endsight.hud.Project;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -76,8 +77,8 @@ public final class Beacon {
         if (!com.endsight.hud.Area.end()) return;
 
         // One beam each; both when both are up, which is exactly when you want them.
-        if (protector) beam(g, mc, player, find(player, PROTECTOR), sw(mc), sh(mc));
-        if (warden) beam(g, mc, player, find(player, WARDEN), sw(mc), sh(mc));
+        if (protector && Protector.protectorActive()) beam(g, mc, player, find(player, PROTECTOR), sw(mc), sh(mc));
+        if (warden && Protector.wardenUp()) beam(g, mc, player, find(player, WARDEN), sw(mc), sh(mc));
     }
 
     private static int sw(Minecraft mc) {
@@ -177,7 +178,7 @@ public final class Beacon {
         Draw.rect(g, x, cy - half, 1, half * 2, color);
     }
 
-    /** Nearest entity named for the boss in range, or null. The Warden's items are not entities, so "Warden" is safe. */
+    /** Nearest entity named for the live boss in range, or null. Pets and labels reuse boss words too. */
     private static Entity find(LocalPlayer player, String match) {
         Minecraft mc = Minecraft.getInstance();
         Entity best = null;
@@ -187,6 +188,7 @@ public final class Beacon {
             if (e == player || e instanceof net.minecraft.world.entity.player.Player) continue;
             String name = plainName(e);
             if (name == null || !name.contains(match)) continue;
+            if (petName(name)) continue;
 
             double d = e.position().distanceToSqr(player.position());
             if (d < bestDist) {
@@ -195,6 +197,12 @@ public final class Beacon {
             }
         }
         return best;
+    }
+
+    private static boolean petName(String name) {
+        String s = name.toLowerCase(java.util.Locale.ROOT);
+        return s.contains("[lvl") || s.contains("[lv") || s.contains(" pet")
+                || s.contains("'s warden") || s.contains("'s endstone protector");
     }
 
     private static String plainName(Entity e) {

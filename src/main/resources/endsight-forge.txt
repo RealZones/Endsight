@@ -1,0 +1,48 @@
+# process	result	duration observed	count*ingredient...	requirement
+Refining	Refined End Stone	30m	16*Enchanted End Stone	
+Refining	Refined Obsidian	1h	16*Enchanted Obsidian	
+Refining	Refined Crying Obsidian	1h 20m	16*Enchanted Crying Obsidian	Requires Heart of the Dragon Tier 5
+Forging	Bejeweled Handle	5s	4*Enchanted Obsidian	
+Forging	Drill Motor	2h	4*Refined End Stone	2*Refined Obsidian	8*Null Ovoid	
+Forging	Fuel Tank	50m	2*Refined Obsidian	32*Enchanted End Stone	
+Forging	Void Plate	1h	2*Refined End Stone	1*Refined Obsidian	5*Flawed Amethyst	
+Forging	Obsidian Plate	1h 30m	5*Refined Obsidian	1*Void Plate	1*Refined Crying Obsidian	Requires Heart of the Dragon Tier 4
+Forging	Amethyst Mixture	40m	16*Flawed Amethyst	32*Enchanted Obsidian	Requires Heart of the Dragon Tier 4
+Forging	Void Alloy	12h	2*Perfect Amethyst	16*Refined Crying Obsidian	1*Void Core	8*Obsidian Plate	8*Void Fragment	Requires Heart of the Dragon Tier 8
+Pickaxes	Refined Enderite Pickaxe	5s	1*Enderite Pickaxe	2*Refined End Stone	
+Pickaxes	Refined Obsidian Pickaxe	5s	1*Obsidian Pickaxe	1*Refined Obsidian	Requires Mining XV!
+Pickaxes	Crying Obsidian Pickaxe	5s	1*Refined Obsidian Pickaxe	2*Refined Crying Obsidian	8*Flawed Amethyst	Requires Heart of the Dragon Tier 4
+Drills	Enderite Drill EX-226	40m	3*Refined End Stone	1*Drill Motor	1*Fuel Tank	
+Drills	Enderite Drill EX-326	5s	1*Enderite Drill EX-226	5*Void Plate	1*Obsidian Plate	
+Drills	Obsidian Drill OD-355	40m	6*Void Plate	8*Refined Obsidian	1*Drill Motor	8*Refined End Stone	1*Fuel Tank	Requires Heart of the Dragon Tier 5
+Drills	Obsidian Drill OD-455	5s	1*Obsidian Drill OD-355	4*Fine Amethyst	12*Refined Obsidian	5*Obsidian Plate	Requires Heart of the Dragon Tier 5
+Drills	Obsidian Drill OD-555	5s	1*Obsidian Drill OD-455	8*Fine Amethyst	16*Refined Obsidian	10*Obsidian Plate	8*Refined Crying Obsidian	Requires Heart of the Dragon Tier 6
+Drills	Obsidian Drill OD-655	5s	1*Obsidian Drill OD-555	1*Flawless Amethyst	16*Amethyst Mixture	30*Null Atom	10*Obsidian Plate	12*Refined Obsidian	Requires Heart of the Dragon Tier 7
+Drills	Amethyst Drill AX-15	40m	24*Flawed Amethyst	1*Drill Motor	1*Fuel Tank	Requires Heart of the Dragon Tier 4
+Drills	Amethyst Drill AX-522	5s	1*Amethyst Drill AX-15	3*Amethyst Mixture	Requires Heart of the Dragon Tier 4
+Drills	Crying Drill CD-12	5s	1*Amethyst Drill AX-522	3*Amethyst Mixture	1*Fine Amethyst	5*Refined Crying Obsidian	Requires Heart of the Dragon Tier 5
+Drills	Void Drill	5s	1*Obsidian Drill OD-655	1*Void Alloy	1*5,000,000,000 Coins	Requires Heart of the Dragon Tier 9
+Drill Parts	End-Plated Engine	2h	2*Drill Motor	1*Void Plate	
+Drill Parts	Obsidian-Plated Engine	5s	1*End-Plated Engine	8*Refined Obsidian	2*Drill Motor	Requires Heart of the Dragon Tier 5
+Drill Parts	Amethyst-Polished Engine	5s	1*Obsidian-Plated Engine	5*Drill Motor	4*Obsidian Plate	1*Fine Amethyst	Requires Heart of the Dragon Tier 6
+Drill Parts	Crying-Polished Engine	5s	1*Amethyst-Polished Engine	16*Refined Crying Obsidian	8*Obsidian Plate	5*Drill Motor	3*Fine Amethyst	Requires Heart of the Dragon Tier 7
+Drill Parts	Void-Polished Engine	5s	1*Crying-Polished Engine	32*Refined Crying Obsidian	16*Obsidian Plate	5*Drill Motor	1*Perfect Amethyst	Requires Heart of the Dragon Tier 9
+Drill Parts	End-Infused Fuel Tank	2h	10*Refined End Stone	5*Flawed Amethyst	5*Fuel Tank	
+Drill Parts	Obsidian-Infused Fuel Tank	5s	1*End-Infused Fuel Tank	10*Refined Obsidian	5*Flawed Amethyst	5*Fuel Tank	Requires Heart of the Dragon Tier 5
+Drill Parts	Amethyst Fuel Tank	5s	1*Obsidian-Infused Fuel Tank	10*Amethyst Mixture	4*Obsidian Plate	Requires Heart of the Dragon Tier 6
+Drill Parts	Perfectly-Cut Fuel Tank	5s	1*Amethyst Fuel Tank	32*Refined Crying Obsidian	25*Amethyst Mixture	16*Obsidian Plate	Requires Heart of the Dragon Tier 8
+Drill Parts	Ender Omelette	1h 20m	96*Enchanted End Stone	16*Null Ovoid	
+Drill Parts	Void Omelette	1h 20m	1*Ender Omelette	1*Fine Amethyst	96*Enchanted Obsidian	Requires Heart of the Dragon Tier 5
+Drill Parts	Blazing Omelette	1h 20m	1*Ender Omelette	1*Fine Amethyst	96*Enchanted Crying Obsidian	Requires Heart of the Dragon Tier 5
+Drill Parts	Dragon Seasoning	1h 20m	64*Enchanted Obsidian	16*Null Atom	
+Armor	Helmet of the Void	2h	6*Void Fragment	8*Fine Amethyst	Requires Heart of the Dragon Tier 8
+Armor	Chestplate of the Void	2h	12*Void Fragment	8*Fine Amethyst	Requires Heart of the Dragon Tier 8
+Armor	Leggings of the Void	2h	6*Void Fragment	8*Fine Amethyst	Requires Heart of the Dragon Tier 8
+Armor	Boots of the Void	2h	4*Void Fragment	8*Fine Amethyst	Requires Heart of the Dragon Tier 8
+Reforge Stones	Pure Obsidian	30m	2*Refined Obsidian	
+Reforge Stones	Amethyst Geode	30m	16*Flawed Amethyst	64*Enchanted End Stone	
+Reforge Stones	Void Shard	30m	1*Fine Amethyst	1*Refined End Stone	2*Refined Obsidian	Requires Heart of the Dragon Tier 4
+Reforge Stones	Amethyst Jewel	30m	16*Flawed Amethyst	4*Refined Obsidian	Requires Heart of the Dragon Tier 4
+Perfect Gemstones	Perfect Amethyst	1h 40m	5*Flawless Amethyst	Requires Heart of the Dragon Tier 7
+Other	Void Cell	20m	5*Void Canister	3*Enchanted Crying Obsidian	Requires Heart of the Dragon Tier 5
+Other	Void Powder Coating	3h	16*Amethyst Mixture	16*Refined Crying Obsidian	5*Void Fragment	Requires Heart of the Dragon Tier 9

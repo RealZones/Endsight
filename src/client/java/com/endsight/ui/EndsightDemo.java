@@ -49,6 +49,18 @@ public final class EndsightDemo {
         r.add(Module.placeholder("dragon.protector", "Protector Stage",
                 "The Protector's tier and how long it has been up.", "Trackers"));
 
+        // Mining: live grind readouts only.
+        r.add(Module.placeholder("mining.session", "Mining Session",
+                "Active mining time, blocks and rate.", "Mining"));
+        r.add(Module.placeholder("storage.forge", "Forge Timer",
+                "Active Forge slots, ready claims and empty slot count.", "Mining"));
+
+        // Storage: inventories, recipes and item lookup.
+        r.add(Module.placeholder("storage.recipes", "Recipes",
+                "Recipes and Forge crafts beside your inventory.", "Storage"));
+        r.add(Module.placeholder("storage.preview", "Storage Preview",
+                "Hover a storage page to see inside it.", "Storage"));
+
         // Alerts.
         r.add(Module.placeholder("alerts", "Alerts",
                 "Mid-screen alerts for bosses, fireballs and a full inventory.", "Alerts"));
@@ -62,8 +74,6 @@ public final class EndsightDemo {
                 "A beam over the Endstone Protector and the Warden.", "Visual"));
         r.add(Module.placeholder("qol.damage", "Damage Numbers",
                 "Shortens the damage popups, or takes them away.", "Visual"));
-        r.add(Module.placeholder("storage.preview", "Storage Preview",
-                "Hover a storage page to see inside it.", "Visual"));
         r.add(Module.placeholder("visual.cooldowns", "Ability Cooldowns",
                 "Each ability you use as a ring that fills while it cools down.", "Visual"));
         r.add(Module.placeholder("visual.rarity", "Rarity Outlines",
@@ -88,8 +98,6 @@ public final class EndsightDemo {
         // Quality of life.
         r.add(Module.placeholder("qol.commands", "Command Binds",
                 "Keys that send a command for you.", "Quality of Life"));
-        r.add(Module.placeholder("storage.recipes", "Recipes",
-                "Every recipe beside your inventory, with what you have for it.", "Quality of Life"));
         r.add(Module.placeholder("qol.eyeguard", "Protect Placed Eyes",
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
 

@@ -84,8 +84,24 @@ public record Module(String id,
     public boolean matches(String query) {
         if (query == null || query.isBlank()) return true;
         String q = query.toLowerCase();
-        return title.toLowerCase().contains(q)
-                || description.toLowerCase().contains(q)
-                || category.toLowerCase().contains(q);
+        if (contains(title, q) || contains(description, q) || contains(category, q)) return true;
+        if (settings == null) return false;
+        for (Setting s : settings) {
+            if (contains(s.label(), q) || contains(s.description(), q)) return true;
+            if (s instanceof Setting.Choice c) {
+                for (String option : c.options()) if (contains(option, q)) return true;
+            } else if (s instanceof Setting.Action a) {
+                if (contains(a.button(), q)) return true;
+            } else if (s instanceof Setting.KeyAction a) {
+                if (contains(a.button(), q)) return true;
+            } else if (s instanceof Setting.Command c) {
+                if (contains(c.command(), q)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean contains(String text, String query) {
+        return text != null && text.toLowerCase().contains(query);
     }
 }

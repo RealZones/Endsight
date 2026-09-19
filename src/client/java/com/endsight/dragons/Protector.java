@@ -7,11 +7,15 @@ import com.endsight.hud.HudLayout;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
+import com.endsight.zealots.Zealots;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
@@ -44,6 +48,8 @@ public final class Protector {
      */
     private static final Pattern TIER = Pattern.compile(
             "Endstone Protector (?:is rising from|has emerged from) the ground! \\(Tier (\\d)/(\\d)\\)");
+    private static final Pattern TAB_TIER = Pattern.compile(
+            "(?i).*Protector.*Tier\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\D+(\\d{1,3})%?)?.*");
     private static final String SPAWNED = "Endstone Protector has spawned";
     private static final String DEAD = "The Endstone Protector has been defeated";
 
@@ -71,6 +77,9 @@ public final class Protector {
     private static long since;
     private static boolean up;
     private static boolean warden;
+    private static float tabFill = -1f;
+    private static long tabSeen;
+    private static long lastTabRead;
 
     public static Module module() {
         return new Module("dragon.protector", "Protector Stage",
@@ -79,19 +88,22 @@ public final class Protector {
                 List.of());
     }
 
+    public static boolean wardenUp() {
+        return enabled && up && warden;
+    }
+
+    public static boolean protectorActive() {
+        return enabled && tier > 0 && !warden;
+    }
+
     public static void init() {
         // A backend switch is a join; a golem left behind in the End is not rising here.
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
-                (handler, sender, client) -> {
-                    tier = 0;
-                    since = 0;
-                    up = false;
-                    warden = false;
-                });
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> reset());
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             onLine(plain(message));
         });
+        ClientTickEvents.END_CLIENT_TICK.register(Protector::readTab);
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "protector"),
                 (g, delta) -> draw(g));
 
@@ -112,12 +124,14 @@ public final class Protector {
             since = System.currentTimeMillis();
             up = false;
             warden = false;
+            tabFill = -1f;
             return;
         }
         if (line.contains(SPAWNED)) {
             tier = tierMax;
             up = true;
             warden = false;
+            tabFill = -1f;
             since = System.currentTimeMillis();
             if (Alerts.protector()) {
                 Alert.show("ENDSTONE PROTECTOR", "has spawned", PURPLE, 1.15f, Alerts.seconds());
@@ -130,11 +144,52 @@ public final class Protector {
             tier = 0;
             up = false;
             warden = false;
+            tabFill = -1f;
             return;
         }
         if (up && WARDEN_ACTIVE.matcher(line).find()) {
             warden = true;
         }
+    }
+
+    private static void readTab(Minecraft mc) {
+        if (!enabled || mc.player == null || mc.level == null || mc.getConnection() == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTabRead < 500) return;
+        lastTabRead = now;
+
+        List<String> lines = mc.getConnection().getListedOnlinePlayers().stream()
+                .map(Protector::tabName)
+                .filter(s -> !s.isBlank())
+                .toList();
+        for (int i = 0; i < lines.size(); i++) {
+            if (readTabLine(lines.get(i), now)) return;
+            if (i + 1 < lines.size() && readTabLine(lines.get(i) + " " + lines.get(i + 1), now)) return;
+            if (i + 2 < lines.size() && readTabLine(lines.get(i) + " " + lines.get(i + 1) + " " + lines.get(i + 2), now)) return;
+        }
+    }
+
+    private static boolean readTabLine(String line, long now) {
+        Matcher m = TAB_TIER.matcher(line);
+        if (!m.matches()) return false;
+        tier = parse(m.group(1));
+        tierMax = Math.max(1, parse(m.group(2)));
+        tabFill = stageFill(m.group(3));
+        tabSeen = now;
+        if (!up && since == 0) since = now;
+        return true;
+    }
+
+    private static String tabName(PlayerInfo info) {
+        Component c = info.getTabListDisplayName();
+        if (c == null) c = Component.literal(info.getProfile().name());
+        return Zealots.strip(c.getString()).trim();
+    }
+
+    private static float stageFill(String raw) {
+        if (raw == null || raw.isBlank()) return -1f;
+        int n = parse(raw);
+        return n >= 0 && n <= 100 ? n / 100f : -1f;
     }
 
     private static void draw(GuiGraphicsExtractor g) {
@@ -163,7 +218,9 @@ public final class Protector {
         } else {
             value = up ? "up  " + secs(System.currentTimeMillis() - since)
                     : tier + "/" + tierMax;
-            progress = tier / (float) tierMax;
+            float liveFill = tabFill >= 0f && System.currentTimeMillis() - tabSeen < 2_500
+                    ? tabFill / Math.max(1, tierMax) : 0f;
+            progress = Math.min(1f, tier / (float) tierMax + liveFill);
         }
 
         int w = Readout.width(font, label, value);
@@ -189,5 +246,14 @@ public final class Protector {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    private static void reset() {
+        tier = 0;
+        since = 0;
+        up = false;
+        warden = false;
+        tabFill = -1f;
+        tabSeen = 0;
     }
 }

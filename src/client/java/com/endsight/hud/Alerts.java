@@ -40,6 +40,7 @@ public final class Alerts {
     private static boolean protector = true;
     private static boolean fireball = true;
     private static boolean fullInventory = true;
+    private static boolean stash = true;
 
     /**
      * The dragon announces its fireball in chat, in character - "[BOSS] Young Dragon:
@@ -48,6 +49,7 @@ public final class Alerts {
      * its name, which is what keeps the player-chat filter from eating it.
      */
     private static final Pattern FIREBALL = Pattern.compile("^\\[BOSS\\] .*Dragon: .*FIREBALL");
+    private static final Pattern STASH = Pattern.compile("You have ([\\d,]+) materials stashed away!!");
     private static final int ORANGE = 0xFFFFAA00;
     private static final int YELLOW = 0xFFFFEE55;
     /** Whether the inventory was full last tick, so the alert fires once per filling. */
@@ -77,6 +79,9 @@ public final class Alerts {
                         new Setting.Toggle("Full inventory",
                                 "The moment the last slot fills.",
                                 () -> fullInventory, v -> fullInventory = v),
+                        new Setting.Toggle("Stash warning",
+                                "When mined materials go to your stash.",
+                                () -> stash, v -> stash = v),
 
                         new Setting.Section("How they look"),
                         new Setting.Slider("Size",
@@ -95,10 +100,17 @@ public final class Alerts {
 
     public static void init() {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay || !enabled || !fireball) return;
+            if (overlay || !enabled) return;
             String line = Zealots.strip(message.getString()).trim();
-            if (DragonTimer.isPlayerChat(line) || !FIREBALL.matcher(line).find()) return;
-            fire("FIREBALL", "incoming", ORANGE, 1.15f);
+            if (DragonTimer.isPlayerChat(line)) return;
+            if (fireball && FIREBALL.matcher(line).find()) {
+                fire("FIREBALL", "incoming", ORANGE, 1.15f);
+                return;
+            }
+            java.util.regex.Matcher stashed = STASH.matcher(line);
+            if (stash && stashed.find()) {
+                fire("STASH", stashed.group(1) + " materials", YELLOW, 1.05f);
+            }
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.player == null) return;

@@ -1,6 +1,7 @@
 package com.endsight.hooks;
 
 import com.endsight.visual.RarityOutline;
+import com.endsight.storage.ForgeRecipes;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.Slot;
@@ -20,5 +21,10 @@ abstract class ContainerSlotMixin {
     @Inject(method = "extractSlot", at = @At("HEAD"))
     private void endsight$behindSlot(GuiGraphicsExtractor g, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
         RarityOutline.behindSlot(g, slot);
+    }
+
+    @Inject(method = "extractSlot", at = @At("TAIL"))
+    private void endsight$overSlot(GuiGraphicsExtractor g, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
+        ForgeRecipes.overSlot((AbstractContainerScreen<?>) (Object) this, g, slot);
     }
 }

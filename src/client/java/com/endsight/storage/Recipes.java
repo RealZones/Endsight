@@ -132,7 +132,7 @@ public final class Recipes {
 
     public static Module module() {
         return new Module("storage.recipes", "Recipes",
-                "Every recipe beside your inventory, with what you have for it.", "Quality of Life",
+                "Recipes and Forge crafts beside your inventory.", "Storage",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Panel",
@@ -142,7 +142,7 @@ public final class Recipes {
                                 "See-through boxes.",
                                 () -> glass, v -> glass = v),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
-                                + CATEGORY.size() + " categories, in config/endsight/recipes.txt")));
+                                + CATEGORY.size() + " categories, " + ForgeRecipes.recipeCount() + " forge crafts")));
     }
 
     public static void init() {
@@ -165,6 +165,7 @@ public final class Recipes {
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             if (iconsDirty) saveIcons();
+            if (recentDirty) saveRecent();
         });
     }
 
@@ -539,6 +540,38 @@ public final class Recipes {
         } catch (IOException | NumberFormatException e) {
             System.err.println("[Endsight] could not read recipes: " + e);
         }
+        loadRecent();
+    }
+
+    private static Path recentFile() {
+        return dir().resolve("recipe-recent.txt");
+    }
+
+    private static void saveRecent() {
+        recentDirty = false;
+        List<String> lines = new ArrayList<>();
+        lines.add("# most recent first");
+        lines.addAll(recentRows());
+        try {
+            Files.createDirectories(dir());
+            Files.write(recentFile(), lines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not write recent recipes: " + e);
+        }
+    }
+
+    private static void loadRecent() {
+        Path f = recentFile();
+        if (!Files.exists(f)) return;
+        try {
+            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
+                if (line.isBlank() || line.startsWith("#") || !RECIPES.containsKey(line)) continue;
+                RECENT.add(line);
+                if (RECENT.size() >= RECENT_MAX) break;
+            }
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not read recent recipes: " + e);
+        }
     }
 
     private static boolean mergeBundledRecipes() throws IOException {
@@ -607,6 +640,10 @@ public final class Recipes {
         return new int[]{ok, needs.size()};
     }
 
+    private static boolean complete(int[] ready) {
+        return ready[1] > 0 && ready[0] == ready[1];
+    }
+
     /**
      * What a recipe comes down to in raw materials, every sub-recipe expanded, less
      * what you already hold of the intermediates: a Zombie Heart on you is one you do
@@ -659,6 +696,9 @@ public final class Recipes {
     private static final int HEAD = 22;
     private static final int FOOT = 34;
     private static final int CATS = 22;
+    private static final int RECENT_W = 84;
+    private static final int RECENT_MAX = 10;
+    private static final int RECENT_ROW = 18;
 
     private static String query = "";
     private static String cat = null;           // null = All
@@ -669,13 +709,16 @@ public final class Recipes {
     /** What the left box shows: a recipe, or an item whose uses are listed; null for closed. */
     private static String openRecipe, openUses;
     private static final List<String> trail = new ArrayList<>();
+    private static final List<String> RECENT = new ArrayList<>();
+    private static boolean recentDirty;
 
     private static EditBox box;
     private static Screen owner;
 
-    private record Frame(int x, int y, int w, int h, int cols, int rows) {
+    private record Frame(int x, int y, int w, int h, int cols, int rows, int recentW) {
         int catX() { return x + PAD; }
-        int gridX() { return x + PAD + CATS; }
+        int recentX() { return x + PAD + CATS; }
+        int gridX() { return x + PAD + CATS + (recentW > 0 ? recentW + GAP : 0); }
         int gridY() { return y + HEAD; }
         int gridW() { return cols * CELL; }
         int gridH() { return rows * CELL; }
@@ -689,12 +732,13 @@ public final class Recipes {
         // The storage window hangs its own preview off its right side; leave that room.
         if (StoragePreview.isStorageWindow(s)) left += 9 * 18 + 16;
         int avail = sw - 4 - left;
-        int cols = Math.max(4, Math.min(9, (avail - PAD * 2 - CATS) / CELL));
-        int w = cols * CELL + PAD * 2 + CATS;
+        int recent = avail >= PAD * 2 + CATS + RECENT_W + GAP + 4 * CELL ? RECENT_W : 0;
+        int cols = Math.max(4, Math.min(9, (avail - PAD * 2 - CATS - (recent > 0 ? recent + GAP : 0)) / CELL));
+        int w = cols * CELL + PAD * 2 + CATS + (recent > 0 ? recent + GAP : 0);
         int x = sw - 4 - w;
         int y = 4, h = sh - 8;
         int rows = Math.max(2, (h - HEAD - FOOT) / CELL);
-        return new Frame(x, y, w, h, cols, rows);
+        return new Frame(x, y, w, h, cols, rows, recent);
     }
 
     /** The left box: as wide as the room beside the window allows, up to a comfortable width. */
@@ -731,6 +775,8 @@ public final class Recipes {
             if (!enabled || !panel) return true;
             if (box != null && box.isFocused() && e.key() != 256) {
                 box.keyPressed(e);
+                String typed = typedText(e);
+                if (typed != null) box.insertText(typed);
                 return false;
             }
             // R and U over any item, in any window: its recipe, or what it goes into.
@@ -748,6 +794,40 @@ public final class Recipes {
                 box = null;
             }
         });
+    }
+
+    private static String typedText(net.minecraft.client.input.KeyEvent e) {
+        int mods = e.modifiers();
+        if ((mods & (org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL
+                | org.lwjgl.glfw.GLFW.GLFW_MOD_ALT
+                | org.lwjgl.glfw.GLFW.GLFW_MOD_SUPER)) != 0) return null;
+        boolean shift = (mods & org.lwjgl.glfw.GLFW.GLFW_MOD_SHIFT) != 0;
+        int key = e.key();
+        if (key >= org.lwjgl.glfw.GLFW.GLFW_KEY_A && key <= org.lwjgl.glfw.GLFW.GLFW_KEY_Z) {
+            char c = (char) ('a' + key - org.lwjgl.glfw.GLFW.GLFW_KEY_A);
+            return String.valueOf(shift ? Character.toUpperCase(c) : c);
+        }
+        if (key >= org.lwjgl.glfw.GLFW.GLFW_KEY_0 && key <= org.lwjgl.glfw.GLFW.GLFW_KEY_9) {
+            String plain = "0123456789";
+            String shifted = ")!@#$%^&*(";
+            int i = key - org.lwjgl.glfw.GLFW.GLFW_KEY_0;
+            return String.valueOf((shift ? shifted : plain).charAt(i));
+        }
+        return switch (key) {
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE -> " ";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_MINUS -> shift ? "_" : "-";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_EQUAL -> shift ? "+" : "=";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_BRACKET -> shift ? "{" : "[";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_BRACKET -> shift ? "}" : "]";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSLASH -> shift ? "|" : "\\";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_SEMICOLON -> shift ? ":" : ";";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_APOSTROPHE -> shift ? "\"" : "'";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_COMMA -> shift ? "<" : ",";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_PERIOD -> shift ? ">" : ".";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_SLASH -> shift ? "?" : "/";
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_GRAVE_ACCENT -> shift ? "~" : "`";
+            default -> null;
+        };
     }
 
     /**
@@ -810,6 +890,41 @@ public final class Recipes {
         out.add(null);
         out.addAll(CATEGORY.keySet());
         return out;
+    }
+
+    private static List<String> recentRows() {
+        return RECENT.stream()
+                .filter(RECIPES::containsKey)
+                .distinct()
+                .limit(RECENT_MAX)
+                .toList();
+    }
+
+    private static void touchRecent(String name) {
+        if (!RECIPES.containsKey(name)) return;
+        RECENT.remove(name);
+        RECENT.add(0, name);
+        while (RECENT.size() > RECENT_MAX) RECENT.remove(RECENT.size() - 1);
+        recentDirty = true;
+        saveRecent();
+    }
+
+    private static String categoryFor(String name) {
+        for (Map.Entry<String, LinkedHashSet<String>> e : CATEGORY.entrySet()) {
+            if (e.getValue().contains(name)) return e.getKey();
+        }
+        return null;
+    }
+
+    private static void focusRecipeInGrid(String name, Frame f) {
+        cat = categoryFor(name);
+        if (!query.isEmpty()) {
+            query = "";
+            if (box != null) box.setValue("");
+        }
+        List<String> list = visible();
+        int idx = list.indexOf(name);
+        page = idx < 0 ? 0 : idx / Math.max(1, f.cols() * f.rows());
     }
 
     private static ItemStack categoryIcon(String c) {
@@ -882,7 +997,7 @@ public final class Recipes {
             }
             cy += CELL;
         }
-
+        if (f.recentW() > 0) drawRecent(g, font, f, have, mx, my);
         // The grid.
         int gx = f.gridX(), gy = f.gridY();
         for (int i = 0; i < perPage; i++) {
@@ -893,12 +1008,16 @@ public final class Recipes {
             Recipe r = RECIPES.get(list.get(idx));
             boolean open = r.name().equals(openRecipe);
             int[] rd = ready(r, have);
+            boolean done = complete(rd);
             Draw.roundedRect(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
-                    open ? Draw.alpha(Theme.accent(), 0.35f) : hover ? Theme.hover()
-                            : rd[0] == rd[1] ? Draw.alpha(Theme.pos(), 0.18f) : Theme.raised());
+                    open ? Draw.alpha(Theme.accent(), 0.35f) : done ? Draw.alpha(Theme.pos(), 0.26f)
+                            : hover ? Theme.hover() : Theme.raised());
+            if (done) Draw.roundedOutline(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
+                    Theme.pos(), Draw.alpha(Theme.pos(), open ? 0.35f : 0.12f));
             ItemStack icon = ICONS.get(r.name());
             if (icon != null) g.fakeItem(icon, ix + 2, iy + 2);
             else Draw.text(g, font, r.name().substring(0, 1), ix + 7, iy + 6, Theme.text());
+            if (ForgeRecipes.isForge(r.name())) Draw.text(g, font, "F", ix + CELL - 8, iy + 2, Theme.accent());
             if (hover) tooltip(g, font, r, have, mx, my);
         }
 
@@ -919,6 +1038,35 @@ public final class Recipes {
         Draw.text(g, font, fit(font, shown, f.gridW() - 12), tx, ty, query.isEmpty() ? Theme.dim() : Theme.text());
         if (focused && (System.currentTimeMillis() / 500) % 2 == 0) {
             Draw.rect(g, tx + font.width(fit(font, query, f.gridW() - 12)) + 1, ty - 1, 1, 10, Theme.text());
+        }
+    }
+
+    private static void drawRecent(GuiGraphicsExtractor g, Font font, Frame f, Map<String, Integer> have, int mx, int my) {
+        int x = f.recentX(), y = f.gridY();
+        Draw.text(g, font, "Recent", x + 2, y - 13, Theme.muted());
+        List<String> list = recentRows();
+        int max = Math.min(list.size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+        if (max == 0) {
+            Draw.text(g, font, "none", x + 2, y + 5, Theme.dim());
+            return;
+        }
+        for (int i = 0; i < max; i++) {
+            String name = list.get(i);
+            Recipe r = RECIPES.get(name);
+            if (r == null) continue;
+            int ry = y + i * RECENT_ROW;
+            boolean hover = mx >= x && mx < x + f.recentW() && my >= ry && my < ry + RECENT_ROW;
+            int[] rd = ready(r, have);
+            boolean done = complete(rd);
+            int fill = name.equals(openRecipe) ? Draw.alpha(Theme.accent(), 0.32f)
+                    : hover ? Theme.hover()
+                    : done ? Draw.alpha(Theme.pos(), 0.18f) : Theme.raised();
+            Draw.roundedRect(g, x, ry, f.recentW(), RECENT_ROW - 1, 3, fill);
+            ItemStack icon = ICONS.get(name);
+            if (icon != null) g.fakeItem(icon, x + 1, ry + 1);
+            Draw.text(g, font, fit(font, name, f.recentW() - 22), x + 20, ry + 5,
+                    done ? Theme.pos() : Theme.text());
+            if (hover) tooltip(g, font, r, have, mx, my);
         }
     }
 
@@ -945,9 +1093,16 @@ public final class Recipes {
         } else {
             lines.add(r.name());
         }
+        ForgeRecipes.Info forge = ForgeRecipes.info(r.name());
+        if (forge != null) {
+            lines.add("§6Forge craft: " + forge.category() + (forge.duration().isBlank() ? "" : " • " + forge.duration()));
+            if (!forge.requirement().isBlank()) lines.add("§7" + forge.requirement());
+            lines.add("");
+        }
         for (Ingredient i : r.needs()) {
             int got = have.getOrDefault(i.name(), 0);
-            lines.add((got >= i.count() ? "§a" : "§c") + Math.min(got, 9999) + "/" + i.count() + " §7" + i.name());
+            lines.add((got >= i.count() ? "§a" : "§c")
+                    + ingredientCount(i.name(), got, i.count()) + " §7" + i.name());
         }
         lines.add("§8R / click: recipe   U / right-click: uses");
         pendingTip = lines;
@@ -1022,14 +1177,20 @@ public final class Recipes {
             if (icon != null) g.fakeItem(icon, x, ny - 4);
             Draw.text(g, font, fit(font, r.name(), v.w - PAD * 2 - 22), x + 20, ny, Theme.text());
             if (r.count() > 1) Draw.textRight(g, font, "x" + r.count(), v.x + v.w - PAD, ny, Theme.muted());
+            ForgeRecipes.Info forge = ForgeRecipes.info(r.name());
+            int forgeLine = forge == null ? 0 : 10;
+            if (forge != null) {
+                String line = "Forge: " + forge.category() + (forge.duration().isBlank() ? "" : " • " + forge.duration());
+                Draw.text(g, font, fit(font, line, v.w - PAD * 2 - 22), x + 20, ny + 10, Theme.accent());
+            }
             // What the numbers count, said in words, and a click away from the other;
             // beside it, whether the list is the recipe's own cells or everything under them.
             // Two rows, not one: side by side they ran off the box, and a chip that
             // hangs outside it lights up but takes no click.
-            chip(g, font, "Counting: " + scope.toLowerCase(), x, ny + 12, 0, mx, my);
-            chip(g, font, fullCost ? "Cost: full" : "Cost: recipe", x, ny + 12 + SCOPE_H, 0, mx, my);
+            chip(g, font, "Counting: " + scope.toLowerCase(), x, ny + 12 + forgeLine, 0, mx, my);
+            chip(g, font, fullCost ? "Cost: full" : "Cost: recipe", x, ny + 12 + forgeLine + SCOPE_H, 0, mx, my);
 
-            int gx = x, gy = ny + 14 + 2 * SCOPE_H;
+            int gx = x, gy = ny + 14 + forgeLine + 2 * SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -1051,10 +1212,15 @@ public final class Recipes {
             if (list.isEmpty()) Draw.text(g, font, "nothing needed", lx, ly, Theme.pos());
             for (Ingredient in : list) {
                 int got = have.getOrDefault(in.name(), 0);
-                String n = Math.min(got, 99999) + "/" + in.count();
+                String n = ingredientCount(in.name(), got, in.count());
+                int rowH = ingredientRowH(font, v, lx, n, in.name());
                 Draw.text(g, font, n, lx, ly, got >= in.count() ? Theme.pos() : Theme.neg());
-                Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
-                if (mx >= lx && mx < v.x + v.w - PAD && my >= ly - 1 && my < ly + 9) {
+                if (rowH > 10) {
+                    Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx), lx, ly + 10, Theme.text());
+                } else {
+                    Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
+                }
+                if (mx >= lx && mx < v.x + v.w - PAD && my >= ly - 1 && my < ly + rowH - 1) {
                     ItemStack st = ICONS.get(in.name());
                     if (st != null) itemTip(st, mx, my);
                     else {
@@ -1063,11 +1229,10 @@ public final class Recipes {
                         tipY = my;
                     }
                 }
-                ly += 10;
+                ly += rowH;
             }
-            int uy = Math.max(ly, gy + 3 * CELL) + 8;
-            Draw.text(g, font, "underlined: has a recipe, click it", x, uy, Theme.dim());
-            usesGrid(g, font, v, r.name(), have, x, uy + 12, mx, my, "Used in");
+            int uy = Math.max(ly, gy + 3 * CELL) + 6;
+            usesGrid(g, font, v, r.name(), have, x, uy, mx, my, "Used in");
         } else {
             ItemStack icon = ICONS.get(openUses);
             if (icon != null) g.fakeItem(icon, x, y + 16);
@@ -1083,10 +1248,15 @@ public final class Recipes {
      * cell's count down, put the rest back - so the result appears as it would by hand.
      */
     private static String craftLabel(AbstractContainerScreen<?> s) {
+        if (openRecipe != null && ForgeRecipes.isForge(openRecipe)) return "Forge craft";
         return s instanceof CraftingScreen ? "Fill grid" : "/craft";
     }
 
     private static void craft(AbstractContainerScreen<?> s, Recipe r) {
+        if (ForgeRecipes.isForge(r.name())) {
+            Toast.changed("Recipes", "Open the Forge");
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.getConnection() == null) return;
         if (!(s instanceof CraftingScreen)) {
@@ -1163,6 +1333,33 @@ public final class Recipes {
         return s + "…";
     }
 
+    private static int ingredientRowH(Font font, Viewer v, int lx, String count, String name) {
+        int avail = v.x + v.w - PAD - lx;
+        return font.width(count + " " + name) <= avail ? 10 : 20;
+    }
+
+    private static String ingredientCount(String item, long got, long need) {
+        String a = MiningSession.formatItemCount(item, got);
+        String b = MiningSession.formatItemCount(item, need);
+        String au = unit(a), bu = unit(b);
+        if (!au.isEmpty() && au.equals(bu)) {
+            return stripUnit(a, au) + "/" + stripUnit(b, bu) + " " + au;
+        }
+        return a + "/" + b;
+    }
+
+    private static String unit(String s) {
+        int i = s.lastIndexOf(' ');
+        if (i < 0 || i == s.length() - 1) return "";
+        String u = s.substring(i + 1);
+        for (int c = 0; c < u.length(); c++) if (!Character.isLetter(u.charAt(c))) return "";
+        return u;
+    }
+
+    private static String stripUnit(String s, String unit) {
+        return s.endsWith(" " + unit) ? s.substring(0, s.length() - unit.length() - 1) : s;
+    }
+
     // ── input ─────────────────────────────────────────────────────────────────
 
     private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
@@ -1198,8 +1395,24 @@ public final class Recipes {
         // in its eyes, and only a widget it sees as focused gets the typed characters
         // - focusing the box from here made the caret blink and nothing else.
         int by = f.y + f.h - FOOT + 13;
-        if (my >= by && my < by + 17) return false;
+        if (my >= by && my < by + 17 && mx >= f.gridX() && mx < f.gridX() + f.gridW()) {
+            if (box != null) box.setFocused(true);
+            return true;
+        }
         if (box != null) box.setFocused(false);
+        // Most recent recipe shortcuts.
+        if (f.recentW() > 0 && mx >= f.recentX() && mx < f.recentX() + f.recentW()
+                && my >= f.gridY() && my < f.gridY() + f.gridH()) {
+            int i = (int) ((my - f.gridY()) / RECENT_ROW);
+            List<String> recent = recentRows();
+            int max = Math.min(recent.size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+            if (i >= 0 && i < max) {
+                String name = recent.get(i);
+                focusRecipeInGrid(name, f);
+                openRecipe(name);
+            }
+            return true;
+        }
         // Categories.
         if (mx >= f.catX() && mx < f.catX() + 18) {
             int i = (int) ((my - f.gridY()) / CELL);
@@ -1252,7 +1465,8 @@ public final class Recipes {
                 close();
                 return true;
             }
-            int cy0 = y + 20 + 12;
+            int forgeLine = ForgeRecipes.isForge(r.name()) ? 10 : 0;
+            int cy0 = y + 20 + 12 + forgeLine;
             int cw = font.width("Counting: " + scope.toLowerCase()) + 10;
             if (my >= cy0 && my < cy0 + 14 && mx < x + cw) {
                 scope = ALL.equals(scope) ? INV : ALL;
@@ -1264,7 +1478,7 @@ public final class Recipes {
                 fullCost = !fullCost;
                 return true;
             }
-            int gx = x, gy = y + 20 + 14 + 2 * SCOPE_H;
+            int gx = x, gy = y + 20 + 14 + forgeLine + 2 * SCOPE_H;
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -1274,9 +1488,15 @@ public final class Recipes {
                     return true;
                 }
             }
-            int rows = fullCost ? fullCost(r, holdings()).size() : r.needs().size();
-            int ly = gy + 2 + rows * 10;
-            int uy = Math.max(ly, gy + 3 * CELL) + 8 + 12 + 11;
+            Map<String, Integer> have = holdings();
+            List<Ingredient> list = fullCost ? fullCost(r, have) : r.needs();
+            int ly = gy + 2;
+            for (Ingredient in : list) {
+                int got = have.getOrDefault(in.name(), 0);
+                ly += ingredientRowH(font, v, x + 3 * CELL + 6,
+                        ingredientCount(in.name(), got, in.count()), in.name());
+            }
+            int uy = Math.max(ly, gy + 3 * CELL) + 6 + 11;
             clickUses(v, r.name(), x, uy, mx, my);
         } else {
             clickUses(v, openUses, x, y + 34 + 11, mx, my);
@@ -1297,6 +1517,7 @@ public final class Recipes {
     }
 
     private static void openRecipe(String name) {
+        touchRecent(name);
         if (name.equals(openRecipe)) return;
         if (openRecipe != null) trail.add("r:" + openRecipe);
         else if (openUses != null) trail.add("u:" + openUses);

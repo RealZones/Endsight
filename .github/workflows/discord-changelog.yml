@@ -1,0 +1,55 @@
+name: Discord Changelog
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        description: Changelog markdown to post
+        required: true
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/discord-changelog.yml
+
+jobs:
+  post:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[send-discord-changelog]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post changelog
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGELOG="$INPUT_CHANGELOG"
+          if [[ -z "$CHANGELOG" ]]; then
+            CHANGELOG="$(git log -1 --pretty=%B | sed '1{/\\[send-discord-changelog\\]/d;}')"
+          fi
+
+          PAYLOAD="$(jq -cn \
+            --arg title "Endsight Changelog" \
+            --arg msg "${CHANGELOG:0:3900}" \
+            --arg time "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            '{
+              username: "Endsight",
+              embeds: [{
+                title: $title,
+                description: $msg,
+                color: 8339378,
+                timestamp: $time
+              }]
+            }'
+          )"
+
+          curl -sS --fail-with-body \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$WEBHOOK"

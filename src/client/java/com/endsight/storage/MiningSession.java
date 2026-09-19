@@ -52,6 +52,7 @@ public final class MiningSession {
 
     private static boolean enabled = true;
     private static boolean showWhenPaused = true;
+    private static boolean profitEstimate = true;
     private static String materialUnits = ENCH;
     private static long activeMs;
     private static long lastTick;
@@ -73,6 +74,8 @@ public final class MiningSession {
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
                                 List.of(RAW, ENCH, REF), () -> materialUnits, v -> materialUnits = v),
+                        new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
+                                () -> profitEstimate, v -> profitEstimate = v),
                         new Setting.Action("Session", "Start the mining readout over.", "Reset", MiningSession::reset),
                         new Setting.Note("Now", () -> currentMaterial + ": "
                                 + formatMaterialCount(currentMaterial, totals.getOrDefault(currentMaterial, 0L))
@@ -221,6 +224,10 @@ public final class MiningSession {
         String material = materialName(item);
         if (material == null) return compact(count);
         String lower = item.toLowerCase(Locale.ROOT);
+        if (lower.contains("rough ") || lower.contains("flawed ") || lower.contains("fine ")
+                || lower.contains("flawless ") || lower.contains("perfect ")) {
+            return compact(count);
+        }
         if (lower.contains("refined ")) return tier(count, 1, REF);
         if (lower.contains("enchanted ")) return tier(count, 1, ENCH);
         return formatMaterialCount(material, count);
@@ -228,6 +235,10 @@ public final class MiningSession {
 
     public static String formatMaterialCount(String material, long raw) {
         if (materialName(material) == null) return compact(raw);
+        if (material.toLowerCase(Locale.ROOT).contains("amethyst")) {
+            if (REF.equals(materialUnits)) return tier(raw, 160L * 16L, "Fine");
+            if (ENCH.equals(materialUnits)) return tier(raw, 160L, "Flawed");
+        }
         if (REF.equals(materialUnits) && supportsRef(material)) return tier(raw, 160L * 16L, REF);
         if (ENCH.equals(materialUnits) || REF.equals(materialUnits)) return tier(raw, 160L, ENCH);
         return compact(raw);
@@ -251,13 +262,19 @@ public final class MiningSession {
         long materialAmount = sample ? 318 : totals.getOrDefault(material, 0L);
         long materialMs = sample ? 754_000L : activeByMaterial.getOrDefault(material, 0L);
         long coins = sample ? 1_237_500L : soldCoins;
+        long est = sample ? 1_590_000L : value(material, materialAmount);
+        long totalEst = sample ? 2_420_000L : totalValue();
         String title = hot ? "Active" : "Paused";
         String rate = materialRate(material, materialAmount, materialMs);
         List<String[]> rows = new ArrayList<>();
         rows.add(new String[]{"Session", time(shownMs)});
         rows.add(new String[]{shortMaterial(material), formatMaterialCount(material, materialAmount)});
         rows.add(new String[]{"Rate", rate});
-        if (sample || coins > 0) {
+        if (profitEstimate && (sample || totalEst > 0)) {
+            rows.add(new String[]{"Value", compact(est)});
+            rows.add(new String[]{"Total", compact(totalEst)});
+            rows.add(new String[]{"Coin/h", rate(totalEst, shownMs)});
+        } else if (sample || coins > 0) {
             rows.add(new String[]{"Coins", compact(coins)});
             rows.add(new String[]{"Coin/h", rate(coins, shownMs)});
         } else {
@@ -290,6 +307,25 @@ public final class MiningSession {
         if (raw <= 0 || ms < 5_000) return "-/h";
         long perHour = Math.round(raw * 3_600_000.0 / ms);
         return formatMaterialCount(material, perHour) + "/h";
+    }
+
+    private static long totalValue() {
+        long out = 0;
+        for (Map.Entry<String, Long> e : totals.entrySet()) out += value(e.getKey(), e.getValue());
+        return out;
+    }
+
+    private static long value(String material, long raw) {
+        return raw * price(material);
+    }
+
+    private static long price(String material) {
+        String m = material.toLowerCase(Locale.ROOT);
+        if (m.contains("crying obsidian")) return 2857;
+        if (m.contains("obsidian")) return 400;
+        if (m.contains("end stone")) return 50;
+        if (m.contains("amethyst")) return 50;
+        return 0;
     }
 
     private static String shortMaterial(String material) {

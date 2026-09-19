@@ -45,6 +45,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -652,31 +653,26 @@ public final class Recipes {
      * under it; this is the two thousand, against what you have.
      */
     static List<Ingredient> fullCost(Recipe r, Map<String, Integer> have) {
-        Map<String, Integer> stock = new HashMap<>(have);
         Map<String, Integer> raw = new LinkedHashMap<>();
         Set<String> path = new HashSet<>();
         path.add(r.name());
-        for (Ingredient i : r.needs()) expand(i.name(), i.count(), stock, raw, path);
+        for (Ingredient i : r.needs()) expand(i.name(), i.count(), raw, path);
         List<Ingredient> out = new ArrayList<>();
         raw.forEach((n, c) -> out.add(new Ingredient(n, c)));
         return out;
     }
 
-    private static void expand(String item, int count, Map<String, Integer> stock, Map<String, Integer> raw, Set<String> path) {
+    private static void expand(String item, int count, Map<String, Integer> raw, Set<String> path) {
         Recipe sub = RECIPES.get(item);
-        // No recipe, or a recipe that loops back on itself: this is as far down as it goes.
-        if (sub == null || path.contains(item)) {
+        // Tier materials are the useful shopping-list unit. Expand nested forge parts
+        // like Fuel Tank, but keep Refined/Fine/Flawed rows readable and exact.
+        if (exactTierItem(item) || sub == null || path.contains(item)) {
             raw.merge(item, count, Integer::sum);
             return;
         }
-        int held = stock.getOrDefault(item, 0);
-        int used = Math.min(held, count);
-        stock.put(item, held - used);
-        int left = count - used;
-        if (left == 0) return;
-        int crafts = (left + sub.count() - 1) / sub.count();
+        int crafts = (count + sub.count() - 1) / sub.count();
         path.add(item);
-        for (Ingredient i : sub.needs()) expand(i.name(), i.count() * crafts, stock, raw, path);
+        for (Ingredient i : sub.needs()) expand(i.name(), i.count() * crafts, raw, path);
         path.remove(item);
     }
 
@@ -1213,12 +1209,13 @@ public final class Recipes {
             for (Ingredient in : list) {
                 int got = have.getOrDefault(in.name(), 0);
                 String n = ingredientCount(in.name(), got, in.count());
-                int rowH = ingredientRowH(font, v, lx, n, in.name());
+                String displayName = ingredientName(in.name());
+                int rowH = ingredientRowH(font, v, lx, n, displayName);
                 Draw.text(g, font, n, lx, ly, got >= in.count() ? Theme.pos() : Theme.neg());
                 if (rowH > 10) {
-                    Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx), lx, ly + 10, Theme.text());
+                    Draw.text(g, font, fit(font, displayName, v.x + v.w - PAD - lx), lx, ly + 10, Theme.text());
                 } else {
-                    Draw.text(g, font, fit(font, in.name(), v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
+                    Draw.text(g, font, fit(font, displayName, v.x + v.w - PAD - lx - font.width(n) - 4), lx + font.width(n) + 4, ly, Theme.text());
                 }
                 if (mx >= lx && mx < v.x + v.w - PAD && my >= ly - 1 && my < ly + rowH - 1) {
                     ItemStack st = ICONS.get(in.name());
@@ -1254,7 +1251,8 @@ public final class Recipes {
 
     private static void craft(AbstractContainerScreen<?> s, Recipe r) {
         if (ForgeRecipes.isForge(r.name())) {
-            Toast.changed("Recipes", "Open the Forge");
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.getConnection() != null) mc.getConnection().sendCommand("forge");
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -1339,6 +1337,7 @@ public final class Recipes {
     }
 
     private static String ingredientCount(String item, long got, long need) {
+        if (exactTierItem(item)) return got + "/" + need;
         String a = MiningSession.formatItemCount(item, got);
         String b = MiningSession.formatItemCount(item, need);
         String au = unit(a), bu = unit(b);
@@ -1346,6 +1345,20 @@ public final class Recipes {
             return stripUnit(a, au) + "/" + stripUnit(b, bu) + " " + au;
         }
         return a + "/" + b;
+    }
+
+    private static boolean exactTierItem(String item) {
+        String lower = item.toLowerCase(Locale.ROOT);
+        return lower.contains("refined ") || lower.contains("enchanted ")
+                || lower.contains("rough ") || lower.contains("flawed ")
+                || lower.contains("fine ") || lower.contains("flawless ")
+                || lower.contains("perfect ");
+    }
+
+    private static String ingredientName(String name) {
+        return name.replace("Refined ", "Ref. ")
+                .replace("Enchanted ", "Ench. ")
+                .replace("Crying Obsidian", "Crying Obs.");
     }
 
     private static String unit(String s) {
@@ -1433,9 +1446,11 @@ public final class Recipes {
             if (idx < list.size()) {
                 if (button == 1) openUses(list.get(idx));
                 else openRecipe(list.get(idx));
+                return true;
             }
+            return false;
         }
-        return true;
+        return false;
     }
 
     private static boolean clickViewer(AbstractContainerScreen<?> s, Viewer v, Font font, double mx, double my, int button) {

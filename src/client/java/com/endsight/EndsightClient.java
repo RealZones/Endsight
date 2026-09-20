@@ -17,6 +17,7 @@ import com.endsight.qol.CopyChat;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
+import com.endsight.qol.MenuButton;
 import com.endsight.qol.LootRoll;
 import com.endsight.qol.MathSolver;
 import com.endsight.qol.Updates;
@@ -30,6 +31,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.ForgeRecipes;
 import com.endsight.storage.MiningSession;
+import com.endsight.storage.PowderTracker;
 import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
@@ -104,11 +106,13 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(AbilitySpam.module());
             registry.replace(CopyChat.module());
             registry.replace(MiningSession.module());
+            registry.replace(PowderTracker.module());
             registry.replace(ForgeRecipes.module());
             registry.replace(Recipes.module());
             registry.replace(ServerStats.module());
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
+            registry.replace(MenuButton.module());
             extra("register", registry);
             Config.load(registry);
         }
@@ -139,6 +143,7 @@ public class EndsightClient implements ClientModInitializer {
         StorageSearch.init();
         VoidgloomHelper.init();
         DragonTimer.init();
+        MenuButton.init();
         Protector.init();
         BossDrops.init();
         EyeGuard.init();
@@ -149,6 +154,7 @@ public class EndsightClient implements ClientModInitializer {
         AbilitySpam.init();
         CopyChat.init();
         MiningSession.init();
+        PowderTracker.init();
         Recipes.init();
         ForgeRecipes.init();
         ServerStats.init();

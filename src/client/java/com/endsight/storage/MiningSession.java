@@ -49,6 +49,10 @@ public final class MiningSession {
     private static final String RAW = "Raw";
     private static final String ENCH = "Ench";
     private static final String REF = "Ref";
+    private static final long AMETHYST_FLAWED = 80L;
+    private static final long AMETHYST_FINE = AMETHYST_FLAWED * 80L;
+    private static final long AMETHYST_FLAWLESS = AMETHYST_FINE * 80L;
+    private static final long AMETHYST_PERFECT = AMETHYST_FLAWLESS * 5L;
 
     private static boolean enabled = true;
     private static boolean showWhenPaused = true;
@@ -207,8 +211,17 @@ public final class MiningSession {
         }
         String material = materialName(name);
         if (material == null) return null;
-        int each = lower.contains("enchanted ") ? 160 : 1;
+        long each = material.equals("Amethyst") ? amethystUnits(lower)
+                : lower.contains("enchanted ") ? 160L : 1L;
         return new MaterialValue(material, (long) s.getCount() * each);
+    }
+
+    private static long amethystUnits(String lower) {
+        if (lower.contains("perfect ")) return AMETHYST_PERFECT;
+        if (lower.contains("flawless ")) return AMETHYST_FLAWLESS;
+        if (lower.contains("fine ")) return AMETHYST_FINE;
+        if (lower.contains("flawed ")) return AMETHYST_FLAWED;
+        return 1L;
     }
 
     private static String materialName(String name) {
@@ -236,8 +249,8 @@ public final class MiningSession {
     public static String formatMaterialCount(String material, long raw) {
         if (materialName(material) == null) return compact(raw);
         if (material.toLowerCase(Locale.ROOT).contains("amethyst")) {
-            if (REF.equals(materialUnits)) return tier(raw, 160L * 16L, "Fine");
-            if (ENCH.equals(materialUnits)) return tier(raw, 160L, "Flawed");
+            if (REF.equals(materialUnits)) return tier(raw, AMETHYST_FINE, "Fine");
+            if (ENCH.equals(materialUnits)) return tier(raw, AMETHYST_FLAWED, "Flawed");
         }
         if (REF.equals(materialUnits) && supportsRef(material)) return tier(raw, 160L * 16L, REF);
         if (ENCH.equals(materialUnits) || REF.equals(materialUnits)) return tier(raw, 160L, ENCH);
@@ -262,7 +275,6 @@ public final class MiningSession {
         long materialAmount = sample ? 318 : totals.getOrDefault(material, 0L);
         long materialMs = sample ? 754_000L : activeByMaterial.getOrDefault(material, 0L);
         long coins = sample ? 1_237_500L : soldCoins;
-        long est = sample ? 1_590_000L : value(material, materialAmount);
         long totalEst = sample ? 2_420_000L : totalValue();
         String title = hot ? "Active" : "Paused";
         String rate = materialRate(material, materialAmount, materialMs);
@@ -271,7 +283,6 @@ public final class MiningSession {
         rows.add(new String[]{shortMaterial(material), formatMaterialCount(material, materialAmount)});
         rows.add(new String[]{"Rate", rate});
         if (profitEstimate && (sample || totalEst > 0)) {
-            rows.add(new String[]{"Value", compact(est)});
             rows.add(new String[]{"Total", compact(totalEst)});
             rows.add(new String[]{"Coin/h", rate(totalEst, shownMs)});
         } else if (sample || coins > 0) {

@@ -291,10 +291,8 @@ public final class BossDrops {
                 eyes++;
                 return;
             }
-            if (line.contains(AWOKEN)) {
-                eyes = Math.max(eyes, 1);
-                return;
-            }
+            // "has awoken" is broadcast to the whole lobby, so it says nothing about who
+            // placed an eye; counting it as one made every dragon yours.
             if (line.contains(EGG_SPAWNED)) {
                 eyes = 0;
                 return;

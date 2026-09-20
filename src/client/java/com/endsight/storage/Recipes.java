@@ -1092,6 +1092,13 @@ public final class Recipes {
         ForgeRecipes.Info forge = ForgeRecipes.info(r.name());
         if (forge != null) {
             lines.add("§6Forge craft: " + forge.category() + (forge.duration().isBlank() ? "" : " • " + forge.duration()));
+            Work work = work(r.name(), 1, have, new HashSet<>());
+            if (work.total() > forge.durationMs()) lines.add("§eFull build: " + time(work.wall()) + " on " + FORGE_SLOTS + " slots");
+            List<String> missing = pooledMissingLines(fullCost(r, have), have, 4);
+            if (!missing.isEmpty()) {
+                lines.add("§cMissing pooled:");
+                lines.addAll(missing);
+            }
             if (!forge.requirement().isBlank()) lines.add("§7" + forge.requirement());
             lines.add("");
         }
@@ -1104,6 +1111,87 @@ public final class Recipes {
         pendingTip = lines;
         tipX = mx;
         tipY = my;
+    }
+
+    /**
+     * Lines for the server's own Forge tooltip: how long the whole build takes and what
+     * it comes down to in materials, against what you hold.
+     *
+     * No heading and no "Craft: ... (56m)" - the lore above already says the duration,
+     * and a second box over the top of the lore hid it. The time counts only crafts still
+     * to do: the old sum walked every sub-craft of the tree as if none were in the bag and
+     * one at a time, which put a 7-day figure on an engine whose parts were mostly
+     * already refined.
+     */
+    public static List<String> forgeBreakdown(String item, int maxRows) {
+        Recipe r = RECIPES.get(item);
+        if (r == null) return List.of();
+        Map<String, Integer> have = holdings();
+        List<String> lines = new ArrayList<>();
+        ForgeRecipes.Info forge = ForgeRecipes.info(r.name());
+        long own = forge == null ? 0 : forge.durationMs();
+        Work work = work(r.name(), 1, have, new HashSet<>());
+        if (work.total() > own) lines.add("§7Full build: §e" + time(work.wall()) + " §8on " + FORGE_SLOTS + " slots");
+        List<Ingredient> cost = fullCost(r, have);
+        int rows = 0;
+        for (Ingredient i : cost) {
+            if (rows++ >= maxRows) {
+                lines.add("§8...");
+                break;
+            }
+            lines.add(materialBreakdownLine(i, have));
+        }
+        return lines;
+    }
+
+    /** Forge slots that can run at once; what the build time is spread over. */
+    private static final int FORGE_SLOTS = 7;
+
+    /** Forge time for a subtree: the serial sum, and the wall time with the slots in use. */
+    private record Work(long total, long wall) {
+    }
+
+    /**
+     * Time to forge {@code count} of an item, counting only what is not already held.
+     *
+     * Whole items of the exact tier come off the count - a Refined Obsidian in the bag is
+     * one fewer craft - but raw pooled below it does not: it still has to go through the
+     * Forge. Sub-crafts run alongside each other, so a level of the tree takes the longer
+     * of its longest chain and its total spread over the slots, and the item itself waits
+     * for all of it.
+     */
+    private static Work work(String item, int count, Map<String, Integer> have, Set<String> path) {
+        Recipe r = RECIPES.get(item);
+        if (r == null || count <= 0 || !path.add(item)) return new Work(0, 0);
+        ForgeRecipes.Info info = ForgeRecipes.info(item);
+        long dur = info == null ? 0 : info.durationMs();
+        int crafts = (count + r.count() - 1) / r.count();
+        long subTotal = 0, subWall = 0;
+        for (Ingredient i : r.needs()) {
+            int missing = i.count() * crafts - have.getOrDefault(i.name(), 0);
+            Work w = work(i.name(), missing, have, path);
+            subTotal += w.total();
+            subWall = Math.max(subWall, w.wall());
+        }
+        path.remove(item);
+        long ownWall = dur * ((crafts + FORGE_SLOTS - 1) / FORGE_SLOTS);
+        return new Work(dur * crafts + subTotal, ownWall + Math.max(subWall, subTotal / FORGE_SLOTS));
+    }
+
+    private static String materialBreakdownLine(Ingredient i, Map<String, Integer> have) {
+        long unit = tierUnit(i.name());
+        String family = materialFamily(i.name());
+        if (unit <= 0 || family.isBlank()) {
+            int got = have.getOrDefault(i.name(), 0);
+            return (got >= i.count() ? "§a" : "§c")
+                    + ingredientCount(i.name(), got, i.count()) + " §7" + ingredientName(i.name());
+        }
+        long needRaw = (long) i.count() * unit;
+        long haveRaw = pooledRaw(family, have);
+        long haveUnits = Math.min(i.count(), haveRaw / unit);
+        return (haveRaw >= needRaw ? "§a" : "§c")
+                + ingredientCount(i.name(), haveUnits, i.count()) + " §7" + ingredientName(i.name())
+                + " §8pooled";
     }
 
     /** The item's own tooltip - name and lore, as the game would show it - for a cell. */
@@ -1345,6 +1433,69 @@ public final class Recipes {
             return stripUnit(a, au) + "/" + stripUnit(b, bu) + " " + au;
         }
         return a + "/" + b;
+    }
+
+    private static List<String> pooledMissingLines(List<Ingredient> needs, Map<String, Integer> have, int max) {
+        List<String> out = new ArrayList<>();
+        for (Ingredient i : needs) {
+            long unit = tierUnit(i.name());
+            String family = materialFamily(i.name());
+            if (unit <= 0 || family.isBlank()) {
+                int got = have.getOrDefault(i.name(), 0);
+                if (got < i.count()) out.add("§c" + (i.count() - got) + "x §7" + ingredientName(i.name()));
+            } else {
+                long needRaw = (long) i.count() * unit;
+                long haveRaw = pooledRaw(family, have);
+                if (haveRaw < needRaw) {
+                    long missing = (long) Math.ceil((needRaw - haveRaw) / (double) unit);
+                    out.add("§c" + missing + "x §7" + ingredientName(i.name()));
+                }
+            }
+            if (out.size() >= max) {
+                out.add("§8...");
+                break;
+            }
+        }
+        return out;
+    }
+
+    private static long pooledRaw(String family, Map<String, Integer> have) {
+        long raw = 0;
+        for (Map.Entry<String, Integer> e : have.entrySet()) {
+            if (materialFamily(e.getKey()).equals(family)) raw += (long) e.getValue() * Math.max(1, tierUnit(e.getKey()));
+        }
+        return raw;
+    }
+
+    private static String materialFamily(String item) {
+        String lower = item.toLowerCase(Locale.ROOT);
+        if (lower.contains("crying obsidian")) return "crying obsidian";
+        if (lower.contains("obsidian")) return "obsidian";
+        if (lower.contains("end stone")) return "end stone";
+        if (lower.contains("amethyst")) return "amethyst";
+        return "";
+    }
+
+    private static long tierUnit(String item) {
+        String lower = item.toLowerCase(Locale.ROOT);
+        if (lower.contains("perfect ")) return 80L * 80L * 80L * 5L;
+        if (lower.contains("flawless ")) return 80L * 80L * 80L;
+        if (lower.contains("fine ")) return 80L * 80L;
+        if (lower.contains("flawed ")) return 80L;
+        if (lower.contains("refined ")) return 160L * 16L;
+        if (lower.contains("enchanted ")) return 160L;
+        return materialFamily(item).isBlank() ? 0 : 1;
+    }
+
+    private static String time(long ms) {
+        long s = Math.max(0, ms / 1000);
+        long d = s / 86_400; s %= 86_400;
+        long h = s / 3_600; s %= 3_600;
+        long m = s / 60; s %= 60;
+        if (d > 0) return d + "d " + h + "h";
+        if (h > 0) return h + "h " + m + "m";
+        if (m > 0) return m + "m " + s + "s";
+        return s + "s";
     }
 
     private static boolean exactTierItem(String item) {

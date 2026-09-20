@@ -8,6 +8,7 @@ import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -58,6 +59,7 @@ public final class ForgeRecipes {
     private static final String FORGE = "The Forge";
     private static final String TIMER_ID = "storage.forge.timer";
     private static final int RECENT_MAX = 10;
+    private static boolean inTooltip;
     private static final int RECENT_W = 126;
     private static final int RECENT_ROW = 19;
 
@@ -76,7 +78,7 @@ public final class ForgeRecipes {
     record Recent(String process, String name) {
     }
 
-    public record Info(String category, String duration, String requirement) {
+    public record Info(String category, String duration, long durationMs, String requirement) {
     }
 
     private static boolean enabled = true;
@@ -131,7 +133,7 @@ public final class ForgeRecipes {
 
     public static Info info(String item) {
         for (ForgeRecipe r : RECIPES.values()) {
-            if (r.name().equals(item)) return new Info(r.process(), r.duration(), r.requirement());
+            if (r.name().equals(item)) return new Info(r.process(), r.duration(), millis(r.duration()), r.requirement());
         }
         return null;
     }
@@ -140,6 +142,22 @@ public final class ForgeRecipes {
         load();
         loadActive();
         loadRecent();
+        // Into the server's own tooltip, under its lore, so nothing is drawn over the
+        // Duration and Items Required it already shows. Re-entrant: reading a tooltip
+        // to build the lines must not build lines again.
+        ItemTooltipCallback.EVENT.register((stack, context, flag, lines) -> {
+            if (!enabled || inTooltip || stack.isEmpty()) return;
+            if (!(Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen) || !forgeScreen(screen)) return;
+            inTooltip = true;
+            try {
+                List<String> extra = Recipes.forgeBreakdown(name(stack), 6);
+                if (extra.isEmpty()) return;
+                lines.add(Component.empty());
+                for (String line : extra) lines.add(Component.literal(line));
+            } finally {
+                inTooltip = false;
+            }
+        });
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
             ScreenEvents.afterTick(screen).register(s -> tick(container));

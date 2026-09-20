@@ -4,7 +4,8 @@
 	"compatibilityLevel": "JAVA_25",
 	"client": [
 		"ContainerSlotMixin",
-		"HotbarSlotMixin"
+		"HotbarSlotMixin",
+		"OverlayMessageMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

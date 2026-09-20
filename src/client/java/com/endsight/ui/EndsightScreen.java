@@ -102,6 +102,15 @@ public class EndsightScreen extends Screen {
         int navX = panelX() + 10;
         int navW = Theme.SIDEBAR_W - 20;
 
+        // Rows shrink to fit above the footer. The sidebar builds itself from whatever
+        // categories exist, and at nine of them the fixed pitch ran the last one - Dev -
+        // under the Move readouts button on a 455-tall panel. Squeezed rows beat a
+        // category nobody can click.
+        int count = 1 + registry.categories().size();
+        int room = moveButton()[1] - 6 - navY;
+        int pitch = Math.max(20, Math.min(Theme.NAV_H + Theme.NAV_GAP, room / Math.max(1, count)));
+        int navH = pitch - Theme.NAV_GAP;
+
         navItems.add(
                 new Nav(
                         "All Modules",
@@ -109,11 +118,11 @@ public class EndsightScreen extends Screen {
                         navX,
                         navY,
                         navW,
-                        Theme.NAV_H
+                        navH
                 )
         );
 
-        navY += Theme.NAV_H + Theme.NAV_GAP;
+        navY += pitch;
 
         for (String c : registry.categories()) {
             navItems.add(
@@ -123,11 +132,11 @@ public class EndsightScreen extends Screen {
                             navX,
                             navY,
                             navW,
-                            Theme.NAV_H
+                            navH
                     )
             );
 
-            navY += Theme.NAV_H + Theme.NAV_GAP;
+            navY += pitch;
         }
 
         themeRow.layout(panelX(), panelY(), panelH());
@@ -433,7 +442,7 @@ public class EndsightScreen extends Screen {
                     font,
                     n.label,
                     n.x + 14,
-                    n.y + (Theme.NAV_H - 8) / 2,
+                    n.y + (n.h - 8) / 2,
                     selected
                             ? Theme.accent()
                             : label

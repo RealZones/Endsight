@@ -71,6 +71,7 @@ jobs:
             build/libs/*.jar
 
       - name: Post to Discord
+        if: contains(github.event.head_commit.message, '[discord]')
         # The release above is the changelog now; this is best-effort since the Discord
         # account went (2026-09-20), and a dead webhook must not fail the release.
         continue-on-error: true

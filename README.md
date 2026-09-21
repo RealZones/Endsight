@@ -2,8 +2,8 @@
 
 A Fabric client mod for **DragSim**
 
-Trackers for dragons, zealots and slayers, drop alerts, a recipe browser, storage
-previews and a Voidgloom helper. Press **Right Shift** in game to open the module
+Mining readouts - session, powder, forge, drill - plus trackers for dragons, zealots
+and slayers, drop alerts, a recipe browser, storage previews and a Voidgloom helper. Press **Right Shift** in game to open the module
 browser (rebind it under Controls → Endsight), or type `/endsight` or `/es`; any
 module can be bound to a key.
 
@@ -30,12 +30,39 @@ module can be bound to a key.
 
 ## Features
 
+### Mining
+
+![Mining Session, Powder Tracker, the Forge timer and the drill lines](docs/mining.png)
+
+**Mining Session** — what you're farming and how much it's worth: the block you're on,
+its rate per hour, profit per hour and time on that block. All four follow the block
+you switch to. Pauses when you stop mining.
+
+**Powder Tracker** — Ender and Void powder, live. Powder is only ever shown in the Heart
+of the Dragon, so the readout counts every block broken around you and estimates the
+gain between visits, then snaps to the exact figure each time you open the menu. Powder
+per hour of mining, your session gain, and *Perks: N Upgrades available* when the
+estimate covers an upgrade — with a toast the moment it happens. Amethyst, Crying,
+Obsidian and End Stone each have their own learned rate; Void Infusion is counted while
+it runs.
+
+**Drill CD / Fuel** — `Drill CD: Ready` or the countdown, and `Fuel: 1,720/10K (17%)`,
+both read off the drill in your hand. The cooldown is whichever ability the drill is
+set to; the fuel line goes green → yellow → red. Toggles on the Mining Session page.
+
+**Forge Utils** — a Forge timer on screen (crafts finishing together share a line),
+ready-slot outlines, a *Forge Recent* panel to reopen your last crafts, and inside the
+Forge's own tooltips: the full build time for what you're hovering and the materials
+you're still missing, counting your inventory and storage, with Enchanted and Refined
+tiers pooled. Hover a part you already own and it just says so.
+
+**HOTD Button** — a Heart of the Dragon item in the Dragon Sim Menu, under Skills, that
+opens `/hotd`.
+
+**Ability Cooldowns** — fading cooldown icons for the Giant's Sword and the tuba, and
+the drill line above.
+
 ### Trackers
-
-**Dragon Timer** — eyes placed out of eight, then the countdown to the next dragon.
-Golden eyes are marked.
-
-**Protector Stage** — the Endstone Protector's tier, 2 to 5, and how long it has been up.
 
 **Boss Drops** — one readout for whichever boss you killed last — dragons, Warden,
 Protector, zombie and enderman slayers — its kills and the drops it gave you, rarest

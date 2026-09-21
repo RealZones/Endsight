@@ -116,8 +116,13 @@ public final class Cooldowns {
             String line = Zealots.strip(message.getString()).trim();
             if (line.startsWith("HOWL!")) start(TUBA);
             else if (line.startsWith("You used ")) {
+                // The drill's ability is whichever one is selected in HOTD - Sheer Force,
+                // Void Infusion, Tunnel Vision... - so any "You used" while a drill is in
+                // hand starts its timer; the length still comes off the drill's own lore.
                 String used = line.toLowerCase(Locale.ROOT);
-                for (Timer t : TIMERS) if (used.contains(t.ability)) start(t);
+                Minecraft mc = Minecraft.getInstance();
+                boolean drillInHand = mc.player != null && DRILL.is(mc.player.getMainHandItem());
+                for (Timer t : TIMERS) if (t == DRILL ? drillInHand : used.contains(t.ability)) start(t);
             } else sync(line);
         });
         // The early-press line is one Ability Spam hides, so it arrives cancelled.

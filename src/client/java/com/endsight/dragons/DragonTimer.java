@@ -131,9 +131,20 @@ public final class DragonTimer {
     public static void init() {
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
                 (handler, sender, client) -> resetAll());
+        // A lobby switch is not a server join: the world object is swapped under you and
+        // the old lobby's eyes stayed on screen in an empty private instance. A new level
+        // instance, or the server saying it moved you, starts the count over.
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.level != lastLevel) {
+                lastLevel = mc.level;
+                resetAll();
+            }
+        });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!enabled || overlay) return;
-            onLine(plain(message));
+            String line = plain(message);
+            if (line.startsWith("Switched to ") || line.startsWith("Sending you to ")) resetAll();
+            onLine(line);
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "dragon_timer"),
                 (g, delta) -> draw(g));
@@ -217,6 +228,8 @@ public final class DragonTimer {
      * you in the Crypts, so without this the readout sat there counting "Young Dragon
      * 12m37s" over a slayer fight.
      */
+    private static Object lastLevel;
+
     private static void resetAll() {
         resetCycle();
         dragon = null;

@@ -9,7 +9,9 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -86,7 +88,12 @@ public final class HudPlacementScreen extends Screen {
             }
         }
 
-        String hint = "Drag to place  ·  Scroll over one to resize  ·  Right-click to reset  ·  Esc when done";
+        if (dragging != null) {
+            int guide = Draw.alpha(Theme.accent(), 0.55f);
+            if (snapX != Integer.MIN_VALUE) g.fill(snapX, 0, snapX + 1, height, guide);
+            if (snapY != Integer.MIN_VALUE) g.fill(0, snapY, width, snapY + 1, guide);
+        }
+        String hint = "Drag to place  ·  snaps to edges and centre, shift to skip  ·  Scroll to resize  ·  Right-click to reset  ·  Esc when done";
         Draw.textCentered(g, font, hint, width / 2, height - 26, Theme.muted());
     }
 
@@ -116,15 +123,49 @@ public final class HudPlacementScreen extends Screen {
         int[] b = bounds.get(dragging);
         if (b == null) return true;
 
-        HudLayout.setPixels(dragging,
-                (int) event.x() - grabX, (int) event.y() - grabY,
-                b[2], b[3], width, height);
+        int px = (int) event.x() - grabX, py = (int) event.y() - grabY;
+        int w = b[2], h = b[3];
+        // Snap: the screen's centre lines, and every other readout's edges and centre -
+        // plus sitting flush beside or under one - so a column lines up instead of
+        // landing a pixel off. Hold shift to place freely.
+        snapX = snapY = Integer.MIN_VALUE;
+        if (!event.hasShiftDown()) {
+            List<int[]> xs = new ArrayList<>(), ys = new ArrayList<>();   // {line, offset of my edge that meets it}
+            xs.add(new int[]{width / 2, w / 2});
+            ys.add(new int[]{height / 2, h / 2});
+            for (Map.Entry<String, int[]> e : bounds.entrySet()) {
+                if (e.getKey().equals(dragging)) continue;
+                int[] o = e.getValue();
+                for (int line : new int[]{o[0], o[0] + o[2], o[0] + o[2] / 2}) for (int mine : new int[]{0, w, w / 2}) xs.add(new int[]{line, mine});
+                for (int line : new int[]{o[1], o[1] + o[3], o[1] + o[3] / 2}) for (int mine : new int[]{0, h, h / 2}) ys.add(new int[]{line, mine});
+                xs.add(new int[]{o[0] + o[2] + GAP, 0});   // flush to its right
+                xs.add(new int[]{o[0] - GAP, w});          // flush to its left
+                ys.add(new int[]{o[1] + o[3] + GAP, 0});   // flush under it
+                ys.add(new int[]{o[1] - GAP, h});          // flush above it
+            }
+            int bestX = SNAP + 1, bestY = SNAP + 1;
+            for (int[] c : xs) {
+                int d = Math.abs(px + c[1] - c[0]);
+                if (d < bestX) { bestX = d; px = c[0] - c[1]; snapX = c[0]; }
+            }
+            for (int[] c : ys) {
+                int d = Math.abs(py + c[1] - c[0]);
+                if (d < bestY) { bestY = d; py = c[0] - c[1]; snapY = c[0]; }
+            }
+        }
+        HudLayout.setPixels(dragging, px, py, w, h, width, height);
         return true;
     }
+
+    /** Snap distance in GUI pixels, and the gap left between two readouts placed flush. */
+    private static final int SNAP = 5, GAP = 4;
+    /** The guide lines to draw while a drag is snapped, or MIN_VALUE for none. */
+    private int snapX = Integer.MIN_VALUE, snapY = Integer.MIN_VALUE;
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         dragging = null;
+        snapX = snapY = Integer.MIN_VALUE;
         return super.mouseReleased(event);
     }
 

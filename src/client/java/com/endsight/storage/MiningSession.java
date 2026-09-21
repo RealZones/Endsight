@@ -299,7 +299,7 @@ public final class MiningSession {
         rows.add(new String[]{shortMaterial(material), amount});
         rows.add(new String[]{"Rate", rate});
         if (!profit.isEmpty()) rows.add(new String[]{"Profit", profit});
-        rows.add(new String[]{"Time", time(shownMs)});
+        rows.add(new String[]{"Time", time(materialMs)});   // on this block, like Rate and Profit
         int w = Readout.width(font, "MINING", title);
         for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
         int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);

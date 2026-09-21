@@ -1128,6 +1128,8 @@ public final class Recipes {
         if (r == null) return List.of();
         Map<String, Integer> have = holdings();
         List<String> lines = new ArrayList<>();
+        // The one you are holding is built; the materials below would be for a second one.
+        if (have.getOrDefault(r.name(), 0) > 0) return List.of("§aOwned");
         ForgeRecipes.Info forge = ForgeRecipes.info(r.name());
         long own = forge == null ? 0 : forge.durationMs();
         Work work = work(r.name(), 1, have, new HashSet<>());

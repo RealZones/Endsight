@@ -76,6 +76,15 @@ public final class Slayer {
     public static boolean bossUp() {
         return bossUp;
     }
+
+    /**
+     * Whether a quest is on - started and neither complete nor failed - and the chat has
+     * said something slayer in the last quarter hour. The time cap is for a quest that
+     * ended some way the chat never showed us, so it cannot pin "in a quest" on forever.
+     */
+    public static boolean questActive() {
+        return (questActive || bossUp) && System.currentTimeMillis() - cur().lastActivity < 15 * 60_000L;
+    }
     private static boolean bossUp;
     private static boolean questActive;
     private static String reminderArea = "";

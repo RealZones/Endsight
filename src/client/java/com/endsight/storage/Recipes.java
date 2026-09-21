@@ -91,13 +91,18 @@ public final class Recipes {
 
     /** A recipe: nine cells (null for empty), the result and its count. */
     record Recipe(String name, int count, Ingredient[] grid) {
+        /** Once per recipe: this is asked for every cell on screen, every frame. */
         List<Ingredient> needs() {
-            Map<String, Integer> sum = new LinkedHashMap<>();
-            for (Ingredient i : grid) if (i != null) sum.merge(i.name(), i.count(), Integer::sum);
-            List<Ingredient> out = new ArrayList<>();
-            sum.forEach((n, c) -> out.add(new Ingredient(n, c)));
-            return out;
+            return NEEDS.computeIfAbsent(this, r -> {
+                Map<String, Integer> sum = new LinkedHashMap<>();
+                for (Ingredient i : r.grid) if (i != null) sum.merge(i.name(), i.count(), Integer::sum);
+                List<Ingredient> out = new ArrayList<>();
+                sum.forEach((n, c) -> out.add(new Ingredient(n, c)));
+                return List.copyOf(out);
+            });
         }
+
+        private static final Map<Recipe, List<Ingredient>> NEEDS = new java.util.IdentityHashMap<>();
 
         boolean uses(String item) {
             for (Ingredient i : grid) if (i != null && i.name().equals(item)) return true;
@@ -209,6 +214,10 @@ public final class Recipes {
     private static void capture(List<ItemStack> slots) {
         ItemStack result = slots.get(RESULT);
         String name = name(result);
+        // A recipe page whose result slot still shows the menu's blank filler pane was
+        // once learned as a recipe with no name. Every nameless filler in every menu
+        // then matched it, and read "Owned".
+        if (name.isBlank()) return;
         Ingredient[] grid = new Ingredient[9];
         for (int i = 0; i < 9; i++) {
             ItemStack s = slots.get(GRID[i]);
@@ -225,7 +234,10 @@ public final class Recipes {
 
     private static void remember(ItemStack s) {
         if (s.isEmpty()) return;
-        if (ICONS.putIfAbsent(name(s), s.copyWithCount(1)) == null) iconsDirty = true;
+        String n = name(s);
+        if (ICONS.containsKey(n)) return;      // the copy is the expensive part; only make it once
+        ICONS.put(n, s.copyWithCount(1));
+        iconsDirty = true;
     }
 
     // ── icons and chests, on disk ─────────────────────────────────────────────
@@ -593,7 +605,7 @@ public final class Recipes {
                 for (int i = 1; i < p.length; i++) if (!p[i].isBlank() && in.add(p[i])) changed = true;
                 continue;
             }
-            if (p.length < 11) continue;
+            if (p.length < 11 || p[0].isBlank()) continue;
             Ingredient[] grid = new Ingredient[9];
             for (int i = 0; i < 9; i++) {
                 String cell = p[2 + i];
@@ -610,8 +622,28 @@ public final class Recipes {
 
     // ── what you have ─────────────────────────────────────────────────────────
 
-    /** Everything you hold, by name: your inventory, every storage page ever snapshotted, and the ender chest. */
+    private static Map<String, Integer> holdingsCache;
+    private static long holdingsAt;
+    private static String holdingsScope;
+
+    /**
+     * Everything you hold, by name: your inventory, every storage page ever snapshotted,
+     * and the ender chest.
+     *
+     * Counted ten times a second, not every frame. The panel and every tooltip on the
+     * screen asked for this fresh, and each count walks every stack in every snapshot
+     * and reads its name twice - at a few hundred frames a second that was most of the
+     * frame, and the forge menu ran at a tenth of the speed the world did.
+     */
     private static Map<String, Integer> holdings() {
+        long now = System.currentTimeMillis();
+        if (holdingsCache != null && now - holdingsAt < 100 && scope.equals(holdingsScope)) return holdingsCache;
+        holdingsAt = now;
+        holdingsScope = scope;
+        return holdingsCache = countHoldings();
+    }
+
+    private static Map<String, Integer> countHoldings() {
         Map<String, Integer> have = new HashMap<>();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
@@ -629,7 +661,9 @@ public final class Recipes {
 
     private static void count(Map<String, Integer> have, ItemStack s) {
         if (s.isEmpty()) return;
-        have.merge(name(s), s.getCount(), Integer::sum);
+        String n = name(s);
+        if (n.isBlank()) return;      // menu filler, not a thing you own
+        have.merge(n, s.getCount(), Integer::sum);
         remember(s);
     }
 
@@ -947,23 +981,54 @@ public final class Recipes {
         drawTip(g, font);
     }
 
-    /** The tab on the grid's left edge - or on the screen's right edge once the grid is tucked away. */
+    /**
+     * The tab that tucks the panel away: x, y, w, h. Over the category column while
+     * the panel is out, on the screen's right edge once it is tucked.
+     *
+     * It used to hang off the panel's left edge, halfway down - which is where the
+     * game stacks the potion-effect boxes, so with a few effects up a dark tab sat on
+     * a dark box and could not be found. The top of the category column is the one
+     * strip of the panel nothing else uses.
+     */
     private static int[] tab(AbstractContainerScreen<?> s) {
         Frame f = frame(s);
-        int x = shown ? f.x - TAB_W + 1 : Minecraft.getInstance().getWindow().getGuiScaledWidth() - TAB_W - 1;
-        return new int[]{x, f.y + f.h / 2 - TAB_H / 2};
+        if (shown) {
+            // Just under the recent list, against the grid; without a recent column
+            // (a narrow screen) it goes under the categories instead.
+            if (f.recentW() > 0) {
+                int w = 34;
+                return new int[]{f.recentX() + f.recentW() + 1 - w, f.gridY() - 16 + recentPaneH(f) + 4, w, 16};
+            }
+            return new int[]{f.catX() - 3, f.gridY() + categories().size() * CELL + 6, CATS + 1, 16};
+        }
+        int sw = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        return new int[]{sw - TAB_W - 1, f.y + f.h / 2 - TAB_H / 2, TAB_W, TAB_H};
     }
 
     private static void drawTab(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, int mx, int my) {
         int[] t = tab(s);
-        boolean hover = mx >= t[0] && mx < t[0] + TAB_W && my >= t[1] && my < t[1] + TAB_H;
-        Draw.roundedRect(g, t[0], t[1], TAB_W, TAB_H, 4, hover ? Theme.hover() : Theme.surface(), true, false, true, false);
-        Draw.textCentered(g, font, shown ? "›" : "‹", t[0] + TAB_W / 2, t[1] + TAB_H / 2 - 4, hover ? Theme.text() : Theme.muted());
+        boolean hover = mx >= t[0] && mx < t[0] + t[2] && my >= t[1] && my < t[1] + t[3];
+        // Accent, not surface: it can land on a potion-effect box, and there a dark
+        // chip on a dark box is how it went missing the first time.
+        if (shown) {
+            Draw.roundedRect(g, t[0], t[1], t[2], t[3], 4, Draw.alpha(Theme.accent(), hover ? 1f : 0.25f));
+        } else {
+            Draw.roundedRect(g, t[0], t[1], t[2], t[3], 4, Draw.alpha(Theme.accent(), hover ? 1f : 0.25f), true, false, true, false);
+        }
+        Draw.textCentered(g, font, shown ? "›" : "‹", t[0] + t[2] / 2, t[1] + t[3] / 2 - 4, hover ? Theme.bg() : Theme.accent());
     }
 
     private static void drawGrid(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Frame f = frame(s);
-        Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, glass ? Draw.alpha(Theme.surface(), 0.45f) : Theme.surface());
+        if (glass) {
+            // Glass goes round each thing rather than round the lot: one big pane over
+            // the world is a dim window, three small ones are shelves you can see past.
+            Draw.glass(g, f.catX() - 3, f.gridY() - 3, 23, categories().size() * CELL + 4, 5);
+            if (f.recentW() > 0) Draw.glass(g, f.recentX() - 1, f.gridY() - 16, f.recentW() + 2, recentPaneH(f), 5);
+            Draw.glass(g, f.gridX() - 4, f.y, f.gridW() + 8, f.h, Theme.RADIUS);
+        } else {
+            Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, Theme.surface());
+        }
 
         List<String> list = visible();
         int perPage = f.cols * f.rows;
@@ -981,7 +1046,7 @@ public final class Recipes {
         for (String c : categories()) {
             boolean on = c == null ? cat == null : c.equals(cat);
             boolean hover = mx >= cx && mx < cx + 18 && my >= cy && my < cy + 18;
-            Draw.roundedRect(g, cx, cy, 18, 18, 3, on ? Draw.alpha(Theme.accent(), 0.3f) : hover ? Theme.hover() : Theme.raised());
+            slab(g, cx, cy, 18, 18, on ? Theme.accent() : 0, 0.3f, hover);
             ItemStack icon = categoryIcon(c);
             if (icon != null) g.fakeItem(icon, cx + 1, cy + 1);
             else Draw.textCentered(g, font, c == null ? "All" : c.substring(0, 1), cx + 9, cy + 5, on ? Theme.accent() : Theme.muted());
@@ -1005,10 +1070,9 @@ public final class Recipes {
             boolean open = r.name().equals(openRecipe);
             int[] rd = ready(r, have);
             boolean done = complete(rd);
-            Draw.roundedRect(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
-                    open ? Draw.alpha(Theme.accent(), 0.35f) : done ? Draw.alpha(Theme.pos(), 0.26f)
-                            : hover ? Theme.hover() : Theme.raised());
-            if (done) Draw.roundedOutline(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
+            slab(g, ix + 1, iy + 1, CELL - 2, CELL - 2, open ? Theme.accent() : done ? Theme.pos() : 0,
+                    open ? 0.35f : 0.26f, hover);
+            if (done && !glass) Draw.roundedOutline(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
                     Theme.pos(), Draw.alpha(Theme.pos(), open ? 0.35f : 0.12f));
             ItemStack icon = ICONS.get(r.name());
             if (icon != null) g.fakeItem(icon, ix + 2, iy + 2);
@@ -1037,11 +1101,22 @@ public final class Recipes {
         }
     }
 
+    /** How many recent rows fit and exist. */
+    private static int recentCount(Frame f) {
+        return Math.min(recentRows().size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+    }
+
+    /** The recent list's pane: its label, its rows, or "none". */
+    private static int recentPaneH(Frame f) {
+        int n = recentCount(f);
+        return 16 + (n == 0 ? 14 : n * RECENT_ROW) + 2;
+    }
+
     private static void drawRecent(GuiGraphicsExtractor g, Font font, Frame f, Map<String, Integer> have, int mx, int my) {
         int x = f.recentX(), y = f.gridY();
         Draw.text(g, font, "Recent", x + 2, y - 13, Theme.muted());
         List<String> list = recentRows();
-        int max = Math.min(list.size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+        int max = recentCount(f);
         if (max == 0) {
             Draw.text(g, font, "none", x + 2, y + 5, Theme.dim());
             return;
@@ -1054,16 +1129,37 @@ public final class Recipes {
             boolean hover = mx >= x && mx < x + f.recentW() && my >= ry && my < ry + RECENT_ROW;
             int[] rd = ready(r, have);
             boolean done = complete(rd);
-            int fill = name.equals(openRecipe) ? Draw.alpha(Theme.accent(), 0.32f)
-                    : hover ? Theme.hover()
-                    : done ? Draw.alpha(Theme.pos(), 0.18f) : Theme.raised();
-            Draw.roundedRect(g, x, ry, f.recentW(), RECENT_ROW - 1, 3, fill);
+            boolean isOpen = name.equals(openRecipe);
+            slab(g, x, ry, f.recentW(), RECENT_ROW - 1, isOpen ? Theme.accent() : done ? Theme.pos() : 0,
+                    isOpen ? 0.32f : 0.18f, hover);
             ItemStack icon = ICONS.get(name);
             if (icon != null) g.fakeItem(icon, x + 1, ry + 1);
             Draw.text(g, font, fit(font, name, f.recentW() - 22), x + 20, ry + 5,
                     done ? Theme.pos() : Theme.text());
             if (hover) tooltip(g, font, r, have, mx, my);
         }
+    }
+
+    /**
+     * The slab an item sits on. Solid: a raised block, tinted when it has something to
+     * say. Glass: just a rim round the item, so what shows through is the world, not a
+     * block of colour - a tint goes on the rim and, faintly, inside it.
+     */
+    private static void slab(GuiGraphicsExtractor g, int x, int y, int w, int h, int tint, float tintAlpha, boolean hover) {
+        if (!glass) {
+            Draw.roundedRect(g, x, y, w, h, 3, tint != 0 ? Draw.alpha(tint, hover ? tintAlpha + 0.15f : tintAlpha)
+                    : hover ? Theme.hover() : Theme.raised());
+            return;
+        }
+        int rim = tint != 0 ? Draw.alpha(tint, hover ? 1f : 0.85f) : Draw.alpha(Theme.text(), hover ? 0.45f : 0.16f);
+        // Four strips with the corner pixels left off, not two rounded shapes: a rounded
+        // outline is fourteen fills and there are a hundred-odd cells a frame.
+        Draw.rect(g, x + 1, y, w - 2, 1, rim);
+        Draw.rect(g, x + 1, y + h - 1, w - 2, 1, rim);
+        Draw.rect(g, x, y + 1, 1, h - 2, rim);
+        Draw.rect(g, x + w - 1, y + 1, 1, h - 2, rim);
+        if (tint != 0 || hover) Draw.rect(g, x + 1, y + 1, w - 2, h - 2,
+                tint != 0 ? Draw.alpha(tint, hover ? 0.3f : 0.16f) : Draw.alpha(Theme.text(), 0.1f));
     }
 
     private static int chip(GuiGraphicsExtractor g, Font font, String text, int x, int y, int w, int mx, int my) {
@@ -1074,7 +1170,24 @@ public final class Recipes {
         return cw;
     }
 
+    private static String tipFor;
+    private static Map<String, Integer> tipHave;
+    private static List<String> tipLines;
+
+    /**
+     * Kept while the mouse stays on the same cell and the holdings are the same count:
+     * building it means the game's own tooltip plus the whole build tree, which is a
+     * lot to do four hundred times a second for a box that does not change.
+     */
     private static void tooltip(GuiGraphicsExtractor g, Font font, Recipe r, Map<String, Integer> have, int mx, int my) {
+        if (r.name().equals(tipFor) && have == tipHave) {
+            pendingTip = tipLines;
+            tipX = mx;
+            tipY = my;
+            return;
+        }
+        tipFor = r.name();
+        tipHave = have;
         List<String> lines = new ArrayList<>();
         // The item as the game would show it - its stats and what it does - because
         // "what does this even give" is the question a grid of icons raises first.
@@ -1108,6 +1221,7 @@ public final class Recipes {
                     + ingredientCount(i.name(), got, i.count()) + " §7" + i.name());
         }
         lines.add("§8R / click: recipe   U / right-click: uses");
+        tipLines = lines;
         pendingTip = lines;
         tipX = mx;
         tipY = my;
@@ -1124,6 +1238,7 @@ public final class Recipes {
      * already refined.
      */
     public static List<String> forgeBreakdown(String item, int maxRows) {
+        if (item.isBlank()) return List.of();
         Recipe r = RECIPES.get(item);
         if (r == null) return List.of();
         Map<String, Integer> have = holdings();
@@ -1246,7 +1361,8 @@ public final class Recipes {
      */
     private static void drawViewer(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Viewer v = viewer(s);
-        Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, glass ? Draw.alpha(Theme.surface(), 0.45f) : Theme.surface());
+        if (glass) Draw.glass(g, v.x, v.y, v.w, v.h, Theme.RADIUS);
+        else Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, Theme.surface());
         int x = v.x + PAD, y = v.y + 5;
         if (!trail.isEmpty()) chip(g, font, "◀ back", x, y, 0, mx, my);
         chip(g, font, "✕", v.x + v.w - PAD - 14, y, 14, mx, my);
@@ -1277,11 +1393,24 @@ public final class Recipes {
             chip(g, font, fullCost ? "Cost: full" : "Cost: recipe", x, ny + 12 + forgeLine + SCOPE_H, 0, mx, my);
 
             int gx = x, gy = ny + 14 + forgeLine + 2 * SCOPE_H;
+            int lx = gx + 3 * CELL + 6, ly = gy + 2;
+            List<Ingredient> list = fullCost ? fullCost(r, have) : r.needs();
+            // The list's height is needed before it is drawn, for the pane under it.
+            int listH = 0;
+            for (Ingredient in : list) {
+                listH += ingredientRowH(font, v, lx,
+                        ingredientCount(in.name(), have.getOrDefault(in.name(), 0), in.count()), ingredientName(in.name()));
+            }
+            int uy = Math.max(ly + listH, gy + 3 * CELL) + 6;
+            if (glass) {
+                Draw.glassInner(g, gx - 3, gy - 3, v.w - PAD * 2 + 6, uy - gy, 5);
+                Draw.glassInner(g, x - 3, uy - 3, v.w - PAD * 2 + 6, v.y + v.h - 1 - uy, 5);
+            }
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
                 boolean hover = in != null && mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL;
-                Draw.roundedRect(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 3, hover ? Theme.hover() : Theme.raised());
+                slab(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 0, 0, hover);
                 if (in == null) continue;
                 ItemStack st = ICONS.get(in.name());
                 if (st != null) {
@@ -1293,8 +1422,6 @@ public final class Recipes {
                 if (RECIPES.containsKey(in.name())) Draw.rect(g, cx + 2, cy + CELL - 3, CELL - 4, 1, Theme.accent());
                 if (hover && st != null) itemTip(st, mx, my);
             }
-            int lx = gx + 3 * CELL + 6, ly = gy + 2;
-            List<Ingredient> list = fullCost ? fullCost(r, have) : r.needs();
             if (list.isEmpty()) Draw.text(g, font, "nothing needed", lx, ly, Theme.pos());
             for (Ingredient in : list) {
                 int got = have.getOrDefault(in.name(), 0);
@@ -1318,9 +1445,9 @@ public final class Recipes {
                 }
                 ly += rowH;
             }
-            int uy = Math.max(ly, gy + 3 * CELL) + 6;
             usesGrid(g, font, v, r.name(), have, x, uy, mx, my, "Used in");
         } else {
+            if (glass) Draw.glassInner(g, x - 3, y + 31, v.w - PAD * 2 + 6, v.y + v.h - 5 - (y + 31), 5);
             ItemStack icon = ICONS.get(openUses);
             if (icon != null) g.fakeItem(icon, x, y + 16);
             Draw.text(g, font, fit(font, openUses, v.w - PAD * 2 - 22), x + 20, y + 20, Theme.text());
@@ -1407,7 +1534,7 @@ public final class Recipes {
             int cx = x + (i % cols) * CELL, cy = gy + (i / cols) * CELL;
             if (cy + CELL > v.y + v.h) break;
             boolean hover = mx >= cx && mx < cx + CELL && my >= cy && my < cy + CELL;
-            Draw.roundedRect(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 3, hover ? Theme.hover() : Theme.raised());
+            slab(g, cx + 1, cy + 1, CELL - 2, CELL - 2, 0, 0, hover);
             ItemStack st = ICONS.get(r.name());
             if (st != null) g.fakeItem(st, cx + 2, cy + 2);
             if (hover) tooltip(g, font, r, have, mx, my);
@@ -1538,7 +1665,7 @@ public final class Recipes {
     private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
         if (!enabled || !panel || RECIPES.isEmpty()) return false;
         int[] tb = tab(s);
-        if (mx >= tb[0] && mx < tb[0] + TAB_W && my >= tb[1] && my < tb[1] + TAB_H) {
+        if (mx >= tb[0] && mx < tb[0] + tb[2] && my >= tb[1] && my < tb[1] + tb[3]) {
             shown = !shown;
             if (box != null) box.setFocused(false);
             return true;

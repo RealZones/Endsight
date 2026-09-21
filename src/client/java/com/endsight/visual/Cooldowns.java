@@ -64,7 +64,11 @@ public final class Cooldowns {
         }
 
         boolean is(ItemStack s) {
-            return !s.isEmpty() && s.getHoverName().getString().toLowerCase(Locale.ROOT).contains(item);
+            if (s.isEmpty()) return false;
+            String n = s.getHoverName().getString().toLowerCase(Locale.ROOT);
+            // A Drill Motor is a drill's part, not a drill; it has no fuel and no cooldown,
+            // and a stack of them in the bag kept the drill line up with no drill about.
+            return n.contains(item) && !n.contains("drill motor");
         }
     }
 
@@ -191,9 +195,29 @@ public final class Cooldowns {
         if (!enabled || mc.player == null || mc.options.hideGui) return;
         long now = System.currentTimeMillis();
         for (Timer t : TIMERS) {
-            boolean show = now < t.until || t == DRILL;   // the drill line is permanent, like Skytils' pickaxe CD
+            // The drill line is permanent, like Skytils' pickaxe CD - but only while
+            // there is a drill on you to have a cooldown.
+            boolean show = now < t.until || (t == DRILL && carrying(mc, DRILL));
             if (t.on && show) HudLayout.draw(t.id, g, mc.font, false);
         }
+    }
+
+    private static boolean carryingDrill;
+    private static long carryingAt;
+
+    /** Looked up four times a second, not per frame: it is thirty-six names read for one line. */
+    private static boolean carrying(Minecraft mc, Timer t) {
+        long now = System.currentTimeMillis();
+        if (now - carryingAt < 250) return carryingDrill;
+        carryingAt = now;
+        carryingDrill = false;
+        for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) {
+            if (t.is(s)) {
+                carryingDrill = true;
+                break;
+            }
+        }
+        return carryingDrill;
     }
 
     private static int[] drawOne(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample, Timer t) {

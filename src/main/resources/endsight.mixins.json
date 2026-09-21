@@ -5,7 +5,8 @@
 	"client": [
 		"ContainerSlotMixin",
 		"HotbarSlotMixin",
-		"OverlayMessageMixin"
+		"OverlayMessageMixin",
+		"LightmapMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

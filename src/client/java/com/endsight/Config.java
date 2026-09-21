@@ -113,6 +113,9 @@ public final class Config {
                 // Only accept an option that still exists - a renamed or removed choice
                 // would otherwise leave the setting holding a value nothing matches.
                 if (c.options().contains(raw)) c.set().accept(raw);
+            } else if (s instanceof Setting.Color c) {
+                int v = Setting.Color.parse(raw);
+                if (v != -1) c.set().accept(v);
             }
             // Section and Action hold nothing, so there is nothing to restore.
         } catch (RuntimeException e) {
@@ -149,6 +152,8 @@ public final class Config {
                     p.setProperty(key, String.valueOf(sl.get().getAsDouble()));
                 } else if (s instanceof Setting.Choice c) {
                     p.setProperty(key, c.get().get());
+                } else if (s instanceof Setting.Color c) {
+                    p.setProperty(key, Setting.Color.hex(c.get().getAsInt()));
                 }
             }
         }

@@ -34,6 +34,8 @@ public class SettingsScreen extends Screen {
     private String binding;
     /** The command row being typed into, or null. */
     private Setting.Command editing;
+    /** The colour picker; open when a Color row's swatch was clicked. */
+    private final ColorPicker picker = new ColorPicker();
 
     private final Map<String, Anim> anims = new HashMap<>();
     private final List<Row> rows = new ArrayList<>();
@@ -169,6 +171,39 @@ public class SettingsScreen extends Screen {
         Draw.text(g, font, module.title(), contentX() + Theme.PAD, py + 20, Theme.text());
         int titleW = font.width(module.title());
         Draw.text(g, font, module.category(), contentX() + Theme.PAD + titleW + 10, py + 20, Theme.dim());
+
+        if (picker.open() && placePicker()) picker.draw(g, font, mouseX, mouseY);
+    }
+
+    /**
+     * Puts the picker under its row, or closes it if the row has scrolled away - a
+     * picker floating over the header with nothing to belong to is worse than none.
+     */
+    private boolean placePicker() {
+        for (Row r : rows) {
+            if (r.setting != picker.setting()) continue;
+            if (r.y + r.h < contentTop() || r.y > contentBottom()) break;
+            picker.layout(r.x, r.y, r.w, r.h, contentX() + 4, contentX() + contentW() - 4, contentBottom());
+            return true;
+        }
+        picker.close();
+        return false;
+    }
+
+    /**
+     * A Choice-shaped chip with the colour itself in it and its hex beside, so the
+     * value can be read without opening anything. Chroma shows as the moving colour.
+     */
+    private void drawSwatch(GuiGraphicsExtractor g, Font font, Row r, Setting.Color c, int mouseX, int mouseY) {
+        int v = c.get().getAsInt();
+        String text = v == Setting.Color.CHROMA ? "Chroma" : Setting.Color.hex(v);
+        int w = font.width(text) + 34;
+        int cx = r.x + r.w - w, cy = r.y + r.h / 2 - 10;
+        boolean open = picker.setting() == c;
+        float a = anim("val:" + c.label()).to(open || contains(cx, cy, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
+        Draw.roundedRect(g, cx, cy, w, 20, Theme.RADIUS - 2, Draw.lerp(Theme.raised(), Theme.hover(), a));
+        Draw.roundedRect(g, cx + 7, cy + 5, 10, 10, 3, Setting.Color.live(v));
+        Draw.text(g, font, text, cx + 23, cy + 6, Draw.lerp(Theme.muted(), Theme.text(), a));
     }
 
     private void drawBack(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
@@ -243,6 +278,8 @@ public class SettingsScreen extends Screen {
                         Draw.lerp(Theme.raised(), Theme.hover(), a));
                 Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
                         Draw.lerp(Theme.muted(), Theme.text(), a));
+            } else if (r.setting instanceof Setting.Color c) {
+                drawSwatch(g, font, r, c, mouseX, mouseY);
             } else if (r.setting instanceof Setting.Action act) {
                 // Same shape as a Choice so the right-hand column stays one column, but
                 // accent-lettered at rest: a Choice shows a value you can change, this
@@ -411,6 +448,12 @@ public class SettingsScreen extends Screen {
         layout();
         editing = null;                           // a click anywhere ends typing; the row re-focuses itself if hit
 
+        // The picker is on top, so it sees the click first; one outside it closes it,
+        // and the swatch that opened it is remembered so the same click does not reopen.
+        Setting.Color wasPicking = picker.setting();
+        if (picker.open() && placePicker() && picker.click(mx, my)) return true;
+        picker.close();
+
         if (themeRow.click(mx, my)) return true;
 
         int bx = panelX() + 10, by = panelY() + Theme.HEADER_H + 22;
@@ -463,6 +506,10 @@ public class SettingsScreen extends Screen {
                 c.next(event.button() == 1 ? -1 : 1);
                 return true;
             }
+            if (r.setting instanceof Setting.Color c) {
+                if (wasPicking != c) picker.open(c);
+                return true;
+            }
             if (r.setting instanceof Setting.KeyAction a) {
                 int bw = font.width(a.button()) + 20;
                 int by2 = r.y + r.h / 2 - 10;
@@ -483,6 +530,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (picker.drag((int) event.x(), (int) event.y())) return true;
         if (dragging != null) {
             layout();
             for (Row r : rows) {
@@ -498,6 +546,7 @@ public class SettingsScreen extends Screen {
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         dragging = null;
+        picker.release();
         return super.mouseReleased(event);
     }
 
@@ -534,6 +583,10 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        if (picker.typing()) {
+            for (char ch : event.codepointAsString().toCharArray()) picker.charTyped(ch);
+            return true;
+        }
         if (editing != null) {
             if (event.isAllowedChatCharacter()) editing.command(editing.command() + event.codepointAsString());
             return true;
@@ -543,6 +596,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (picker.keyPressed(event.key())) return true;
         if (editing != null) {
             if (event.key() == 259 && !editing.command().isEmpty()) {          // backspace
                 editing.command(editing.command().substring(0, editing.command().length() - 1));

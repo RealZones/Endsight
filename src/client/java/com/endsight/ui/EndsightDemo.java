@@ -72,12 +72,16 @@ public final class EndsightDemo {
                 "Shield hits and boss health on screen, boss and glyph highlights.", "Visual"));
         r.add(Module.placeholder("visual.beacon", "Boss Beacon",
                 "A beam over the Endstone Protector and the Warden.", "Visual"));
+        r.add(Module.placeholder("visual.etherwarp", "Etherwarp Outline",
+                "Boxes the block Etherwarp will take you to.", "Visual"));
         r.add(Module.placeholder("qol.damage", "Damage Numbers",
                 "Shortens the damage popups, or takes them away.", "Visual"));
         r.add(Module.placeholder("visual.cooldowns", "Ability Cooldowns",
                 "Each ability you use as a ring that fills while it cools down.", "Visual"));
         r.add(Module.placeholder("visual.rarity", "Rarity Outlines",
                 "A colour round each item, by its rarity, in any window and on the hotbar.", "Visual"));
+        r.add(Module.placeholder("visual.fullbright", "Fullbright",
+                "Lights the whole world.", "Visual"));
         r.add(Module.placeholder("hud.stats", "Ping / TPS",
                 "FPS, your ping and the server's tick rate, in a pill.", "Visual"));
 

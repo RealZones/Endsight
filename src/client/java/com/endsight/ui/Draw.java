@@ -130,6 +130,24 @@ public final class Draw {
         );
     }
 
+    /**
+     * A pane of glass: a see-through fill with a faint rim and a lighter line along the
+     * top. The rim is what makes a translucent box read as glass rather than as a box
+     * nobody filled in; the top line is the light catching its edge. Both are the text
+     * colour at low alpha, so they follow the palette - pale on dark, dark on pale.
+     */
+    public static void glass(GuiGraphicsExtractor g, int x, int y, int w, int h, int radius) {
+        if (w <= 2 || h <= 2) return;
+        roundedOutline(g, x, y, w, h, radius, alpha(Theme.text(), 0.14f), alpha(Theme.bg(), 0.5f));
+        rect(g, x + radius, y + 1, w - radius * 2, 1, alpha(Theme.text(), 0.10f));
+    }
+
+    /** A pane inside a pane: no darker, just a rim and a breath of light. */
+    public static void glassInner(GuiGraphicsExtractor g, int x, int y, int w, int h, int radius) {
+        if (w <= 2 || h <= 2) return;
+        roundedOutline(g, x, y, w, h, radius, alpha(Theme.text(), 0.10f), alpha(Theme.text(), 0.04f));
+    }
+
     /** Blend two ARGB colours. t=0 gives a, t=1 gives b. */
     public static int lerp(int a, int b, float t) {
         t = Math.max(0f, Math.min(1f, t));

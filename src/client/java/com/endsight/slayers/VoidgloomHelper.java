@@ -1,11 +1,14 @@
 package com.endsight.slayers;
 
+import com.endsight.hud.Alert;
+import com.endsight.hud.Alerts;
 import com.endsight.hud.HudLayout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.gizmos.GizmoStyle;
@@ -59,6 +62,13 @@ public final class VoidgloomHelper {
     private static boolean onScreen = true;
     private static boolean highlight = true;
     private static boolean heads = true;
+    private static boolean beams = true;
+    /**
+     * The beam phase opens with "BROKEN HEART RADIATION! Stay within 15 blocks and dodge
+     * the beams!", once per phase. Not anchored: the line arrives behind a skull icon and
+     * two spaces, which stripping the colour codes leaves in place.
+     */
+    private static final Pattern BEAMS = Pattern.compile("BROKEN HEART RADIATION");
     private static final double HEAD_RANGE = 40;
 
     /** Yang Glyph: the beacon the boss drops at your feet from tier 2, with five seconds to reach it. */
@@ -96,7 +106,10 @@ public final class VoidgloomHelper {
                                 () -> glyph, v -> glyph = v),
                         new Setting.Toggle("Highlight Nukekubi",
                                 "Box and line to each Nukekubi head.",
-                                () -> heads, v -> heads = v)));
+                                () -> heads, v -> heads = v),
+                        new Setting.Toggle("Beams alert",
+                                "On-screen alert when the radiation beams start.",
+                                () -> beams, v -> beams = v)));
     }
 
     public static void init() {
@@ -106,6 +119,15 @@ public final class VoidgloomHelper {
         // before the game draws them.
         LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> gizmos());
         ClientTickEvents.END_CLIENT_TICK.register(VoidgloomHelper::tick);
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (overlay || !enabled || !beams) return;
+            if (!BEAMS.matcher(message.getString()).find()) return;
+            Alert.show("BEAMS", "stay within 15 blocks", 0xFFFF3B8A, 1.15f, Alerts.seconds());
+            Minecraft mc = Minecraft.getInstance();
+            if (Alerts.sound() && mc.player != null) {
+                mc.player.playSound(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 1.6f);
+            }
+        });
         HudLayout.register("slayer.voidgloom", "Voidgloom Boss", 0.5f, 0.2f,
                 (g, font, x, y, sample) -> drawBoss(g, font, x, y, sample));
     }

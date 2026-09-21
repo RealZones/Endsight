@@ -1,10 +1,14 @@
 package com.endsight.ui;
 
+import net.minecraft.util.Mth;
+
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
+import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -75,6 +79,40 @@ public sealed interface Setting {
             int i = options.indexOf(get.get());
             if (i < 0) i = 0;
             set.accept(options.get(Math.floorMod(i + direction, options.size())));
+        }
+    }
+
+    /**
+     * A colour, as 0xFFRRGGBB, or {@link #CHROMA} for one that runs through every hue.
+     * Drawn as a swatch with its hex; clicking it opens a picker under the row.
+     */
+    record Color(String label, String description, IntSupplier get, IntConsumer set) implements Setting {
+
+        /** No real colour is transparent black, so it is free to mean "all of them". */
+        public static final int CHROMA = 0;
+
+        /** The colour to draw with this frame: the value, or this moment's hue for chroma. */
+        public static int live(int value) {
+            if (value != CHROMA) return value;
+            return 0xFF000000 | (Mth.hsvToRgb((System.currentTimeMillis() % 4000) / 4000f, 0.8f, 1f) & 0xFFFFFF);
+        }
+
+        public static String hex(int value) {
+            return value == CHROMA ? "chroma" : String.format("#%06X", value & 0xFFFFFF);
+        }
+
+        /** "#RRGGBB" or "chroma" back to a value, or -1 for anything else. */
+        public static int parse(String s) {
+            if (s == null) return -1;
+            s = s.trim();
+            if (s.equalsIgnoreCase("chroma")) return CHROMA;
+            if (s.startsWith("#")) s = s.substring(1);
+            if (s.length() != 6) return -1;
+            try {
+                return 0xFF000000 | Integer.parseInt(s, 16);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
         }
     }
 

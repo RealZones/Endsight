@@ -131,11 +131,20 @@ public final class ForgeRecipes {
         return info(item) != null;
     }
 
+    /** Name to info, rebuilt when a recipe is learned; asked for every grid cell every frame. */
+    private static Map<String, Info> INFO = Map.of();
+    private static int infoSize = -1;
+
     public static Info info(String item) {
-        for (ForgeRecipe r : RECIPES.values()) {
-            if (r.name().equals(item)) return new Info(r.process(), r.duration(), millis(r.duration()), r.requirement());
+        if (infoSize != RECIPES.size()) {
+            Map<String, Info> m = new HashMap<>();
+            for (ForgeRecipe r : RECIPES.values()) {
+                m.putIfAbsent(r.name(), new Info(r.process(), r.duration(), millis(r.duration()), r.requirement()));
+            }
+            INFO = m;
+            infoSize = RECIPES.size();
         }
-        return null;
+        return INFO.get(item);
     }
 
     public static void init() {
@@ -171,9 +180,21 @@ public final class ForgeRecipes {
                 (g, font, x, y, sample) -> drawTimer(g, font, x, y, sample));
     }
 
+    /** The title before this one, so a process page can be told by where it was opened from. */
+    private static String curTitle = "", prevTitle = "";
+
     private static void tick(AbstractContainerScreen<?> screen) {
         if (!enabled) return;
         String title = Zealots.strip(screen.getTitle().getString()).trim();
+        if (!title.equals(curTitle)) {
+            prevTitle = curTitle;
+            curTitle = title;
+        }
+        // Forge windows only. This ran in every window there is, and reading a slot
+        // means building its tooltip - fifty-four of them, twenty times a second, in
+        // every chest and storage page, for recipes that were never going to be there.
+        // A process page not yet known is still read, by having come from Select Process.
+        if (!forgeScreen(screen) && !prevTitle.equals("Select Process")) return;
         List<Slot> slots = containerSlots(screen);
         followRecentShortcut(screen, title, slots);
         boolean changed = false;
@@ -442,6 +463,10 @@ public final class ForgeRecipes {
 
     private static RecentBox recentBox(AbstractContainerScreen<?> screen) {
         if (!enabled || !recentPanel || !forgeScreen(screen)) return null;
+        // Not on the forge's front page: a recent opens its process by clicking the
+        // process's own item, and the front page has none - the list sat there doing
+        // nothing. From Select Process on, every row leads somewhere.
+        if (Zealots.strip(screen.getTitle().getString()).trim().equals(FORGE)) return null;
         Minecraft mc = Minecraft.getInstance();
         int sw = mc.getWindow().getGuiScaledWidth();
         int h = 18 + Math.max(1, recentRows().size()) * RECENT_ROW;

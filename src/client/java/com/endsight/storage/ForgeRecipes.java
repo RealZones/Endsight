@@ -667,8 +667,8 @@ public final class ForgeRecipes {
     }
 
     private static int[] drawTimer(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        List<Row> rows = sample ? sampleRows() : rows(true);
-        List<Row> status = sample ? List.of(new Row(-1, "Active", "2/3", false)) : statusRows();
+        List<Row> rows = group(sample ? sampleRows() : rows(true));
+        List<Row> status = new ArrayList<>(sample ? List.of(new Row(-1, "Active", "2/3", false)) : statusRows());
         String count = slotCount(sample, rows);
         int w = Readout.width(font, "FORGE", count);
         for (Row row : status) w = Math.max(w, Readout.width(font, row.name(), row.value()));
@@ -698,6 +698,20 @@ public final class ForgeRecipes {
             }
         }
         return new int[]{w, h};
+    }
+
+    /** Crafts finishing at the same time share a row: "Ref. Obsidian, Ref. Crying   27m". */
+    private static List<Row> group(List<Row> rows) {
+        List<Row> out = new ArrayList<>();
+        for (Row r : rows) {
+            Row last = out.isEmpty() ? null : out.get(out.size() - 1);
+            if (last != null && last.value().equals(r.value())) {
+                out.set(out.size() - 1, new Row(last.slot(), last.name() + ", " + shortName(r.name()), r.value(), last.hot() || r.hot()));
+            } else {
+                out.add(new Row(r.slot(), shortName(r.name()), r.value(), r.hot()));
+            }
+        }
+        return out;
     }
 
     private static String slotCount(boolean sample, List<Row> rows) {

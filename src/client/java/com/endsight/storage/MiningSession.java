@@ -78,6 +78,10 @@ public final class MiningSession {
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
                                 List.of(RAW, ENCH, REF), () -> materialUnits, v -> materialUnits = v),
+                        new Setting.Toggle("Drill CD", "Drill CD line: Ready, or the countdown.",
+                                com.endsight.visual.Cooldowns::drillOn, com.endsight.visual.Cooldowns::setDrillOn),
+                        new Setting.Toggle("Fuel", "Fuel line read off the drill in your hand.",
+                                () -> PowderTracker.showFuel, v -> PowderTracker.showFuel = v),
                         new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
                                 () -> profitEstimate, v -> profitEstimate = v),
                         new Setting.Action("Session", "Start the mining readout over.", "Reset", MiningSession::reset),
@@ -92,7 +96,7 @@ public final class MiningSession {
             if (!overlay && enabled) onLine(message);
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "mining_session"), (g, delta) -> draw(g));
-        HudLayout.register(ID, "Mining Session", 0.006f, 0.63f,
+        HudLayout.register(ID, "Mining Session", 0.006f, 0.56f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
@@ -224,13 +228,17 @@ public final class MiningSession {
         return 1L;
     }
 
+    /** The material itself or its Enchanted/Refined/gem-tier forms; a drill with "obsidian" in its name is not obsidian. */
     private static String materialName(String name) {
-        String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.contains("crying obsidian")) return "Crying Obsidian";
-        if (lower.contains("obsidian")) return "Obsidian";
-        if (lower.contains("end stone")) return "End Stone";
-        if (lower.contains("amethyst")) return "Amethyst";
-        return null;
+        String lower = name.toLowerCase(Locale.ROOT).replace("enchanted ", "").replace("refined ", "")
+                .replace("rough ", "").replace("flawed ", "").replace("fine ", "").replace("flawless ", "").replace("perfect ", "").trim();
+        return switch (lower) {
+            case "crying obsidian" -> "Crying Obsidian";
+            case "obsidian" -> "Obsidian";
+            case "end stone" -> "End Stone";
+            case "amethyst" -> "Amethyst";
+            default -> null;
+        };
     }
 
     public static String formatItemCount(String item, long count) {
@@ -278,19 +286,20 @@ public final class MiningSession {
         long totalEst = sample ? 2_420_000L : totalValue();
         String title = hot ? "Active" : "Paused";
         String rate = materialRate(material, materialAmount, materialMs);
+        // The material is the hero; the one sentence this answers is "what am I farming
+        // and how much money". Unsold value is not coins, so it is not a row.
+        String amount = formatMaterialCount(material, materialAmount);
+        // Profit is for the block you are on: its value over the time spent on it, not the
+        // whole session blended - ten minutes of end stone was dragging the obsidian rate
+        // down for an hour after switching. Sold coins stay session-wide; they are real.
+        long materialValue = sample ? 2_420_000L : value(material, materialAmount);
+        String profit = profitEstimate && (sample || materialValue > 0) ? rate(materialValue, materialMs)
+                : coins > 0 || sample ? rate(coins, shownMs) : "";
         List<String[]> rows = new ArrayList<>();
-        rows.add(new String[]{"Session", time(shownMs)});
-        rows.add(new String[]{shortMaterial(material), formatMaterialCount(material, materialAmount)});
+        rows.add(new String[]{shortMaterial(material), amount});
         rows.add(new String[]{"Rate", rate});
-        if (profitEstimate && (sample || totalEst > 0)) {
-            rows.add(new String[]{"Total", compact(totalEst)});
-            rows.add(new String[]{"Coin/h", rate(totalEst, shownMs)});
-        } else if (sample || coins > 0) {
-            rows.add(new String[]{"Coins", compact(coins)});
-            rows.add(new String[]{"Coin/h", rate(coins, shownMs)});
-        } else {
-            rows.add(new String[]{"Time", time(materialMs)});
-        }
+        if (!profit.isEmpty()) rows.add(new String[]{"Profit", profit});
+        rows.add(new String[]{"Time", time(shownMs)});
         int w = Readout.width(font, "MINING", title);
         for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
         int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);
@@ -352,17 +361,20 @@ public final class MiningSession {
         return String.valueOf(n);
     }
 
+    /**
+     * Whole units only. Less than one is said in the unit below - "8 Ench" rather than
+     * "0.5 Ref", a raw count rather than "0.01 Ench" - because a fraction of a refine is
+     * not a thing anyone holds.
+     */
     private static String tier(long n, long unit, String suffix) {
         if (n <= 0) return "0 " + suffix;
-        double v = n / (double) unit;
-        String s;
-        if (v >= 1_000) s = String.format("%.1fk", v / 1_000.0);
-        else if (v >= 100) s = String.valueOf(Math.round(v));
-        else if (v >= 10) s = String.format("%.1f", v);
-        else s = String.format("%.2f", v);
-        while (s.contains(".") && s.endsWith("0")) s = s.substring(0, s.length() - 1);
-        if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
-        return s + " " + suffix;
+        if (n < unit) {
+            if (REF.equals(suffix)) return tier(n, 160L, ENCH);
+            if ("Fine".equals(suffix)) return tier(n, AMETHYST_FLAWED, "Flawed");
+            return compact(n);
+        }
+        long v = n / unit;
+        return (v >= 1_000 ? String.format("%.1fk", v / 1_000.0) : String.valueOf(v)) + " " + suffix;
     }
 
     private static String time(long ms) {

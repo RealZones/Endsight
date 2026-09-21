@@ -70,14 +70,25 @@ public final class Cooldowns {
 
     private static final Timer SWORD = new Timer("cooldown.sword", "Giant's Sword", "giant's sword", "slam", 5);
     private static final Timer TUBA = new Timer("cooldown.tuba", "Tuba", "tuba", "howl", 20);
-    private static final List<Timer> TIMERS = List.of(SWORD, TUBA);
+    /** The drill's Void Infusion: "You used Void Infusion!" starts it, the lore says 108s. */
+    private static final Timer DRILL = new Timer("cooldown.drill", "Drill", "drill", "void infusion", 108);
+    private static final List<Timer> TIMERS = List.of(SWORD, TUBA, DRILL);
+
+    /** The Drill CD line's switch is on the Mining Session page with the fuel line's. */
+    public static boolean drillOn() {
+        return DRILL.on;
+    }
+
+    public static void setDrillOn(boolean on) {
+        DRILL.on = on;
+    }
 
     private static String lastBar = "";
     private static int lastBarTime;
 
     public static Module module() {
         return new Module("visual.cooldowns", "Ability Cooldowns",
-                "Fading cooldown icons for the Giant's Sword and the tuba.", "Visual",
+                "Fading cooldown icons for the Giant's Sword, the tuba and the drill.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Giant's Sword", "A cooldown icon for Giant's Slam.", () -> SWORD.on, v -> SWORD.on = v),
@@ -104,7 +115,10 @@ public final class Cooldowns {
             if (!enabled || overlay) return;
             String line = Zealots.strip(message.getString()).trim();
             if (line.startsWith("HOWL!")) start(TUBA);
-            else sync(line);
+            else if (line.startsWith("You used ")) {
+                String used = line.toLowerCase(Locale.ROOT);
+                for (Timer t : TIMERS) if (used.contains(t.ability)) start(t);
+            } else sync(line);
         });
         // The early-press line is one Ability Spam hides, so it arrives cancelled.
         ClientReceiveMessageEvents.GAME_CANCELED.register((message, overlay) -> {
@@ -113,6 +127,7 @@ public final class Cooldowns {
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "cooldowns"), (g, delta) -> draw(g));
         HudLayout.register(SWORD.id, "Cooldown: Giant's Sword", 0.44f, 0.72f, (g, font, x, y, sample) -> drawOne(g, font, x, y, sample, SWORD));
         HudLayout.register(TUBA.id, "Cooldown: Tuba", 0.52f, 0.72f, (g, font, x, y, sample) -> drawOne(g, font, x, y, sample, TUBA));
+        HudLayout.register(DRILL.id, "Cooldown: Drill", 0.60f, 0.72f, (g, font, x, y, sample) -> drawOne(g, font, x, y, sample, DRILL));
     }
 
     // ── reading ───────────────────────────────────────────────────────────────
@@ -170,7 +185,10 @@ public final class Cooldowns {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.options.hideGui) return;
         long now = System.currentTimeMillis();
-        for (Timer t : TIMERS) if (t.on && now < t.until) HudLayout.draw(t.id, g, mc.font, false);
+        for (Timer t : TIMERS) {
+            boolean show = now < t.until || t == DRILL;   // the drill line is permanent, like Skytils' pickaxe CD
+            if (t.on && show) HudLayout.draw(t.id, g, mc.font, false);
+        }
     }
 
     private static int[] drawOne(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample, Timer t) {
@@ -181,6 +199,19 @@ public final class Cooldowns {
         if (icon == null) icon = new ItemStack(t == TUBA ? Items.GOAT_HORN : Items.DIAMOND_SWORD);
 
         float left = sample ? 0.55f : remaining(t, now);
+        if (t == DRILL) {
+            // Skytils' "Pickaxe CD: Ready", for the drill: always on screen, icon, aqua label,
+            // green when ready, yellow countdown. Read at a glance mid-swing.
+            double seconds = sample ? 0 : Math.max(0, t.until - now) / 1000.0;
+            String value = seconds <= 0 ? "Ready" : seconds >= 60 ? (int) (seconds / 60) + "m " + (int) (seconds % 60) + "s" : Math.round(seconds) + "s";
+            String label = "Drill CD: ";
+            int tw = 18 + font.width(label) + font.width(value), th = 16;
+            if (g == null) return new int[]{tw, th};
+            if (icon != null) g.fakeItem(icon, x, y);
+            Draw.text(g, font, label, x + 18, y + 4, 0xFF55FFFF);
+            Draw.text(g, font, value, x + 18 + font.width(label), y + 4, seconds <= 0 ? 0xFF55FF55 : 0xFFFFFF55);
+            return new int[]{tw, th};
+        }
         int w = 27, h = 38;
         if (g == null) return new int[]{w, h};
 

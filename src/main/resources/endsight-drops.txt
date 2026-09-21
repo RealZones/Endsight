@@ -66,7 +66,6 @@ rare	Hardened Scales
 rare	Hardened Scale
 rare	Null Ovoid
 rare	Endstone Rose Bush
-rare	Hot Potato Book
 rare	Dragon Chestplate
 rare	Dragon Leggings
 rare	Dragon Helmet
@@ -80,7 +79,6 @@ common	Sharpened Claws
 common	Necromancer's Brooch
 common	Crystal Fragment
 common	Dragon Fragment
-common	Travel Scroll
 common	Summoning Eye
 
 # ── slayers: what the Revenant and Voidgloom RNG meters list, tiered by their odds ─

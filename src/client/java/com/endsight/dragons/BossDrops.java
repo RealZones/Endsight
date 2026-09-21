@@ -118,7 +118,9 @@ public final class BossDrops {
     private static final Set<String> NEST = Set.of("summoning eye", "enderman", "null ovoid", "ender pearl",
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
     /** Fodder nobody wants a row for, at any setting. */
-    private static final Set<String> HIDDEN = Set.of("dragon scale", "pure seeds", "aspect of the dragons");
+    // Travel Scroll and Hot Potato Book are not dragon drops; they were golem loot landing
+    // in a dragon window.
+    private static final Set<String> HIDDEN = Set.of("dragon scale", "pure seeds", "aspect of the dragons", "travel scroll", "hot potato book");
 
     private static final String SESSION = "Session";
     private static final String TOTAL = "Total";
@@ -451,7 +453,7 @@ public final class BossDrops {
     /** Fodder and every dragon armour piece: no row, whatever the tier says. */
     private static boolean hidden(String item) {
         String s = item.toLowerCase(Locale.ROOT);
-        if (HIDDEN.contains(s)) return true;
+        for (String h : HIDDEN) if (s.contains(h)) return true;   // "Travel Scroll to Dragon Nest" too
         return s.contains("dragon")
                 && (s.contains("helmet") || s.contains("chestplate") || s.contains("leggings") || s.contains("boots"));
     }
@@ -487,7 +489,9 @@ public final class BossDrops {
      * Ghoul Talisman sat under a Zombie Talisman while drawn in epic purple.
      */
     private static int rankOf(String item) {
-        int r = Rarity.rank(item);
+        // The tier list is by rarity AND value and it wins when it names the item: the
+        // game's colour put a gold Tiger pet above a purple Dragon Horn.
+        int r = Drops.listed(item) ? -1 : Rarity.rank(item);
         if (r > 0) return r;
         return switch (tier(item)) {
             case 3 -> 5;

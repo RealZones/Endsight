@@ -201,7 +201,9 @@ public final class Beacon {
 
     private static boolean petName(String name) {
         String s = name.toLowerCase(java.util.Locale.ROOT);
-        return s.contains("[lvl") || s.contains("[lv") || s.contains(" pet")
+        // "[Lvl 1]" is a pet; "[Lv100] Endstone Protector" is the boss itself, which is what
+        // the earlier "[lv" check was throwing away - no beam for a whole session.
+        return s.contains("[lvl") || s.contains(" pet")
                 || s.contains("'s warden") || s.contains("'s endstone protector");
     }
 

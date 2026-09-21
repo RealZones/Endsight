@@ -18,6 +18,7 @@ import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
 import com.endsight.qol.MenuButton;
+import com.endsight.qol.PristineAlert;
 import com.endsight.qol.LootRoll;
 import com.endsight.qol.MathSolver;
 import com.endsight.qol.Updates;
@@ -113,6 +114,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             registry.replace(MenuButton.module());
+            // registry.replace(PristineAlert.module());   // Gem Alert held back until it has been tested
             extra("register", registry);
             Config.load(registry);
         }
@@ -144,6 +146,7 @@ public class EndsightClient implements ClientModInitializer {
         VoidgloomHelper.init();
         DragonTimer.init();
         MenuButton.init();
+        // PristineAlert.init();
         Protector.init();
         BossDrops.init();
         EyeGuard.init();

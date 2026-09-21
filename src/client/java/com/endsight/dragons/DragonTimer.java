@@ -295,7 +295,8 @@ public final class DragonTimer {
             value = eyes + "/" + eyesNeeded;
             hot = eyes >= eyesNeeded;
             progress = eyes / (float) eyesNeeded;
-        } else if (lastDragon != null) {
+        } else if (lastDragon != null && now - lastDragonEnded < 300_000) {
+            // Five minutes of "45s ago" is context; forty-five minutes of it is clutter.
             label = lastDragon;
             value = secs(now - lastDragonEnded) + " ago";
             hot = false;

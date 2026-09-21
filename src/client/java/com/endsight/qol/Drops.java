@@ -139,6 +139,11 @@ public final class Drops {
         return Math.max(0, tierOf(item, 0));
     }
 
+    /** Whether the tier list names this item at all, as opposed to falling back to the game's colour. */
+    public static boolean listed(String item) {
+        return tierOf(item, -1) >= 0;
+    }
+
     private static int tierOf(String item, int fallback) {
         if (rules == null) rules = load();
         String hay = item.toLowerCase(Locale.ROOT);

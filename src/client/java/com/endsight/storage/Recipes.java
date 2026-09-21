@@ -1467,13 +1467,20 @@ public final class Recipes {
         return raw;
     }
 
+    /**
+     * Only the material itself and its Enchanted/Refined forms pool. Matching any name
+     * with "obsidian" in it made an Obsidian Drill OD-355 count as 1/160 of an Enchanted
+     * Obsidian - "0/0.01 Ench Obsidian Drill OD-355" on a recipe.
+     */
     private static String materialFamily(String item) {
-        String lower = item.toLowerCase(Locale.ROOT);
-        if (lower.contains("crying obsidian")) return "crying obsidian";
-        if (lower.contains("obsidian")) return "obsidian";
-        if (lower.contains("end stone")) return "end stone";
-        if (lower.contains("amethyst")) return "amethyst";
-        return "";
+        String lower = item.toLowerCase(Locale.ROOT).replace("enchanted ", "").replace("refined ", "").trim();
+        switch (lower) {
+            case "crying obsidian": return "crying obsidian";
+            case "obsidian": return "obsidian";
+            case "end stone": return "end stone";
+            case "rough amethyst", "flawed amethyst", "fine amethyst", "flawless amethyst", "perfect amethyst", "amethyst": return "amethyst";
+            default: return "";
+        }
     }
 
     private static long tierUnit(String item) {

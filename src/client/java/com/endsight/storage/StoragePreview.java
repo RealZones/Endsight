@@ -267,7 +267,7 @@ public final class StoragePreview {
     }
 
     /** The live map, for SnapshotStore to read on save and fill on load. */
-    static Map<Integer, PageSnapshot> snapshots() {
+    public static Map<Integer, PageSnapshot> snapshots() {
         return SNAPSHOTS;
     }
 

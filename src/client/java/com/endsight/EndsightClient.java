@@ -13,6 +13,7 @@ import com.endsight.qol.AbilitySpam;
 import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugOnJoin;
+import com.endsight.qol.GlobalChat;
 import com.endsight.qol.CopyChat;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
@@ -107,6 +108,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Cooldowns.module());
             registry.replace(LootAlerts.module());
             registry.replace(DebugOnJoin.module());
+            registry.replace(GlobalChat.module());
             registry.replace(LootFilter.module());
             registry.replace(LootRoll.module());
             registry.replace(AbilitySpam.module());
@@ -155,6 +157,7 @@ public class EndsightClient implements ClientModInitializer {
         EyeGuard.init();
         DamageNumbers.init();
         DebugOnJoin.init();
+        GlobalChat.init();
         LootFilter.init();
         LootRoll.init();
         AbilitySpam.init();

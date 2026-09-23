@@ -63,6 +63,7 @@ public final class MiningSession {
     private static long lastActive;
     private static boolean petAlert = true;
     private static final java.util.regex.Pattern PET_DROP = java.util.regex.Pattern.compile("DROP!.*\\[Lvl \\d+\\]\\s*(.+)$");
+    private static final java.util.regex.Pattern VOID_DROP = java.util.regex.Pattern.compile("DROP!\\s*(Void Fragment|Void Core)\\b");
 
     /**
      * Whether the tracker is up and on amethyst. The Void Fragment line only means
@@ -100,7 +101,7 @@ public final class MiningSession {
                                 com.endsight.visual.Cooldowns::drillOn, com.endsight.visual.Cooldowns::setDrillOn),
                         new Setting.Toggle("Fuel", "Fuel line read off the drill in your hand.",
                                 () -> PowderTracker.showFuel, v -> PowderTracker.showFuel = v),
-                        new Setting.Toggle("Pet drop alert", "Alert for an epic or better pet that drops while you mine.",
+                        new Setting.Toggle("Drop alert", "Alert for a Void Fragment, a Void Core or an epic or better pet while you mine.",
                                 () -> petAlert, v -> petAlert = v),
                         new Setting.Toggle("Void Fragments", "How long to the next one, from your Magic Find, perks, meter and pace.",
                                 () -> VoidFragments.show, v -> VoidFragments.show = v),
@@ -127,11 +128,23 @@ public final class MiningSession {
             String raw = message.getString();
             String line = Zealots.strip(raw).trim();
             if (com.endsight.dragons.DragonTimer.isPlayerChat(line)) return;
+            if (System.currentTimeMillis() - lastActive > 60_000) return;
+            String what = null, kind = null;
+            int tier = 4;
+            // The two the mine is actually waiting on. Named outright rather than by the
+            // drop's tier word: the Fragment comes as a RARE DROP and is rarer than most
+            // of what that word covers.
+            java.util.regex.Matcher v = VOID_DROP.matcher(line);
             java.util.regex.Matcher m = PET_DROP.matcher(line);
-            if (!m.find() || System.currentTimeMillis() - lastActive > 60_000) return;
-            int tier = com.endsight.qol.Drops.petTier(raw);
-            if (tier < 2) return;
-            com.endsight.hud.Alert.show(m.group(1).trim(), "pet drop", com.endsight.qol.Drops.colour(tier), 1.4f, 5);
+            if (v.find()) {
+                what = v.group(1);
+                kind = "mining drop";
+            } else if (m.find() && (tier = com.endsight.qol.Drops.petTier(raw)) >= 2) {
+                what = m.group(1).trim();
+                kind = "pet drop";
+            }
+            if (what == null) return;
+            com.endsight.hud.Alert.show(what, kind, com.endsight.qol.Drops.colour(tier), 1.4f, 5);
             Minecraft mc = Minecraft.getInstance();
             if (com.endsight.hud.Alerts.sound() && mc.player != null) {
                 mc.player.playSound(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 2f);

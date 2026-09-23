@@ -54,6 +54,13 @@ public final class Cooldowns {
         boolean on = true;
         ItemStack icon;
         long start, until;
+        /**
+         * How much longer the server's cooldown runs than the lore's number, learned from
+         * its own "on cooldown for 3.7s" refusals. The drill's lore says 108s and the real
+         * thing is a few seconds more, so the line said Ready while a press still bounced.
+         * Measured rather than guessed, because it is not the same on every drill.
+         */
+        long extra;
 
         Timer(String id, String label, String item, String ability, double fallback) {
             this.id = id;
@@ -147,7 +154,7 @@ public final class Cooldowns {
         double secs = s == null ? t.fallback : cooldownOf(s, t.fallback);
         long now = System.currentTimeMillis();
         t.start = now;
-        t.until = now + (long) (secs * 1000);
+        t.until = now + (long) (secs * 1000) + t.extra;
     }
 
     /** "on cooldown for 3.7s" is about what you are holding: put its ring where the server says. */
@@ -163,6 +170,12 @@ public final class Cooldowns {
             long left = (long) (Double.parseDouble(m.group(1)) * 1000);
             double secs = cooldownOf(held, t.fallback);
             t.icon = held.copy();
+            // A refusal after the line already said Ready measures how early it was: the
+            // real end is now + left, and the difference from what was shown is the error.
+            // The largest one seen is kept, so the line stops saying Ready too soon rather
+            // than averaging its way back to it. Capped, so one odd reading cannot park
+            // the timer minutes out.
+            if (t.until > 0 && now >= t.until) t.extra = Math.min(30_000, Math.max(t.extra, now + left - t.until));
             t.until = now + left;
             t.start = Math.min(t.start == 0 ? now : t.start, t.until - (long) (secs * 1000));
         }

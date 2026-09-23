@@ -444,6 +444,7 @@ public final class PowderTracker {
         total[t] = value;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) blocksAtVisit[k] = blocks[k];
         log("H", TYPE[t], value, since);
+        saveRates();                                       // the totals ride in the same file
     }
 
     /** Upgrades the estimate now covers. */
@@ -636,6 +637,13 @@ public final class PowderTracker {
             sb.append(KIND[k]).append('\t').append(String.format(Locale.ROOT, "%.3f", rate[k])).append('\t').append(rateBuff[k])
                     .append('\t').append(Math.round(rateWeight[k])).append('\n');
         }
+        // Where the totals stood at the last HOTD visit, so a relaunch does not start
+        // from "nothing known". The readout hid itself entirely until the menu had been
+        // opened once, which read as the whole thing being broken; the estimate carries
+        // over instead and the next visit corrects it.
+        for (int t = 0; t < 2; t++) {
+            sb.append("#total\t").append(TYPE[t]).append('\t').append(estimate(t)).append('\t').append(buff[t]).append('\n');
+        }
         try {
             Files.createDirectories(file("").getParent());
             Files.writeString(file("powder-rates.txt"), sb, StandardCharsets.UTF_8);
@@ -649,6 +657,17 @@ public final class PowderTracker {
         try {
             for (String line : Files.readAllLines(p, StandardCharsets.UTF_8)) {
                 String[] f = line.split("\t");
+                if (f.length >= 4 && f[0].equals("#total")) {
+                    for (int t = 0; t < 2; t++) {
+                        if (!TYPE[t].equals(f[1])) continue;
+                        total[t] = Long.parseLong(f[2]);
+                        buff[t] = Integer.parseInt(f[3]);
+                        // Carried over, not measured here: the session starts from it, so a
+                        // relaunch mid-session does not count the whole total as gained.
+                        sessionBase[t] = total[t];
+                    }
+                    continue;
+                }
                 if (f.length < 3 || line.startsWith("#")) continue;
                 for (int k = 0; k < KIND.length; k++) {
                     if (!KIND[k].equals(f[0])) continue;

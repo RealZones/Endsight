@@ -130,6 +130,11 @@ public final class ZealotTracker {
     private static long sessionStart;
     private static long lastActivity;
 
+    /** When a zealot was last killed or spotted. */
+    public static long lastActivity() {
+        return lastActivity;
+    }
+
     /**
      * One of your actions that could have killed something: a zone in the world, for a
      * while. The zone is a capsule from one point to another - a swing or a sword drop
@@ -260,7 +265,7 @@ public final class ZealotTracker {
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "zealots"),
                 (g, delta) -> draw(g));
-        HudLayout.register("zealot.tracker", "Zealot Tracker", 0.006f, 0.489f,
+        HudLayout.register("zealot.tracker", "Zealot Tracker", 0.006f, 0.26f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
@@ -450,6 +455,9 @@ public final class ZealotTracker {
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         if (!Area.end()) return;
         if (lastActivity == 0 || System.currentTimeMillis() - lastActivity > HIDE_IDLE_MS) return;
+        // You are killing zealots or you are mining, never both, and two trackers up at
+        // once is one of them describing something you stopped doing.
+        if (com.endsight.storage.MiningSession.lastActive() > lastActivity) return;
 
         HudLayout.draw("zealot.tracker", g, mc.font, false);
     }

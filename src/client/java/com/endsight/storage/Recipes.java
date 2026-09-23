@@ -112,8 +112,6 @@ public final class Recipes {
 
     private static boolean enabled = true;
     private static boolean panel = true;
-    /** The boxes as tinted glass instead of solid, for people who want the world behind them. */
-    private static boolean glass = false;
     /** What "have" counts: what is on you, or that plus every storage page and the ender chest. */
     private static final String INV = "Inventory only";
     private static final String ALL = "Inventory + storage";
@@ -134,7 +132,12 @@ public final class Recipes {
     private static boolean iconsLoaded, iconsDirty;
     /** The ender chest, by title, the last time it was open - /ec holds things too. */
     private static final Map<String, List<ItemStack>> CHESTS = new LinkedHashMap<>();
-    private static final Pattern CHEST = Pattern.compile("^Ender Chest(?: \\(\\d+/\\d+\\))?$");
+    /**
+     * Windows whose contents count as yours. The Accessory Bag was missing: every
+     * talisman in it read as not owned, so the list offered to craft the Rose Talisman
+     * you were wearing and Upgrades found nothing to upgrade.
+     */
+    private static final Pattern CHEST = Pattern.compile("^(?:Ender Chest|Accessory Bag)(?: \\(\\d+/\\d+\\))?$");
 
     public static Module module() {
         return new Module("storage.recipes", "Recipes",
@@ -144,9 +147,9 @@ public final class Recipes {
                         new Setting.Toggle("Panel",
                                 "Recipe grid beside your inventory. Click an item for its recipe, right-click for its uses.",
                                 () -> panel, v -> panel = v),
-                        new Setting.Toggle("Glass",
-                                "See-through boxes.",
-                                () -> glass, v -> glass = v),
+                        new Setting.Toggle("Close to craft",
+                                "List beside the window of what you are nearest to making.",
+                                () -> closeList, v -> closeList = v),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
                                 + CATEGORY.size() + " categories, " + ForgeRecipes.recipeCount() + " forge crafts")));
     }
@@ -155,6 +158,21 @@ public final class Recipes {
         load();
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
+            // The bag gets the accessory list; the grid would sit on top of it, so the
+            // grid is tucked while the bag is open (its tab still pulls it out) and put
+            // back as it was when the bag closes. A recipe left open from somewhere else
+            // is closed too - it was the first thing in the way.
+            if (closeList && ACCESSORY_BAG.matcher(Zealots.strip(screen.getTitle().getString()).trim()).matches()) {
+                if (bagScreen == null) {
+                    shownBeforeBag = shown;
+                    closeView = 0;         // every visit opens on Closest Craft
+                    closePage = 0;
+                }
+                bagScreen = screen;
+                shown = false;
+                openRecipe = null;
+                openUses = null;
+            }
             ScreenEvents.afterTick(screen).register(s -> tick(container));
             attachPanel(client, screen, container);
         });
@@ -664,7 +682,21 @@ public final class Recipes {
         String n = name(s);
         if (n.isBlank()) return;      // menu filler, not a thing you own
         have.merge(n, s.getCount(), Integer::sum);
+        // A reforge renames the item - "Stellar Obsidian Drill OD-555" - and it is still
+        // an OD-555 to every recipe that asks for one, so it counts as both.
+        String base = base(n);
+        if (base != null) have.merge(base, s.getCount(), Integer::sum);
         remember(s);
+    }
+
+    /** The recipe this item is, with a reforge taken off the front, or null. Longest match wins. */
+    private static String base(String name) {
+        String best = null;
+        for (String key : RECIPES.keySet()) {
+            if (!name.endsWith(" " + key)) continue;
+            if (best == null || key.length() > best.length()) best = key;
+        }
+        return best;
     }
 
     /** Ingredients you have enough of, out of the ingredients there are. */
@@ -727,7 +759,7 @@ public final class Recipes {
     private static final int FOOT = 34;
     private static final int CATS = 22;
     private static final int RECENT_W = 84;
-    private static final int RECENT_MAX = 10;
+    private static final int RECENT_MAX = 6;          // the recipes you are working through; the pane is only as tall as its rows
     private static final int RECENT_ROW = 18;
 
     private static String query = "";
@@ -744,6 +776,208 @@ public final class Recipes {
 
     private static EditBox box;
     private static Screen owner;
+
+    // ── close to craft ───────────────────────────────────────────────────────
+    /** The list beside the window: everything, nearest to craftable first. */
+    private static boolean closeList = true;
+    private static int closePage;
+    private static final int CLOSE_W = 172, CLOSE_ROW = 15, CLOSE_HEAD = 22;
+    /** The window it belongs beside, and the category it lists. */
+    private static final java.util.regex.Pattern ACCESSORY_BAG = java.util.regex.Pattern.compile("^Accessory Bag(?: \\(\\d+/\\d+\\))?$");
+    private static final String ACCESSORIES = "Accessories";
+    /** Two views: what you have never had, nearest first; and the next tier of what you have. */
+    private static final List<String> CLOSE_VIEWS = List.of("Closest Craft", "Upgrades");
+    private static int closeView;
+    private static final int VIEW_BTN_H = 12;
+    /** The grid is tucked while the bag is open, so the list has its room; this is what it was before. */
+    private static boolean shownBeforeBag;
+    private static Screen bagScreen;
+
+    private record Close(String name, double have, int missing, String shortfall, boolean upgrade) {
+    }
+
+    /**
+     * One row per family: the next accessory you do not already own.
+     *
+     * An upgrade eats the tier below it - a Rose Ring's recipe consumes the Rose
+     * Talisman - so the data already says which order they go in, and the list can
+     * walk it. Showing every tier at once listed the Talisman you are wearing beside
+     * the Ring it turns into, three rows for one decision. With the Talisman in hand
+     * the row becomes the Ring; when that is made it becomes whatever eats the Ring.
+     */
+    private static Map<String, Boolean> nextSteps(Map<String, Integer> have) {
+        Set<String> accessories = CATEGORY.getOrDefault(ACCESSORIES, new LinkedHashSet<>());
+        Map<String, String> upgrade = new HashMap<>();
+        for (String name : accessories) {
+            Recipe r = RECIPES.get(name);
+            if (r == null) continue;
+            for (Ingredient i : r.needs()) {
+                if (accessories.contains(i.name()) && !i.name().equals(name)) upgrade.put(i.name(), name);
+            }
+        }
+        Set<String> upgrades = new HashSet<>(upgrade.values());
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        for (String name : accessories) {
+            if (upgrades.contains(name)) continue;            // reached by walking, not a start
+            List<String> line = new ArrayList<>();            // bottom tier first
+            Set<String> seen = new HashSet<>();
+            for (String cur = name; cur != null && seen.add(cur); cur = upgrade.get(cur)) line.add(cur);
+            // The row is the tier above the HIGHEST one you own. It used to walk up only
+            // through tiers still in hand, and an upgrade eats the tier below it: with the
+            // Rose Ring made the Talisman is gone, so the walk stopped at the Talisman and
+            // offered to craft it again - and a Compactor 6000 put the 4000 back on the
+            // list. Owning the top of a line (or a one-tier accessory) means it is done.
+            int top = -1;
+            for (int i = 0; i < line.size(); i++) if (have.getOrDefault(line.get(i), 0) > 0) top = i;
+            if (top == line.size() - 1) continue;
+            String next = line.get(top + 1);
+            // Owning a tier below makes this row an upgrade, not a thing you have never had.
+            if (RECIPES.containsKey(next)) out.put(next, top >= 0);
+        }
+        return out;
+    }
+
+    /**
+     * Every recipe, ordered by how near you are to making it.
+     *
+     * Near means units, not ingredients: a plate wanting 5 Refined Obsidian when you
+     * hold 4 is nearer than one wanting 1 Void Plate you have none of, though both are
+     * "one ingredient short". Things you can make right now sort to the top, and
+     * nothing is filtered out - the list pages through the lot.
+     */
+    private static List<Close> closest(Map<String, Integer> have) {
+        List<Close> out = new ArrayList<>();
+        for (Map.Entry<String, Boolean> step : nextSteps(have).entrySet()) {
+            String name = step.getKey();
+            boolean isUpgrade = step.getValue();
+            // Closest Craft is everything you are missing, nearest first - upgrades
+            // included, they are missing too. Upgrades narrows it to the next tier of
+            // families you already own a piece of.
+            if (closeView == 1 && !isUpgrade) continue;
+            Recipe r = RECIPES.get(name);
+            if (r == null) continue;
+            List<Ingredient> needs = r.needs();
+            if (needs.isEmpty()) continue;
+            long want = 0, got = 0;
+            int missing = 0;
+            StringBuilder shortfall = new StringBuilder();
+            for (Ingredient i : needs) {
+                int h = Math.min(have.getOrDefault(i.name(), 0), i.count());
+                want += i.count();
+                got += h;
+                if (h < i.count()) {
+                    missing++;
+                    if (shortfall.length() > 0) shortfall.append(", ");
+                    shortfall.append(i.count() - h).append("x ").append(ingredientName(i.name()));
+                }
+            }
+            out.add(new Close(r.name(), want == 0 ? 1 : got / (double) want, missing, shortfall.toString(), isUpgrade));
+        }
+        out.sort((a, b) -> {
+            if (a.missing == 0 != (b.missing == 0)) return a.missing == 0 ? -1 : 1;
+            int c = Double.compare(b.have, a.have);
+            if (c != 0) return c;
+            c = Integer.compare(a.missing, b.missing);
+            return c != 0 ? c : a.name.compareToIgnoreCase(b.name);
+        });
+        return out;
+    }
+
+    private record CloseBox(int x, int y, int w, int h, int rows) {
+    }
+
+    /** Off the window's right edge, as tall as the window; null when it does not fit. */
+    private static CloseBox closeBox(AbstractContainerScreen<?> s) {
+        if (!enabled || !closeList || RECIPES.isEmpty()) return null;
+        // Only beside the Accessory Bag. It was every window, and a list of talismans
+        // next to a storage page is just something else covering the screen.
+        if (!ACCESSORY_BAG.matcher(Zealots.strip(s.getTitle().getString()).trim()).matches()) return null;
+        Minecraft mc = Minecraft.getInstance();
+        int sw = mc.getWindow().getGuiScaledWidth();
+        int x = s.leftPos + s.imageWidth + 6;
+        int h = Math.max(CLOSE_HEAD + CLOSE_ROW * 3, s.imageHeight);
+        int rows = (h - CLOSE_HEAD - 4) / CLOSE_ROW;
+        // The recipe grid lives at the screen's right edge; do not climb into it.
+        Frame f = panel && shown ? frame(s) : null;
+        int limit = f != null ? f.x - 6 : sw - 4;
+        if (x + CLOSE_W > limit) return null;
+        return new CloseBox(x, s.topPos, CLOSE_W, h, Math.max(1, rows));
+    }
+
+    private static void drawClose(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font,
+                                  Map<String, Integer> have, int mx, int my) {
+        CloseBox b = closeBox(s);
+        if (b == null) return;
+        List<Close> list = closest(have);
+        int pages = Math.max(1, (list.size() + b.rows - 1) / b.rows);
+        closePage = Math.max(0, Math.min(closePage, pages - 1));
+
+        Draw.glass(g, b.x, b.y, b.w, b.h, Theme.RADIUS);
+        Draw.text(g, font, CLOSE_VIEWS.get(closeView), b.x + 8, b.y + 6, Theme.muted());
+        int[] btn = viewButton(b, font);
+        boolean btnHover = mx >= btn[0] && mx < btn[0] + btn[2] && my >= btn[1] && my < btn[1] + btn[3];
+        String other = CLOSE_VIEWS.get(1 - closeView);
+        Draw.roundedRect(g, btn[0], btn[1], btn[2], btn[3], 4, Draw.alpha(Theme.accent(), btnHover ? 0.9f : 0.2f));
+        Draw.textCentered(g, font, other, btn[0] + btn[2] / 2, btn[1] + 2, btnHover ? Theme.bg() : Theme.accent());
+        if (pages > 1) Draw.textRight(g, font, (closePage + 1) + "/" + pages, b.x + b.w - 8, b.y + b.h - 12, Theme.dim());
+        Draw.rect(g, b.x + 8, b.y + CLOSE_HEAD - 5, b.w - 16, 1, Draw.alpha(Theme.text(), 0.08f));
+
+        int y = b.y + CLOSE_HEAD;
+        for (int i = closePage * b.rows; i < list.size() && y + CLOSE_ROW <= b.y + b.h - 4; i++, y += CLOSE_ROW) {
+            Close c = list.get(i);
+            boolean hover = mx >= b.x + 4 && mx < b.x + b.w - 4 && my >= y && my < y + CLOSE_ROW;
+            // Only the row under the cursor gets a background; a list where every line
+            // was filled green read as one green block and said nothing.
+            if (hover) Draw.roundedRect(g, b.x + 4, y, b.w - 8, CLOSE_ROW - 1, 3, Draw.alpha(Theme.text(), 0.07f));
+            ItemStack icon = ICONS.get(c.name);
+            if (icon != null) g.fakeItem(icon, b.x + 6, y - 1);
+            String status = c.missing == 0 ? "\u2713" : String.valueOf(c.missing);
+            int statusW = font.width(status);
+            Draw.text(g, font, middle(font, c.name, b.w - 32 - statusW), b.x + 24, y + 3,
+                    c.missing == 0 ? Theme.pos() : hover ? Theme.text() : Theme.muted());
+            Draw.textRight(g, font, status, b.x + b.w - 8, y + 3, c.missing == 0 ? Theme.pos() : Theme.dim());
+            if (hover) tooltip(g, font, RECIPES.get(c.name), have, mx, my);
+        }
+        if (list.isEmpty()) Draw.text(g, font, closeView == 1 ? "nothing to upgrade" : "all owned",
+                b.x + 8, b.y + CLOSE_HEAD + 2, Theme.dim());
+    }
+
+    /** The switch in the header: x, y, w, h, labelled with the view it goes to. */
+    private static int[] viewButton(CloseBox b, Font font) {
+        int w = font.width(CLOSE_VIEWS.get(1 - closeView)) + 10;
+        return new int[]{b.x + b.w - 6 - w, b.y + 4, w, VIEW_BTN_H};
+    }
+
+    /** A click in the list opens that recipe; the header pages. */
+    private static boolean clickClose(AbstractContainerScreen<?> s, double mx, double my, int button) {
+        CloseBox b = closeBox(s);
+        if (b == null || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) return false;
+        List<Close> list = closest(holdings());
+        int pages = Math.max(1, (list.size() + b.rows - 1) / b.rows);
+        if (my < b.y + CLOSE_HEAD) {
+            int[] btn = viewButton(b, Minecraft.getInstance().font);
+            if (mx >= btn[0] && mx < btn[0] + btn[2] && my >= btn[1] && my < btn[1] + btn[3]) {
+                closeView = 1 - closeView;
+                closePage = 0;
+            }
+            return true;
+        }
+        int row = (int) ((my - b.y - CLOSE_HEAD) / CLOSE_ROW) + closePage * b.rows;
+        if (row >= 0 && row < list.size()) {
+            if (button == 1) openUses(list.get(row).name());
+            else openRecipe(list.get(row).name());
+        }
+        return true;
+    }
+
+    /** The list scrolls a page at a time, like the grid. */
+    private static boolean scrollClose(AbstractContainerScreen<?> s, double mx, double my, double dy) {
+        CloseBox b = closeBox(s);
+        if (b == null || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.h) return false;
+        int pages = Math.max(1, (closest(holdings()).size() + b.rows - 1) / b.rows);
+        closePage = Math.floorMod(closePage + (dy > 0 ? -1 : 1), pages);
+        return true;
+    }
 
     private record Frame(int x, int y, int w, int h, int cols, int rows, int recentW) {
         int catX() { return x + PAD; }
@@ -819,6 +1053,10 @@ public final class Recipes {
         ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !click(container, click.x(), click.y(), click.button()));
         ScreenMouseEvents.allowMouseScroll(screen).register((s, mx, my, hx, vy) -> !scroll(container, mx, my, vy));
         ScreenEvents.remove(screen).register(s -> {
+            if (bagScreen == s) {
+                bagScreen = null;
+                shown = shownBeforeBag;
+            }
             if (owner == s) {
                 owner = null;
                 box = null;
@@ -966,18 +1204,28 @@ public final class Recipes {
     }
 
     private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
-        if (!enabled || !panel || RECIPES.isEmpty()) {
+        if (!enabled || RECIPES.isEmpty()) {
             if (box != null) box.visible = false;
             return;
         }
-        if (box != null) box.visible = shown;
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
-        drawTab(s, g, font, mx, my);
-        if (!shown) return;
-        Map<String, Integer> have = holdings();
-        drawGrid(s, g, font, have, mx, my);
-        if (openRecipe != null || openUses != null) drawViewer(s, g, font, have, mx, my);
+        // The close list stands on its own: it is beside the window, not part of the
+        // grid, and it is still worth having with the grid tucked away.
+        if (closeList) drawClose(s, g, font, holdings(), mx, my);
+        if (panel) {
+            if (box != null) box.visible = shown;
+            drawTab(s, g, font, mx, my);
+            Map<String, Integer> have = holdings();
+            if (shown) drawGrid(s, g, font, have, mx, my);
+            // The viewer is not part of the grid: a recipe opened from the accessory
+            // list has to be readable with the grid tucked away.
+            if (openRecipe != null || openUses != null) drawViewer(s, g, font, have, mx, my);
+        } else if (box != null) {
+            box.visible = false;
+        }
+        // Last, and outside every gate: the tooltip belongs to whatever is hovered, and
+        // hovering the accessory list used to build one that nothing ever drew.
         drawTip(g, font);
     }
 
@@ -1020,15 +1268,12 @@ public final class Recipes {
 
     private static void drawGrid(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Frame f = frame(s);
-        if (glass) {
-            // Glass goes round each thing rather than round the lot: one big pane over
-            // the world is a dim window, three small ones are shelves you can see past.
-            Draw.glass(g, f.catX() - 3, f.gridY() - 3, 23, categories().size() * CELL + 4, 5);
-            if (f.recentW() > 0) Draw.glass(g, f.recentX() - 1, f.gridY() - 16, f.recentW() + 2, recentPaneH(f), 5);
-            Draw.glass(g, f.gridX() - 4, f.y, f.gridW() + 8, f.h, Theme.RADIUS);
-        } else {
-            Draw.roundedRect(g, f.x, f.y, f.w, f.h, Theme.RADIUS, Theme.surface());
-        }
+        // Glass, and a pane round each thing rather than round the lot: one big pane
+        // over the world is a dim window, three small ones are shelves you can see past.
+        // There was a solid look once; nobody wanted it back once this existed.
+        Draw.glass(g, f.catX() - 3, f.gridY() - 3, 23, categories().size() * CELL + 4, 5);
+        if (f.recentW() > 0) Draw.glass(g, f.recentX() - 1, f.gridY() - 16, f.recentW() + 2, recentPaneH(f), 5);
+        Draw.glass(g, f.gridX() - 4, f.y, f.gridW() + 8, f.h, Theme.RADIUS);
 
         List<String> list = visible();
         int perPage = f.cols * f.rows;
@@ -1072,8 +1317,6 @@ public final class Recipes {
             boolean done = complete(rd);
             slab(g, ix + 1, iy + 1, CELL - 2, CELL - 2, open ? Theme.accent() : done ? Theme.pos() : 0,
                     open ? 0.35f : 0.26f, hover);
-            if (done && !glass) Draw.roundedOutline(g, ix + 1, iy + 1, CELL - 2, CELL - 2, 3,
-                    Theme.pos(), Draw.alpha(Theme.pos(), open ? 0.35f : 0.12f));
             ItemStack icon = ICONS.get(r.name());
             if (icon != null) g.fakeItem(icon, ix + 2, iy + 2);
             else Draw.text(g, font, r.name().substring(0, 1), ix + 7, iy + 6, Theme.text());
@@ -1134,26 +1377,22 @@ public final class Recipes {
                     isOpen ? 0.32f : 0.18f, hover);
             ItemStack icon = ICONS.get(name);
             if (icon != null) g.fakeItem(icon, x + 1, ry + 1);
-            Draw.text(g, font, fit(font, name, f.recentW() - 22), x + 20, ry + 5,
+            Draw.text(g, font, fit(font, name, f.recentW() - 32), x + 20, ry + 5,
                     done ? Theme.pos() : Theme.text());
-            if (hover) tooltip(g, font, r, have, mx, my);
+            boolean overX = hover && mx >= x + f.recentW() - 12;
+            Draw.text(g, font, "x", x + f.recentW() - 9, ry + 5, overX ? Theme.neg() : Theme.dim());
+            if (hover && !overX) tooltip(g, font, r, have, mx, my);
         }
     }
 
     /**
-     * The slab an item sits on. Solid: a raised block, tinted when it has something to
-     * say. Glass: just a rim round the item, so what shows through is the world, not a
-     * block of colour - a tint goes on the rim and, faintly, inside it.
+     * The slab an item sits on: a rim round the item, so what shows through is the
+     * world, not a block of colour. A tint goes on the rim and, faintly, inside it.
+     * Four strips with the corner pixels left off, not two rounded shapes: a rounded
+     * outline is fourteen fills and there are a hundred-odd cells a frame.
      */
     private static void slab(GuiGraphicsExtractor g, int x, int y, int w, int h, int tint, float tintAlpha, boolean hover) {
-        if (!glass) {
-            Draw.roundedRect(g, x, y, w, h, 3, tint != 0 ? Draw.alpha(tint, hover ? tintAlpha + 0.15f : tintAlpha)
-                    : hover ? Theme.hover() : Theme.raised());
-            return;
-        }
         int rim = tint != 0 ? Draw.alpha(tint, hover ? 1f : 0.85f) : Draw.alpha(Theme.text(), hover ? 0.45f : 0.16f);
-        // Four strips with the corner pixels left off, not two rounded shapes: a rounded
-        // outline is fourteen fills and there are a hundred-odd cells a frame.
         Draw.rect(g, x + 1, y, w - 2, 1, rim);
         Draw.rect(g, x + 1, y + h - 1, w - 2, 1, rim);
         Draw.rect(g, x, y + 1, 1, h - 2, rim);
@@ -1361,8 +1600,7 @@ public final class Recipes {
      */
     private static void drawViewer(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Viewer v = viewer(s);
-        if (glass) Draw.glass(g, v.x, v.y, v.w, v.h, Theme.RADIUS);
-        else Draw.roundedRect(g, v.x, v.y, v.w, v.h, Theme.RADIUS, Theme.surface());
+        Draw.glass(g, v.x, v.y, v.w, v.h, Theme.RADIUS);
         int x = v.x + PAD, y = v.y + 5;
         if (!trail.isEmpty()) chip(g, font, "◀ back", x, y, 0, mx, my);
         chip(g, font, "✕", v.x + v.w - PAD - 14, y, 14, mx, my);
@@ -1402,10 +1640,8 @@ public final class Recipes {
                         ingredientCount(in.name(), have.getOrDefault(in.name(), 0), in.count()), ingredientName(in.name()));
             }
             int uy = Math.max(ly + listH, gy + 3 * CELL) + 6;
-            if (glass) {
-                Draw.glassInner(g, gx - 3, gy - 3, v.w - PAD * 2 + 6, uy - gy, 5);
-                Draw.glassInner(g, x - 3, uy - 3, v.w - PAD * 2 + 6, v.y + v.h - 1 - uy, 5);
-            }
+            Draw.glassInner(g, gx - 3, gy - 3, v.w - PAD * 2 + 6, uy - gy, 5);
+            Draw.glassInner(g, x - 3, uy - 3, v.w - PAD * 2 + 6, v.y + v.h - 1 - uy, 5);
             for (int i = 0; i < 9; i++) {
                 int cx = gx + (i % 3) * CELL, cy = gy + (i / 3) * CELL;
                 Ingredient in = r.grid()[i];
@@ -1447,7 +1683,7 @@ public final class Recipes {
             }
             usesGrid(g, font, v, r.name(), have, x, uy, mx, my, "Used in");
         } else {
-            if (glass) Draw.glassInner(g, x - 3, y + 31, v.w - PAD * 2 + 6, v.y + v.h - 5 - (y + 31), 5);
+            Draw.glassInner(g, x - 3, y + 31, v.w - PAD * 2 + 6, v.y + v.h - 5 - (y + 31), 5);
             ItemStack icon = ICONS.get(openUses);
             if (icon != null) g.fakeItem(icon, x, y + 16);
             Draw.text(g, font, fit(font, openUses, v.w - PAD * 2 - 22), x + 20, y + 20, Theme.text());
@@ -1540,6 +1776,21 @@ public final class Recipes {
             if (hover) tooltip(g, font, r, have, mx, my);
             i++;
         }
+    }
+
+    /**
+     * Cut from the middle, not the end: "Personal Compactor 6000" truncated the usual
+     * way is three Personal Compactors, all identical and all wrong - the level is the
+     * only part that tells them apart, and it lives at the end.
+     */
+    private static String middle(Font font, String s, int w) {
+        if (font.width(s) <= w) return s;
+        int tail = s.length();
+        while (tail > 1 && font.width(s.substring(tail - 1)) < w * 0.4) tail--;
+        String end = s.substring(tail);
+        int head = 0;
+        while (head < s.length() && font.width(s.substring(0, head + 1) + "…" + end) <= w) head++;
+        return s.substring(0, Math.max(1, head)) + "…" + end;
     }
 
     private static String fit(Font font, String s, int w) {
@@ -1663,7 +1914,9 @@ public final class Recipes {
     // ── input ─────────────────────────────────────────────────────────────────
 
     private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
-        if (!enabled || !panel || RECIPES.isEmpty()) return false;
+        if (!enabled || RECIPES.isEmpty()) return false;
+        if (clickClose(s, mx, my, button)) return true;
+        if (!panel) return false;
         int[] tb = tab(s);
         if (mx >= tb[0] && mx < tb[0] + tb[2] && my >= tb[1] && my < tb[1] + tb[3]) {
             shown = !shown;
@@ -1708,6 +1961,11 @@ public final class Recipes {
             int max = Math.min(recent.size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
             if (i >= 0 && i < max) {
                 String name = recent.get(i);
+                if (mx >= f.recentX() + f.recentW() - 12) {    // the row's X
+                    RECENT.remove(name);
+                    saveRecent();
+                    return true;
+                }
                 focusRecipeInGrid(name, f);
                 openRecipe(name);
             }
@@ -1852,7 +2110,9 @@ public final class Recipes {
     }
 
     private static boolean scroll(AbstractContainerScreen<?> s, double mx, double my, double dy) {
-        if (!enabled || !panel || !shown) return false;
+        if (!enabled) return false;
+        if (scrollClose(s, mx, my, dy)) return true;
+        if (!panel || !shown) return false;
         Frame f = frame(s);
         if (mx < f.x || mx >= f.x + f.w || my < f.y || my >= f.y + f.h) return false;
         page -= (int) Math.signum(dy);

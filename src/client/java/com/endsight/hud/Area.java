@@ -108,6 +108,44 @@ public final class Area {
     /** Every line of whichever sidebar is showing, in the game's own order of preference. */
     private static List<String> sidebar(Minecraft mc) {
         List<String> out = new ArrayList<>();
+        for (String raw : sidebarRaw(mc)) out.add(Zealots.strip(raw).trim());
+        return out;
+    }
+
+    /**
+     * A line as text with its colours written in as section codes, whichever way the
+     * server sent them. Some servers put the codes in the text itself; others send a
+     * style on each piece, and getString() drops styles - the pet's rarity is its
+     * colour, and read that way it would silently vanish. Each coloured piece is given
+     * its code back, so the reader sees the same thing either way.
+     */
+    private static String legacy(net.minecraft.network.chat.Component c) {
+        StringBuilder sb = new StringBuilder();
+        c.visit((style, text) -> {
+            net.minecraft.network.chat.TextColor col = style.getColor();
+            if (col != null && !text.contains("§")) {
+                for (net.minecraft.ChatFormatting f : net.minecraft.ChatFormatting.values()) {
+                    if (f.isColor() && f.getColor() != null && f.getColor() == col.getValue()) {
+                        sb.append('§').append(f.getChar());
+                        break;
+                    }
+                }
+            }
+            sb.append(text);
+            return java.util.Optional.empty();
+        }, net.minecraft.network.chat.Style.EMPTY);
+        return sb.toString();
+    }
+
+    /** The sidebar line that starts with this, colour codes and all, or null. The codes say a pet's rarity. */
+    public static String sidebarLine(Minecraft mc, String prefix) {
+        if (mc.level == null) return null;
+        for (String raw : sidebarRaw(mc)) if (Zealots.strip(raw).trim().startsWith(prefix)) return raw;
+        return null;
+    }
+
+    private static List<String> sidebarRaw(Minecraft mc) {
+        List<String> out = new ArrayList<>();
         try {
             Scoreboard sb = mc.level.getScoreboard();
             Objective obj = null;
@@ -126,7 +164,7 @@ public final class Area {
             if (obj == null) return out;
             for (PlayerScoreEntry e : sb.listPlayerScores(obj)) {
                 PlayerTeam team = sb.getPlayersTeam(e.owner());
-                out.add(Zealots.strip(PlayerTeam.formatNameForTeam(team, e.ownerName()).getString()).trim());
+                out.add(legacy(PlayerTeam.formatNameForTeam(team, e.ownerName())));
             }
         } catch (RuntimeException ignored) {
             // A sidebar mid-update is not worth a crash; next second will do.

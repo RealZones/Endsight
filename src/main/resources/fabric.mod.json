@@ -16,6 +16,9 @@
 			"com.endsight.EndsightClient"
 		]
 	},
+	"custom": {
+		"endsight:commit": "${commit}"
+	},
 	"depends": {
 		"fabricloader": ">=0.19.1",
 		"minecraft": "~26.1.2",

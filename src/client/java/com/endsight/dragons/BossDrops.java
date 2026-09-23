@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -458,8 +459,25 @@ public final class BossDrops {
                 && (s.contains("helmet") || s.contains("chestplate") || s.contains("leggings") || s.contains("boots"));
     }
 
+    /** The last few drops counted, by item and when; the same one twice is one drop. */
+    private static final Map<String, Long> counted = new HashMap<>();
+    private static final long SAME_DROP_MS = 15_000;
+
+    /**
+     * One drop, however many ways the server says it.
+     *
+     * A drop is announced twice when the loot debug is on: once as its own "RARE DROP!"
+     * line and again as "<you> has obtained <item>!" a moment later. They arrive by
+     * different paths - one parsed as a drop, one as the broadcast - so neither's repeat
+     * check saw the other, and every drop counted as two. Fifteen seconds is longer than
+     * the gap between the two lines and shorter than any two real drops of one item.
+     */
     private static void drop(String boss, Drops.Drop d) {
         if (hidden(d.item())) return;
+        long now = System.currentTimeMillis();
+        counted.values().removeIf(t -> now - t > SAME_DROP_MS);
+        Long last = counted.put(d.item().toLowerCase(Locale.ROOT), now);
+        if (last != null && now - last < SAME_DROP_MS) return;
         of(session, boss).drops.merge(d.item(), 1, Integer::sum);
         of(unsaved, boss).drops.merge(d.item(), 1, Integer::sum);
         seen.merge(d.item(), d.tier(), Math::max);
@@ -477,7 +495,13 @@ public final class BossDrops {
         }
     }
 
+    /** A name to sort by: a pet's "[Lvl 1] " is not part of what it is, and "[" sorts before every letter. */
+    private static String plain(String item) {
+        return item.replaceFirst("^\\[[^\\]]*\\]\\s*", "");
+    }
+
     /** Your list's tier, or the one the server announced it at. */
+
     private static int tier(String item) {
         return Math.max(Drops.tierOf(item), seen.getOrDefault(item, 0));
     }
@@ -598,8 +622,12 @@ public final class BossDrops {
             if (r != 0) return r;
             int t = Integer.compare(tier(b.getKey()), tier(a.getKey()));
             if (t != 0) return t;
+            // Tied on the list, so let the item say: a common Warden pet is not a
+            // Giant's Core, though the list calls both legendary.
+            int q = Integer.compare(Rarity.rank(b.getKey()), Rarity.rank(a.getKey()));
+            if (q != 0) return q;
             int c = Integer.compare(b.getValue(), a.getValue());
-            return c != 0 ? c : a.getKey().compareToIgnoreCase(b.getKey());
+            return c != 0 ? c : plain(a.getKey()).compareToIgnoreCase(plain(b.getKey()));
         });
         return out;
     }

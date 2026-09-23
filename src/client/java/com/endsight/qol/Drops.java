@@ -234,6 +234,24 @@ public final class Drops {
 
     // ── fallbacks ─────────────────────────────────────────────────────────────
 
+    private static final Pattern PET_NAME = Pattern.compile("\\[Lvl \\d+\\]\\s*§([0-9a-fA-F])");
+
+    /**
+     * A pet's rarity from the colour of its name in the raw line, or -1 for anything
+     * that is not a pet. "RARE DROP! [Lvl 1] Scatha" is a legendary Scatha if the name
+     * is gold; the word in front of it is the drop's, not the pet's.
+     */
+    public static int petTier(String raw) {
+        Matcher m = PET_NAME.matcher(raw);
+        if (!m.find()) return -1;
+        return switch (Character.toLowerCase(m.group(1).charAt(0))) {
+            case '6', 'd', 'b', 'c' -> 3;     // legendary, and mythic and above count with it
+            case '5' -> 2;                    // epic
+            case '9' -> 1;                    // rare
+            default -> 0;                     // uncommon, common
+        };
+    }
+
     private static int rank(String tier) {
         String t = tier.trim().toUpperCase(Locale.ROOT);
         if (t.contains("LEGENDARY") || t.contains("CRAZY") || t.contains("RNGESUS")) return 3;

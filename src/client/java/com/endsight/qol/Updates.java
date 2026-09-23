@@ -44,7 +44,16 @@ public final class Updates {
 
     public static void init() {
         startedAt = System.currentTimeMillis();
+        // Set by the updater at pre-launch - only the endsight-autoupdate jar has one.
+        boolean updater = System.getProperty("endsight.updater") != null;
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            // With the updater installed it does the asking, once a launch, and leaves
+            // what it found in a system property; this only says it, once. A download
+            // link would be telling someone to do by hand what is already done.
+            if (updater) {
+                updaterSaid(mc);
+                return;
+            }
             if (mc.player == null) return;
             long now = System.currentTimeMillis();
             if (now - startedAt < FIRST_MS || now - lastCheck < EVERY_MS) return;
@@ -91,6 +100,48 @@ public final class Updates {
                 .append(Component.literal("Download").withStyle(s -> s
                         .withColor(ChatFormatting.AQUA).withUnderlined(true)
                         .withClickEvent(new ClickEvent.OpenUrl(URI.create(url))))));
+    }
+
+    private static String updaterTold = "";
+
+    /** Fifteen seconds: long enough to be read from the title screen, then out of the way. */
+    private static final net.minecraft.client.gui.components.toasts.SystemToast.SystemToastId UPDATE_TOAST =
+            new net.minecraft.client.gui.components.toasts.SystemToast.SystemToastId(15_000L);
+
+    /**
+     * An update is installed as the game closes - Fabric has every jar open before any
+     * mod runs, so the launch it is found on cannot be the launch it runs on. So the
+     * launch goes on as normal and a small box says the new version is waiting.
+     *
+     * Minecraft's own toast rather than ours: ours is drawn with the HUD, which does not
+     * exist on the title screen, and the title screen is where the download usually
+     * lands. Not while the loading screen is up, or it would time out behind it.
+     */
+    private static void updaterSaid(Minecraft mc) {
+        String s = System.getProperty("endsight.update", "");
+        if (s.equals(updaterTold) || !(s.startsWith("ready:") || s.startsWith("stuck:") || s.startsWith("failed"))) return;
+        // What went wrong is said plainly, with the updater's code (E1-E7, listed in
+        // EndsightUpdater), so the player can just say the code. "stuck" is an update
+        // that was downloaded and announced but is still not in on the next launch.
+        if (!s.startsWith("ready:")) {
+            if (mc.player == null) return;                  // a chat line, so it waits for a world
+            updaterTold = s;
+            String[] p = s.split(":");
+            String code = p[p.length - 1].startsWith("E") ? p[p.length - 1] : "E1";
+            boolean offline = code.equals("E1");
+            String text = s.startsWith("stuck:") ? "Update " + p[1] + " couldn't install (" + code + "). Ask Fear."
+                    : offline ? "Couldn't check for updates (E1)."
+                    : "Couldn't download the update (" + code + "). Ask Fear.";
+            mc.player.sendSystemMessage(Component.literal("")
+                    .append(Component.literal("[Endsight] ").withStyle(ChatFormatting.LIGHT_PURPLE))
+                    .append(Component.literal(text).withStyle(offline ? ChatFormatting.GRAY : ChatFormatting.RED)));
+            return;
+        }
+        if (mc.getOverlay() != null) return;
+        updaterTold = s;
+        net.minecraft.client.gui.components.toasts.SystemToast.addOrUpdate(mc.getToastManager(), UPDATE_TOAST,
+                Component.literal("Endsight " + s.substring(6) + " downloaded"),
+                Component.literal("Relaunch to update"));
     }
 
     /** 0.10.0 beats 0.9.1: compared a number at a time, not as strings. */

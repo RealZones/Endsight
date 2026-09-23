@@ -17,6 +17,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.Container;
@@ -72,6 +73,9 @@ public final class PowderTracker {
     private static final int SCAN_R = 5;
     /** More than this vanishing in one tick is a chunk reload or a warp, not mining. */
     private static final int SCAN_MAX = 40;
+    /** How far from the aimed block a spread-broken block can be and still be yours. */
+    private static final int SPREAD_R = 7;
+    private static long lastSwing;
     private static final int SCREEN_EVERY = 5;
     /** Hourly figures are the pace over this long, so a sell trip shows as a dip, not a lie. */
     private static final long PACE_MS = 600_000;
@@ -79,6 +83,9 @@ public final class PowderTracker {
     private static final long PAUSE_MS = 15_000;
     /** A visit learns a kind's rate only when that kind was nearly all of what broke. */
     private static final double PURE = 0.9;
+    /** Blocks behind a learned rate, and the most it counts for - enough to steady it, not enough to freeze it. */
+    private static final double[] rateWeight = new double[4];
+    private static final double RATE_WEIGHT_CAP = 5_000;
 
     private static final String[] KIND = {"End Stone", "Obsidian", "Crying Obsidian", "Amethyst"};
     private static final int[] POWDER_OF = {0, 0, 1, 1};
@@ -110,6 +117,36 @@ public final class PowderTracker {
     private static final Map<String, Long> reminded = new HashMap<>();
     private static final Map<BlockPos, Integer> nearby = new HashMap<>();
     private static final Deque<long[]> recent = new ArrayDeque<>();   // {ms, kind}
+    public static final int AMETHYST = 3;
+    /** Blocks broken this session by kind, one each - blocks[] is powder-weighted. */
+    private static final long[] rawBlocks = new long[KIND.length];
+
+    public static long rawBlocks(int kind) {
+        return rawBlocks[kind];
+    }
+
+    /** Blocks by the session's own clock - {activeMs when broken, kind} - so a pause does not thin the window. */
+    private static final Deque<long[]> recentActive = new ArrayDeque<>();
+
+    /**
+     * Blocks of a kind an hour, over the last ten minutes of MINING - the session clock
+     * that stops when you do, the same one the Paused label runs on. On wall time the
+     * pace drained away while you stood at the forge and the fragment estimate climbed
+     * forever; scaling two minutes up as if they were ten did the opposite at the start.
+     */
+    /** Minutes of mining behind the pace, so a reader can decide whether it is worth a number yet. */
+    public static long activeMs() {
+        return activeMs;
+    }
+
+    public static double blocksPerHour(int kind) {
+        long cut = activeMs - PACE_MS;
+        while (!recentActive.isEmpty() && recentActive.peekFirst()[0] < cut) recentActive.pollFirst();
+        long span = Math.min(PACE_MS, Math.max(30_000, activeMs));
+        int n = 0;
+        for (long[] r : recentActive) if (r[1] == kind) n++;
+        return activeMs < 30_000 ? 0 : n * 3_600_000.0 / span;
+    }
     private static final Deque<long[]> recentXp = new ArrayDeque<>(); // {ms, xp*100}
     private static long lastActive;
     /** Time spent actually mining this session; the hourly rate is gain over this, as Mining Session does it. */
@@ -140,6 +177,8 @@ public final class PowderTracker {
     public static void init() {
         loadRates();
         ClientTickEvents.END_CLIENT_TICK.register(PowderTracker::tick);
+        // Whatever is still buffered when the game closes.
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(c -> flush());
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             String line = clean(message.getString());
@@ -153,8 +192,8 @@ public final class PowderTracker {
             }
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "powder_tracker"), (g, delta) -> draw(g));
-        HudLayout.register(ID, "Powder Tracker", 0.006f, 0.60f, (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
-        HudLayout.register(FUEL_ID, "Drill Fuel", 0.006f, 0.55f, (g, font, x, y, sample) -> drawFuel(g, font, x, y, sample));
+        HudLayout.register(ID, "Powder Tracker", 0.006f, 0.48f, (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
+        HudLayout.register(FUEL_ID, "Drill Fuel", 0.006f, 0.64f, (g, font, x, y, sample) -> drawFuel(g, font, x, y, sample));
         log("S", "session start");
     }
 
@@ -190,6 +229,7 @@ public final class PowderTracker {
 
     /** The action bar as the server sets it; the XP popup lives there. */
     public static void onActionBar(String text) {
+        VoidFragments.onActionBar(text);
         if (!enabled) return;
         Matcher m = MINING_XP.matcher(Zealots.strip(text));
         if (!m.find()) return;
@@ -202,7 +242,9 @@ public final class PowderTracker {
     }
 
     private static void tick(Minecraft mc) {
-        if (!enabled || mc.player == null || mc.level == null) return;
+        // Not gated on the powder module: the fuel and fragment lines are fed from here
+        // and they are switched on their own.
+        if (mc.player == null || mc.level == null) return;
         tickN++;
         watchBlocks(mc);
         if (tickN % 5 == 0) readFuel(mc);
@@ -214,9 +256,13 @@ public final class PowderTracker {
         while (!recentXp.isEmpty() && recentXp.peekFirst()[0] < cut) recentXp.pollFirst();
         if (mc.screen instanceof AbstractContainerScreen<?> s) {
             if (tickN % SCREEN_EVERY == 0 && clean(s.getTitle().getString()).equalsIgnoreCase(HOTD)) scanHotd(s);
+            if (tickN % SCREEN_EVERY == 0 && VoidFragments.isMeter(clean(s.getTitle().getString()))) VoidFragments.scanMeter(s);
         } else if (mc.screen == null && remind) {
             remindReady();
         }
+        VoidFragments.tick(mc);
+        VoidFragments.maybeSave();
+        if (nowMs - lastFlush > FLUSH_MS) flush();
     }
 
     /**
@@ -227,7 +273,23 @@ public final class PowderTracker {
      * before it breaks. So this diffs the whole neighbourhood. Anyone mining beside you
      * counts too; the calibration windows agreed to 2% so in practice that is rare.
      */
+    private static boolean miningTool(ItemStack s) {
+        if (s.isEmpty()) return false;
+        String name = clean(s.getHoverName().getString()).toLowerCase(Locale.ROOT);
+        return name.contains("pickaxe") || name.contains("drill");
+    }
+
     private static void watchBlocks(Minecraft mc) {
+        // Eleven cubed block lookups a tick is the mod's biggest standing cost, and it
+        // only ever tells us anything while a tool is swinging. Idle - in the hub, at the
+        // forge, fighting - it is skipped and the map dropped, so the first scan after
+        // picking the drill back up simply starts fresh.
+        boolean swingingNow = mc.options.keyAttack.isDown() && miningTool(mc.player.getMainHandItem());
+        if (swingingNow) lastSwing = System.currentTimeMillis();
+        if (System.currentTimeMillis() - lastSwing > 3_000) {
+            nearby.clear();
+            return;
+        }
         BlockPos c = mc.player.blockPosition();
         boolean warped = lastCentre != null && lastCentre.distManhattan(c) > 8;
         lastCentre = c;
@@ -250,14 +312,23 @@ public final class PowderTracker {
                     || Math.abs(p.getZ() - c.getZ()) > SCAN_R) continue;   // walked out of range
             gone.add(e);
         }
-        if (!warped && gone.size() <= SCAN_MAX && !gone.isEmpty()) {
+        // Only what you broke. A block that vanishes five blocks away is someone else's
+        // when you are not swinging, and this counted a neighbour's whole session as
+        // yours. Yours means: the attack key is down with a mining tool out, and the
+        // block is within spread of what you were aiming at.
+        boolean mine = System.currentTimeMillis() - lastSwing < 600;
+        BlockPos aim = mc.hitResult instanceof BlockHitResult hit ? hit.getBlockPos() : c;
+        if (!warped && mine && gone.size() <= SCAN_MAX && !gone.isEmpty()) {
             long ms = System.currentTimeMillis();
             lastActive = ms;
             for (Map.Entry<BlockPos, Integer> e : gone) {
                 BlockPos p = e.getKey();
+                if (p.distManhattan(aim) > SPREAD_R) continue;
                 int w = POWDER_OF[e.getValue()] == 1 && ms < infusedUntil ? 2 : 1;
                 blocks[e.getValue()] += w;
+                rawBlocks[e.getValue()]++;
                 recent.addLast(new long[]{ms, e.getValue(), w});
+                recentActive.addLast(new long[]{activeMs, e.getValue()});
                 log("B", KIND[e.getValue()], p.getX(), p.getY(), p.getZ());
             }
         }
@@ -295,6 +366,7 @@ public final class PowderTracker {
                 if (l.find()) {
                     level = (int) num(l.group(1));
                     max = (int) num(l.group(2));
+                    VoidFragments.perk(name, level);
                     continue;
                 }
                 Matcher cost = COST.matcher(line);
@@ -326,9 +398,19 @@ public final class PowderTracker {
         if (old >= 0 && value > old && major >= 0) {
             double others = 0;
             for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t && k != major) others += effective(k) * blocksSince(k);
-            double learned = (value - old - others) / blocksSince(major);
+            double learned = (value - old - others) / blocksSince(major) / (1 + petBuff(major));
             if (learned > 0) {
-                rate[major] = learned;
+                // Averaged over visits, weighted by the blocks behind each, not replaced by
+                // the latest one. The log shows four amethyst visits at the same buff
+                // reading 349, 330, 324 and 322 a block: each on its own is a few hundred
+                // blocks of Pristine luck and infusion timing, and the estimate jumped with
+                // every one. The old figure is first moved to today's buff so the two are on
+                // one scale, and the weight is capped so the rate still follows real change.
+                double w = rateWeight[major];
+                double oldNow = rate[major] * (100.0 + buff[t]) / (100.0 + rateBuff[major]);
+                double n = blocksSince(major);
+                rate[major] = w > 0 && rate[major] > 0 ? (oldNow * w + learned * n) / (w + n) : learned;
+                rateWeight[major] = Math.min(RATE_WEIGHT_CAP, w + n);
                 rateBuff[major] = buff[t];
                 saveRates();
                 log("RATE", KIND[major], value - old, blocksSince(major), String.format(Locale.ROOT, "%.3f", learned), buff[t]);
@@ -365,9 +447,12 @@ public final class PowderTracker {
 
     private static void draw(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
-        if (!enabled || mc.player == null || mc.options.hideGui) return;
-        if (showFuel && fuel >= 0) HudLayout.draw(FUEL_ID, g, mc.font, false);   // before the powder gate: fuel needs no HOTD visit
-        if (total[0] < 0 && total[1] < 0) return;
+        if (mc.player == null || mc.options.hideGui) return;
+        // The fuel line and the fragment line have their own switches and live in this
+        // class only because it is the one reading the drill and the blocks. Turning the
+        // powder readout off took both down with it, which is not what the toggle says.
+        if (showFuel && fuel >= 0) HudLayout.draw(FUEL_ID, g, mc.font, false);
+        if (!enabled || (total[0] < 0 && total[1] < 0)) return;
         HudLayout.draw(ID, g, mc.font, false);
     }
 
@@ -394,16 +479,21 @@ public final class PowderTracker {
 
         int w = Readout.width(font, "POWDER", title);
         for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
-        int h = Readout.ROW_H + 3 + rows.size() * (Readout.height(false) + 2);
+        int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);
         if (g == null) return new int[]{w, h};
 
-        Readout.tick(g, x, y, w, Theme.accent());
+        // Drawn the way the MINING readout is: one tick at the title, lit while active,
+        // and plain rows under it. Each row carried its own accent tick before - a
+        // column of bars down the left edge that read as a list of separate things, and
+        // was the "lines on the left" that made this one look off beside MINING.
+        Readout.tick(g, x, y, w, active ? Theme.accent() : Theme.line());
         Draw.text(g, font, "POWDER", Readout.left(x), y, Theme.muted());
-        Draw.textRight(g, font, title, Readout.right(x, w), y, Theme.accent());
+        Draw.textRight(g, font, title, Readout.right(x, w), y, active ? Theme.accent() : Theme.text());
         int ry = y + Readout.ROW_H + 3;
-        for (int i = 0; i < rows.size(); i++) {
-            String[] row = rows.get(i);
-            ry += Readout.draw(g, font, x, ry, w, row[0], row[1], i == 0, -1f) + 2;
+        for (String[] row : rows) {
+            Draw.text(g, font, row[0], Readout.left(x), ry, Theme.dim());
+            Draw.textRight(g, font, row[1], Readout.right(x, w), ry, Theme.text());
+            ry += Readout.ROW_H + 2;
         }
         return new int[]{w, h};
     }
@@ -451,7 +541,7 @@ public final class PowderTracker {
 
     /** A kind's rate at today's buff: measured at one percentage, scaled to the current one. */
     private static double effective(int k) {
-        return rate[k] * (100.0 + buff[POWDER_OF[k]]) / (100.0 + rateBuff[k]);
+        return rate[k] * (100.0 + buff[POWDER_OF[k]]) / (100.0 + rateBuff[k]) * (1 + petBuff(k));
     }
 
     private static long estimate(int t) {
@@ -497,11 +587,33 @@ public final class PowderTracker {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve(name);
     }
 
+    /**
+     * The pet out right now, by the sidebar, and what it adds to powder.
+     *
+     * A learned rate is what a visit measured, and the pet that was out is inside it -
+     * a Bal's "25% more Void Powder from Crying Obsidian" included. So the rate is
+     * kept as the plain number: the pet's share is divided out when it is learned and
+     * multiplied back in while that buff is out. Swap to a pet without it and the
+     * plain rate carries on; nothing already counted this session moves. The buffs
+     * themselves are read off pet tooltips as they go past, per pet and rarity.
+     */
+    private static String petKey = "";
+
+    public static void petChanged(String pet) {
+        petKey = pet;
+    }
+
+    /** What the current pet adds to this kind's powder, as a fraction: 0.25 for "25% more". */
+    private static double petBuff(int kind) {
+        return Pets.powderBuff(petKey, KIND[kind], POWDER_OF[kind] == 1 ? "Void" : "Ender");
+    }
+
     /** kind, rate, buff it was learned at - one line each, so a re-learned rate survives a restart. */
     private static void saveRates() {
-        StringBuilder sb = new StringBuilder("# kind\tpowder per block\tPowder Buff % when measured\n");
+        StringBuilder sb = new StringBuilder("# kind\tpowder per block (no pet)\tPowder Buff % when measured\tblocks behind it\n");
         for (int k = 0; k < KIND.length; k++) {
-            sb.append(KIND[k]).append('\t').append(String.format(Locale.ROOT, "%.3f", rate[k])).append('\t').append(rateBuff[k]).append('\n');
+            sb.append(KIND[k]).append('\t').append(String.format(Locale.ROOT, "%.3f", rate[k])).append('\t').append(rateBuff[k])
+                    .append('\t').append(Math.round(rateWeight[k])).append('\n');
         }
         try {
             Files.createDirectories(file("").getParent());
@@ -521,6 +633,8 @@ public final class PowderTracker {
                     if (!KIND[k].equals(f[0])) continue;
                     rate[k] = Double.parseDouble(f[1]);
                     rateBuff[k] = Integer.parseInt(f[2]);
+                    // A file from before the weights counts as one good visit's worth.
+                    rateWeight[k] = f.length > 3 ? Double.parseDouble(f[3]) : 1_000;
                 }
             }
         } catch (IOException | NumberFormatException ignored) {
@@ -547,13 +661,41 @@ public final class PowderTracker {
     }
 
     /** One TSV line: kind, wall-clock ms, fields. Appended, never rotated; it is the dataset. */
+    /**
+     * The measurement log, buffered.
+     *
+     * This used to open, append to and close powder.tsv for every single block broken -
+     * three or four file handles a second while mining, on the thread that draws the
+     * frame. That is a stutter you can feel. The lines are held and written every few
+     * seconds instead; nothing reads the file while the game is running, so the only
+     * cost of being late is the last few seconds if the game is killed outright.
+     */
+    private static final StringBuilder pending = new StringBuilder();
+    private static long lastFlush;
+    private static final long FLUSH_MS = 5_000;
+
     private static void log(String kind, Object... fields) {
-        StringBuilder sb = new StringBuilder(kind).append('\t').append(System.currentTimeMillis());
-        for (Object f : fields) sb.append('\t').append(String.valueOf(f).replace('\t', ' ').replace('\n', ' '));
-        sb.append('\n');
+        pending.append(kind).append('\t').append(System.currentTimeMillis());
+        for (Object f : fields) pending.append('\t').append(String.valueOf(f).replace('\t', ' ').replace('\n', ' '));
+        pending.append('\n');
+        if (pending.length() > 64_000) flush();
+    }
+
+    static void flush() {
+        if (pending.length() == 0) return;
+        String out = pending.toString();
+        pending.setLength(0);
+        lastFlush = System.currentTimeMillis();
         try {
             Files.createDirectories(file("").getParent());
-            Files.writeString(file("powder.tsv"), sb, StandardCharsets.UTF_8,
+            Path log = file("powder.tsv");
+            // One line per block broken grew it without end - 7.6 MB and 136,000 lines
+            // by September. Past 8 MB the file is moved to powder.tsv.1 (replacing the
+            // one before) and a fresh one started, so the recent history is always kept.
+            if (Files.exists(log) && Files.size(log) > 8L * 1024 * 1024) {
+                Files.move(log, file("powder.tsv.1"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(log, out, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException ignored) {
         }

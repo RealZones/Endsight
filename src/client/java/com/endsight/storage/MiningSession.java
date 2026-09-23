@@ -61,6 +61,24 @@ public final class MiningSession {
     private static long activeMs;
     private static long lastTick;
     private static long lastActive;
+    private static boolean petAlert = true;
+    private static final java.util.regex.Pattern PET_DROP = java.util.regex.Pattern.compile("DROP!.*\\[Lvl \\d+\\]\\s*(.+)$");
+
+    /**
+     * Whether the tracker is up and on amethyst. The Void Fragment line only means
+     * something while you mine amethyst, and "mine some amethyst" sat on screen through
+     * obsidian sessions and slayer both.
+     */
+    public static boolean amethystActive() {
+        boolean up = mining || (showWhenPaused && activeMs > 0 && System.currentTimeMillis() - lastActive <= 300_000);
+        return up && "Amethyst".equals(currentMaterial)
+                && com.endsight.zealots.ZealotTracker.lastActivity() <= lastActive;
+    }
+
+    /** When mining last happened, for anything that should stand down while it is going on. */
+    public static long lastActive() {
+        return lastActive;
+    }
     private static boolean mining;
     private static String currentMaterial = "Material";
     private static final Map<String, Long> lastValues = new LinkedHashMap<>();
@@ -82,6 +100,12 @@ public final class MiningSession {
                                 com.endsight.visual.Cooldowns::drillOn, com.endsight.visual.Cooldowns::setDrillOn),
                         new Setting.Toggle("Fuel", "Fuel line read off the drill in your hand.",
                                 () -> PowderTracker.showFuel, v -> PowderTracker.showFuel = v),
+                        new Setting.Toggle("Pet drop alert", "Alert for an epic or better pet that drops while you mine.",
+                                () -> petAlert, v -> petAlert = v),
+                        new Setting.Toggle("Void Fragments", "How long to the next one, from your Magic Find, perks, meter and pace.",
+                                () -> VoidFragments.show, v -> VoidFragments.show = v),
+                        new Setting.Toggle("Meter on fragments", "The RNG meter's selected drop is the Void Fragment. Set itself when you open the meter.",
+                                () -> VoidFragments.meterOn, v -> VoidFragments.meterOn = v),
                         new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
                                 () -> profitEstimate, v -> profitEstimate = v),
                         new Setting.Action("Session", "Start the mining readout over.", "Reset", MiningSession::reset),
@@ -91,12 +115,34 @@ public final class MiningSession {
     }
 
     public static void init() {
+        // Stashed drops ("You have N materials stashed away") are not counted. The stash
+        // does not say which tier went in, so any count of it is a guess, and with a
+        // Personal Compactor - which everyone mining has - the bag does not fill.
+        // A pet worth stopping for, dropped while you mine - a Scatha off the amethyst.
+        // Kept here and not in Loot Alerts: that list is crowded, and a pet from a
+        // slayer or a dragon is not what anyone at the mine is waiting on. Epic or
+        // better by the pet's own colour, while the session has been active this minute.
+        net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!enabled || !petAlert || overlay) return;
+            String raw = message.getString();
+            String line = Zealots.strip(raw).trim();
+            if (com.endsight.dragons.DragonTimer.isPlayerChat(line)) return;
+            java.util.regex.Matcher m = PET_DROP.matcher(line);
+            if (!m.find() || System.currentTimeMillis() - lastActive > 60_000) return;
+            int tier = com.endsight.qol.Drops.petTier(raw);
+            if (tier < 2) return;
+            com.endsight.hud.Alert.show(m.group(1).trim(), "pet drop", com.endsight.qol.Drops.colour(tier), 1.4f, 5);
+            Minecraft mc = Minecraft.getInstance();
+            if (com.endsight.hud.Alerts.sound() && mc.player != null) {
+                mc.player.playSound(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 2f);
+            }
+        });
         ClientTickEvents.END_CLIENT_TICK.register(MiningSession::tick);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay && enabled) onLine(message);
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "mining_session"), (g, delta) -> draw(g));
-        HudLayout.register(ID, "Mining Session", 0.006f, 0.56f,
+        HudLayout.register(ID, "Mining Session", 0.006f, 0.26f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
@@ -131,7 +177,10 @@ public final class MiningSession {
             activeMs += dt;
             if (!"Material".equals(currentMaterial)) activeByMaterial.merge(currentMaterial, dt, Long::sum);
         }
-        countInventoryGain(mc, counting);
+        // Not with a window open: what comes out of the PV or a chest in the grace window
+        // after a swing is not mined. 21 Fine "mined" in four minutes were 21 Fine pulled.
+        countInventoryGain(mc, counting && mc.screen == null);
+        if (System.currentTimeMillis() - auditFlushed > 5_000) flushAudit();
         mining = counting;
         lastTick = now;
     }
@@ -175,20 +224,64 @@ public final class MiningSession {
         return materialName(name);
     }
 
+    /**
+     * What came into the bag this tick, per material, counted net - not gains only.
+     *
+     * It used to count rises and ignore falls. The Personal Compactor makes that wrong:
+     * it takes 80 Rough out and puts 1 Flawed in, the same 80 in raw units, and when
+     * the two land in different ticks the fall was dropped and the rise kept - 80 Rough
+     * of amethyst that was never mined. Counted net, a compaction adds nothing however
+     * it is split. The session total for a material never goes below zero, so dropping
+     * something you brought with you cannot take the count negative.
+     *
+     * Every change that is counted is written to mining.tsv, so a session can be
+     * checked line by line against the blocks in powder.tsv.
+     */
     private static void countInventoryGain(Minecraft mc, boolean count) {
         Map<String, Long> now = materialValues(mc);
         if (!lastValues.isEmpty() && count) {
-            for (Map.Entry<String, Long> e : now.entrySet()) {
-                long old = lastValues.getOrDefault(e.getKey(), 0L);
-                long delta = e.getValue() - old;
-                if (delta > 0) {
-                    totals.merge(e.getKey(), delta, Long::sum);
-                    currentMaterial = e.getKey();
-                }
+            java.util.Set<String> seen = new java.util.HashSet<>(now.keySet());
+            seen.addAll(lastValues.keySet());
+            for (String m : seen) {
+                long delta = now.getOrDefault(m, 0L) - lastValues.getOrDefault(m, 0L);
+                if (delta == 0) continue;
+                long before = totals.getOrDefault(m, 0L);
+                long after = Math.max(0, before + delta);
+                if (after == before) continue;
+                totals.put(m, after);
+                if (delta > 0) currentMaterial = m;
+                audit(m, after - before, after, "bag");
             }
         }
         lastValues.clear();
         lastValues.putAll(now);
+    }
+
+    // ── the audit trail ──────────────────────────────────────────────────────
+    private static final StringBuilder auditPending = new StringBuilder();
+    private static long auditFlushed;
+
+    private static void audit(String material, long delta, long total, String from) {
+        auditPending.append(System.currentTimeMillis()).append('\t').append(material).append('\t')
+                .append(delta).append('\t').append(total).append('\t').append(from).append('\n');
+    }
+
+    private static void flushAudit() {
+        if (auditPending.length() == 0) return;
+        String out = auditPending.toString();
+        auditPending.setLength(0);
+        auditFlushed = System.currentTimeMillis();
+        try {
+            java.nio.file.Path dir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("endsight");
+            java.nio.file.Files.createDirectories(dir);
+            java.nio.file.Path log = dir.resolve("mining.tsv");
+            if (java.nio.file.Files.exists(log) && java.nio.file.Files.size(log) > 4L * 1024 * 1024) {
+                java.nio.file.Files.move(log, dir.resolve("mining.tsv.1"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            java.nio.file.Files.writeString(log, out, java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (java.io.IOException ignored) {
+        }
     }
 
     private static Map<String, Long> materialValues(Minecraft mc) {
@@ -273,6 +366,7 @@ public final class MiningSession {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.options.hideGui) return;
         if (!mining && (!showWhenPaused || activeMs <= 0 || System.currentTimeMillis() - lastActive > 300_000)) return;
+        if (com.endsight.zealots.ZealotTracker.lastActivity() > lastActive) return;
         HudLayout.draw(ID, g, mc.font, false);
     }
 
@@ -300,6 +394,10 @@ public final class MiningSession {
         rows.add(new String[]{"Rate", rate});
         if (!profit.isEmpty()) rows.add(new String[]{"Profit", profit});
         rows.add(new String[]{"Time", time(materialMs)});   // on this block, like Rate and Profit
+        if (VoidFragments.show && (sample || "Amethyst".equals(material))) {
+            String frag = VoidFragments.row(sample);
+            if (!frag.isEmpty()) rows.add(new String[]{"Void Frag", frag});
+        }
         int w = Readout.width(font, "MINING", title);
         for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
         int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);
@@ -344,7 +442,9 @@ public final class MiningSession {
         if (m.contains("crying obsidian")) return 2857;
         if (m.contains("obsidian")) return 400;
         if (m.contains("end stone")) return 50;
-        if (m.contains("amethyst")) return 50;
+        // A Fine sells for 1,088,000 and is 6,400 raw, so 170 a raw gem; the old 50 put a
+        // Fine at a third of what the shop pays for it.
+        if (m.contains("amethyst")) return 170;
         return 0;
     }
 

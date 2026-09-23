@@ -25,12 +25,48 @@ dependencies {
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
 
+// The commit a jar was built from: GitHub Actions sets GITHUB_SHA, a build here has
+// none. The updater compares it with the newest release's tag, and a jar without one
+// is never replaced - so a build made here is never swapped for the release.
+def commit = System.getenv("GITHUB_SHA") ?: ""
+
 processResources {
 	def version = project.version
 	inputs.property "version", version
+	inputs.property "commit", commit
 	filesMatching("fabric.mod.json") {
-		expand "version": version
+		expand "version": version, "commit": commit
 	}
+}
+
+// Two jars, and you pick one: endsight-<v>.jar never updates; endsight-autoupdate-<v>.jar
+// is the same mod with the updater inside. The updater is plain Java against Fabric
+// Loader and Minecraft's Gson - nothing to remap - so the second jar is the first one
+// unpacked, the updater's classes added, and a pre-launch entrypoint written into its
+// manifest. The plain jar has none of the updater in it at all.
+sourceSets {
+	updater {
+		compileClasspath += sourceSets.client.compileClasspath
+	}
+}
+
+tasks.register('autoupdateJar', Jar) {
+	dependsOn tasks.named('jar')
+	archiveBaseName = 'endsight-autoupdate'
+	def main = tasks.named('jar').flatMap { it.archiveFile }
+	from(zipTree(main)) {
+		exclude 'fabric.mod.json'
+	}
+	from(sourceSets.updater.output)
+	from(zipTree(main)) {
+		include 'fabric.mod.json'
+		filter { line -> line.replace('"client": [', '"preLaunch": [ "com.endsight.updater.EndsightUpdater" ],\n\t\t"client": [') }
+	}
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named('build') {
+	dependsOn 'autoupdateJar'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -38,7 +74,8 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-	withSourcesJar()
+	// No sources jar: the release is the two jars people choose between, and the
+	// source is the repository itself.
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
 }

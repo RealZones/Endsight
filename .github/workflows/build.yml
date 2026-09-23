@@ -66,7 +66,14 @@ jobs:
         with:
           tag_name: ${{ steps.info.outputs.version }}-${{ steps.info.outputs.short }}
           name: Endsight ${{ steps.info.outputs.version }}
-          body: ${{ steps.info.outputs.msg }}
+          # Every release names the commit its jars were built from, linked, so anyone
+          # can check the jar against the code: GitHub built it from exactly that.
+          body: |
+            ${{ steps.info.outputs.msg }}
+
+            Built by GitHub from commit [`${{ steps.info.outputs.short }}`](${{ steps.info.outputs.url }}).
+          # The two jars people choose between: endsight-<v>.jar never updates,
+          # endsight-autoupdate-<v>.jar updates itself.
           files: |
             build/libs/*.jar
 
@@ -88,7 +95,7 @@ jobs:
 
           # withSourcesJar() is on in build.gradle, so build/libs always holds a
           # -sources jar next to the real one. Excluded here.
-          MAIN_JAR="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
+          MAIN_JAR="$(find build/libs -maxdepth 1 -name 'endsight-*.jar' ! -name '*-autoupdate-*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
           [[ -z "$MAIN_JAR" ]] && { echo "::error::no jar in build/libs"; exit 1; }
 
           # Discord caps an embed description at 4096; the message is the description.

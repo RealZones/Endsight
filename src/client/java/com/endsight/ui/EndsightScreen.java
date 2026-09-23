@@ -103,7 +103,7 @@ public class EndsightScreen extends Screen {
         int navW = Theme.SIDEBAR_W - 20;
 
         // Rows shrink to fit above the footer. The sidebar builds itself from whatever
-        // categories exist, and at nine of them the fixed pitch ran the last one - Dev -
+        // categories exist, and at nine of them the fixed pitch ran the last one
         // under the Move readouts button on a 455-tall panel. Squeezed rows beat a
         // category nobody can click.
         int count = 1 + registry.categories().size();

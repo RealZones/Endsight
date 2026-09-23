@@ -18,7 +18,6 @@ import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
 import com.endsight.qol.MenuButton;
-import com.endsight.qol.PristineAlert;
 import com.endsight.qol.LootRoll;
 import com.endsight.qol.MathSolver;
 import com.endsight.qol.Updates;
@@ -32,6 +31,8 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.ForgeRecipes;
 import com.endsight.storage.MiningSession;
+import com.endsight.storage.VoidFragments;
+import com.endsight.storage.Pets;
 import com.endsight.storage.PowderTracker;
 import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
@@ -118,7 +119,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             registry.replace(MenuButton.module());
-            // registry.replace(PristineAlert.module());   // Gem Alert held back until it has been tested
             extra("register", registry);
             Config.load(registry);
         }
@@ -133,7 +133,7 @@ public class EndsightClient implements ClientModInitializer {
      */
     private static void extra(String method, ModuleRegistry registry) {
         try {
-            Class<?> hook = Class.forName("com.endsight.dev.Dev");
+            Class<?> hook = Class.forName("com.endsight.lang.Hook");
             if (registry != null) hook.getMethod(method, ModuleRegistry.class).invoke(null, registry);
             else hook.getMethod(method).invoke(null);
         } catch (ReflectiveOperationException ignored) {
@@ -150,7 +150,6 @@ public class EndsightClient implements ClientModInitializer {
         VoidgloomHelper.init();
         DragonTimer.init();
         MenuButton.init();
-        // PristineAlert.init();
         Protector.init();
         BossDrops.init();
         EyeGuard.init();
@@ -162,6 +161,8 @@ public class EndsightClient implements ClientModInitializer {
         CopyChat.init();
         MiningSession.init();
         PowderTracker.init();
+        VoidFragments.init();
+        Pets.init();
         Recipes.init();
         ForgeRecipes.init();
         ServerStats.init();

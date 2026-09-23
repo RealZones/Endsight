@@ -20,11 +20,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * A Heart of the Dragon button in the server's main menu.
+ * Buttons in the server's main menu for the screens it has no item for: the Heart of
+ * the Dragon, and the Accessory Bag.
  *
- * Drawn as one more of the menu's own items, in the empty slot under Skills, with the
- * same tooltip shape the server uses - so it reads as part of the menu, not a mod box
- * over it. The click sends /hotd and is swallowed before it can reach the slot.
+ * Drawn as more of the menu's own items, in empty slots, with the same tooltip shape the
+ * server uses - so they read as part of the menu, not mod boxes over it. A click sends
+ * the command and is swallowed before it can reach the slot.
  */
 public final class MenuButton {
 
@@ -32,22 +33,34 @@ public final class MenuButton {
     }
 
     private static final String MENU = "Dragon Sim Menu";
-    /** Under the Skills sword (slot 19) in the 6-row menu. */
-    private static final int SLOT = 28;
+
+    /** One button: its slot in the 6-row menu, the item to show, its tooltip and the command it sends. */
+    private record Button(int slot, java.util.function.Supplier<ItemStack> icon, List<Component> tip, String command) {
+    }
+
     // Built on first draw: an ItemStack made while the mod initialises crashes with
     // "Components not bound yet" - item components arrive after the client entrypoint.
-    private static ItemStack icon;
-    private static final List<Component> TIP = List.of(
-            Component.literal("Heart of the Dragon").withStyle(ChatFormatting.LIGHT_PURPLE),
-            Component.literal("Spend powder on perks.").withStyle(ChatFormatting.GRAY),
-            Component.empty(),
-            Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW));
+    private static final java.util.Map<Integer, ItemStack> icons = new java.util.HashMap<>();
+
+    private static final List<Button> BUTTONS = List.of(
+            // Under the Skills sword (slot 19).
+            new Button(28, () -> new ItemStack(Items.DRAGON_EGG), List.of(
+                    Component.literal("Heart of the Dragon").withStyle(ChatFormatting.LIGHT_PURPLE),
+                    Component.literal("Spend powder on perks.").withStyle(ChatFormatting.GRAY),
+                    Component.empty(),
+                    Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW)), "hotd"),
+            // Above Storage (slot 25).
+            new Button(16, () -> new ItemStack(Items.BUNDLE), List.of(
+                    Component.literal("Accessory Bag").withStyle(ChatFormatting.GOLD),
+                    Component.literal("Your talismans, rings and artifacts.").withStyle(ChatFormatting.GRAY),
+                    Component.empty(),
+                    Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW)), "accessories"));
 
     private static boolean enabled = true;
 
     public static Module module() {
-        return new Module("qol.hotdButton", "HOTD Button",
-                "A Heart of the Dragon item in the Dragon Sim Menu that opens /hotd.", "Quality of Life",
+        return new Module("qol.hotdButton", "Menu Buttons",
+                "Heart of the Dragon and Accessory Bag items in the Dragon Sim Menu.", "Quality of Life",
                 () -> enabled, v -> enabled = v, List.of());
     }
 
@@ -57,24 +70,27 @@ public final class MenuButton {
             ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> draw(container, g, mx, my));
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !click(container, click.x(), click.y(), click.button()));
         });
-        // The menu pads its empty slots with blank glass panes. Hovering ours would show
-        // the pane's blank tooltip, so the pane's lines are replaced with the button's -
-        // vanilla then draws them, and they look like every other item's.
+        // The menu pads its empty slots with blank glass panes. Hovering one of ours would
+        // show the pane's blank tooltip, so the pane's lines are replaced with the
+        // button's - vanilla then draws them, and they look like every other item's.
         ItemTooltipCallback.EVENT.register((stack, context, flag, lines) -> {
             if (!(Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen)) return;
-            Slot slot = slot(screen);
-            if (slot == null || stack != slot.getItem()) return;
-            lines.clear();
-            lines.addAll(TIP);
+            for (Button b : BUTTONS) {
+                Slot slot = slot(screen, b);
+                if (slot == null || stack != slot.getItem()) continue;
+                lines.clear();
+                lines.addAll(b.tip());
+                return;
+            }
         });
     }
 
-    /** The slot the button lives in, or null when this is not the menu or something real sits there. */
-    private static Slot slot(AbstractContainerScreen<?> screen) {
+    /** The slot a button lives in, or null when this is not the menu or something real sits there. */
+    private static Slot slot(AbstractContainerScreen<?> screen, Button b) {
         if (!enabled || !Zealots.strip(screen.getTitle().getString()).trim().equals(MENU)) return null;
         List<Slot> slots = screen.getMenu().slots;
-        if (slots.size() <= SLOT) return null;
-        Slot slot = slots.get(SLOT);
+        if (slots.size() <= b.slot()) return null;
+        Slot slot = slots.get(b.slot());
         return free(slot.getItem()) ? slot : null;
     }
 
@@ -89,27 +105,33 @@ public final class MenuButton {
     }
 
     private static void draw(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
-        Slot slot = slot(screen);
-        if (slot == null) return;
-        int x = screen.leftPos + slot.x, y = screen.topPos + slot.y;
-        if (icon == null) icon = new ItemStack(Items.DRAGON_EGG);
-        // A new stratum, or the egg lands under the pane vanilla already drew there.
-        g.nextStratum();
-        g.fill(x, y, x + 16, y + 16, 0xFF8B8B8B);   // the slot's own grey, so the pane is gone
-        g.fakeItem(icon, x, y);
-        if (over(screen, slot, mx, my)) {
-            g.fill(x, y, x + 16, y + 16, 0x80FFFFFF);
-            // A truly empty slot gets no tooltip from vanilla; the pane case is handled
-            // through the tooltip callback so there is never a second box.
-            if (slot.getItem().isEmpty()) g.setTooltipForNextFrame(Minecraft.getInstance().font, TIP, Optional.empty(), mx, my);
+        for (Button b : BUTTONS) {
+            Slot slot = slot(screen, b);
+            if (slot == null) continue;
+            int x = screen.leftPos + slot.x, y = screen.topPos + slot.y;
+            ItemStack icon = icons.computeIfAbsent(b.slot(), k -> b.icon().get());
+            // A new stratum, or the item lands under the pane vanilla already drew there.
+            g.nextStratum();
+            g.fill(x, y, x + 16, y + 16, 0xFF8B8B8B);   // the slot's own grey, so the pane is gone
+            g.fakeItem(icon, x, y);
+            if (over(screen, slot, mx, my)) {
+                g.fill(x, y, x + 16, y + 16, 0x80FFFFFF);
+                // A truly empty slot gets no tooltip from vanilla; the pane case is handled
+                // through the tooltip callback so there is never a second box.
+                if (slot.getItem().isEmpty()) g.setTooltipForNextFrame(Minecraft.getInstance().font, b.tip(), Optional.empty(), mx, my);
+            }
         }
     }
 
     private static boolean click(AbstractContainerScreen<?> screen, double mx, double my, int button) {
-        Slot slot = slot(screen);
-        if (slot == null || button != 0 || !over(screen, slot, mx, my)) return false;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) mc.player.connection.sendCommand("hotd");
-        return true;
+        if (button != 0) return false;
+        for (Button b : BUTTONS) {
+            Slot slot = slot(screen, b);
+            if (slot == null || !over(screen, slot, mx, my)) continue;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) mc.player.connection.sendCommand(b.command());
+            return true;
+        }
+        return false;
     }
 }

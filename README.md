@@ -22,9 +22,25 @@ module can be bound to a key.
 
 ## Install
 
-1. Download the latest `endsight-<version>.jar` from [Releases](../../releases).
+1. Download ONE jar from the latest [release](../../releases/latest):
+   - `endsight-autoupdate-<version>.jar` - updates itself, or
+   - `endsight-<version>.jar` - never updates; you download each new version yourself.
 2. Drop it in your `mods` folder alongside Fabric API.
 3. Launch, join DragSim, press **Right Shift**.
+
+**Auto-update.** The autoupdate jar checks this page when you launch. When there is a
+new release, a small window says it is downloaded and the game closes; launch again and
+you are on it. It only ever installs Endsight's own releases from this page, and every
+release names the commit GitHub built it from. If something goes wrong it says so in
+chat with a code (E1-E7) - pass the code on in the Discord.
+
+## Discord bot
+
+The Endsight bot does the forge maths in Discord: `/forge <item>` gives the whole
+build - refined, gems, crafts, and the time on your Quick Forge level.
+**Join: https://discord.gg/jSQDjqfZfV**
+
+![The /forge command showing a Perfectly-Cut Fuel Tank full build](docs/bot-forge.png)
 
 ---
 

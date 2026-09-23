@@ -58,7 +58,8 @@ public final class ForgeRecipes {
     private static final Pattern TIME_PART = Pattern.compile("(\\d+)\\s*([dhms])");
     private static final String FORGE = "The Forge";
     private static final String TIMER_ID = "storage.forge.timer";
-    private static final int RECENT_MAX = 10;
+    /** Four: the ones you are actually cycling between. The panel is only as tall as its rows. */
+    private static final int RECENT_MAX = 4;
     private static boolean inTooltip;
     private static final int RECENT_W = 126;
     private static final int RECENT_ROW = 19;
@@ -352,6 +353,11 @@ public final class ForgeRecipes {
             List<Recent> list = recentRows();
             if (row >= 0 && row < list.size()) {
                 Recent recent = list.get(row);
+                if (mx >= box.x() + box.w() - 15) {             // the row's X
+                    RECENT.remove(recent);
+                    saveRecent();
+                    return true;
+                }
                 pendingRecent = recent;
                 pendingRecentAt = System.currentTimeMillis();
                 String title = Zealots.strip(screen.getTitle().getString()).trim();
@@ -496,8 +502,10 @@ public final class ForgeRecipes {
             Draw.roundedRect(g, box.x() + 3, y, box.w() - 6, RECENT_ROW - 2, 3, hover ? Theme.hover() : Theme.raised());
             ItemStack icon = ICONS.get(r.name());
             if (icon != null) g.fakeItem(icon, box.x() + 5, y);
-            Draw.text(g, font, Draw.fit(font, shortName(r.name()), box.w() - 29), box.x() + 24, y + 5,
+            Draw.text(g, font, Draw.fit(font, shortName(r.name()), box.w() - 41), box.x() + 24, y + 5,
                     hover ? Theme.text() : Theme.muted());
+            boolean overX = hover && mx >= box.x() + box.w() - 15;
+            Draw.text(g, font, "x", box.x() + box.w() - 12, y + 5, overX ? Theme.neg() : Theme.dim());
             y += RECENT_ROW;
         }
     }
@@ -726,17 +734,41 @@ public final class ForgeRecipes {
     }
 
     /** Crafts finishing at the same time share a row: "Ref. Obsidian, Ref. Crying   27m". */
+    /**
+     * Slots finishing at the same moment become one row. Named once with a count, not
+     * listed: seven Refined End Stone on one line ran off the edge of the screen and
+     * said nothing the count does not. Only same-name neighbours are counted this way -
+     * two different crafts landing together still read as both names.
+     */
     private static List<Row> group(List<Row> rows) {
         List<Row> out = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         for (Row r : rows) {
             Row last = out.isEmpty() ? null : out.get(out.size() - 1);
             if (last != null && last.value().equals(r.value())) {
-                out.set(out.size() - 1, new Row(last.slot(), last.name() + ", " + shortName(r.name()), r.value(), last.hot() || r.hot()));
+                String name = names.get(names.size() - 1);
+                String merged = name.startsWith(shortName(r.name()) + " x") || name.equals(shortName(r.name()))
+                        ? shortName(r.name()) + " x" + (count(name) + 1)
+                        : name + ", " + shortName(r.name());
+                names.set(names.size() - 1, merged);
+                out.set(out.size() - 1, new Row(last.slot(), merged, r.value(), last.hot() || r.hot()));
             } else {
                 out.add(new Row(r.slot(), shortName(r.name()), r.value(), r.hot()));
+                names.add(shortName(r.name()));
             }
         }
         return out;
+    }
+
+    /** The "x3" on a grouped name, or 1 when it has none. */
+    private static int count(String name) {
+        int i = name.lastIndexOf(" x");
+        if (i < 0) return 1;
+        try {
+            return Integer.parseInt(name.substring(i + 2));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
     }
 
     private static String slotCount(boolean sample, List<Row> rows) {

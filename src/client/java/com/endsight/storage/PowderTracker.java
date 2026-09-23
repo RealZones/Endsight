@@ -391,6 +391,7 @@ public final class PowderTracker {
     private static void visit(int t, long value) {
         long old = total[t];
         if (old == value) return;
+        long est = estimate(t);                            // before any rate below is re-learned
         double since = 0;
         int major = -1;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) since += blocksSince(k);
@@ -428,8 +429,17 @@ public final class PowderTracker {
             double before = 0;
             for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) before += effective(k) * (blocks[k] - blocksAtSession[k]);
             sessionBase[t] = value - Math.round(before);
-        } else if (since <= 0) {
-            sessionBase[t] += value - estimate(t);
+        } else {
+            // The menu's correction goes into the session only when it could be mining:
+            // the gain since the last visit within half to twice what its blocks were
+            // estimated at. Anything else is not mining - a perk bought on a page this does
+            // not read, powder from somewhere else - and moves the start instead. Letting
+            // every correction through took a session to Void +0 after an unseen purchase,
+            // and put 12k Ender on it from two End Stone.
+            double estMined = est - old, realMined = value - old;
+            boolean mining = since > 0 && old >= 0 && estMined > 0
+                    && realMined >= 0.5 * estMined && realMined <= 2 * estMined;
+            if (!mining) sessionBase[t] += value - est;
         }
         total[t] = value;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) blocksAtVisit[k] = blocks[k];

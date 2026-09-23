@@ -416,10 +416,21 @@ public final class PowderTracker {
                 log("RATE", KIND[major], value - old, blocksSince(major), String.format(Locale.ROOT, "%.3f", learned), buff[t]);
             }
         }
-        // The session gain carries across the correction: what was estimated as gained
-        // so far becomes exact, rather than snapping the counter to zero.
-        if (sessionBase[t] < 0) sessionBase[t] = value;
-        else sessionBase[t] += value - estimate(t);
+        // The session gain is exact at every visit: the menu's total, less where the
+        // session started. It used to put the menu's correction into the start instead,
+        // so an estimate that ran low stayed low; and the session only began at the first
+        // visit while the hourly clock had run since launch - 568k over 58 minutes read
+        // 579k/h when the last ten minutes alone were over 3m/h. Now the first visit
+        // counts what was mined before it at the learned rates, and only a drop with
+        // nothing mined since - a perk bought in the menu - moves the start, so spending
+        // is never negative mining.
+        if (sessionBase[t] < 0) {
+            double before = 0;
+            for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) before += effective(k) * (blocks[k] - blocksAtSession[k]);
+            sessionBase[t] = value - Math.round(before);
+        } else if (since <= 0) {
+            sessionBase[t] += value - estimate(t);
+        }
         total[t] = value;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) blocksAtVisit[k] = blocks[k];
         log("H", TYPE[t], value, since);

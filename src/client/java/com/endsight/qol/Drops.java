@@ -51,6 +51,9 @@ public final class Drops {
 
     /** Anchored: only tier words may come before DROP!, so a speaker in front fails it. */
     private static final Pattern ANNOUNCE = Pattern.compile("^([A-Z][A-Z ]*?)\\s*DROP!\\s*\\(?([^()]+?)\\)?\\s*(\\(.*)?$");
+    /** The bracket a pet drop ends with: "(Uncommon)", "(Legendary)". Its own rarity, not the family's. */
+    private static final Pattern RARITY_NOTE =
+            Pattern.compile("\\((?:COMMON|UNCOMMON|RARE|EPIC|LEGENDARY|MYTHIC)\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LOOT = Pattern.compile("loot number:[^→]*→\\s*(?:§[k-or])*(§[0-9a-f])?(.+)$");
 
     /** Longest needle first, so "Golden Hot Potato Book" wins over "Hot Potato Book". */
@@ -99,6 +102,13 @@ public final class Drops {
         Matcher a = ANNOUNCE.matcher(line);
         if (a.find()) {
             String item = a.group(2).trim();
+            // A pet says its own rarity at the end - "Obsidian Golem Pet (Uncommon)" - and
+            // that beats the tier list, which names a family rather than one drop. The list
+            // has "Golem (pet)" as epic, so an uncommon one rang the epic call.
+            String note = a.group(3);
+            if (note != null && RARITY_NOTE.matcher(note).find()) {
+                return once(new Drop(item, rank(note)));
+            }
             return once(new Drop(item, tierOf(item, rank(a.group(1)))));
         }
         Matcher l = LOOT.matcher(raw);

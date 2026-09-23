@@ -1245,7 +1245,7 @@ public final class Recipes {
             // (a narrow screen) it goes under the categories instead.
             if (f.recentW() > 0) {
                 int w = 34;
-                return new int[]{f.recentX() + f.recentW() + 1 - w, f.gridY() - 16 + recentPaneH(f) + 4, w, 16};
+                return new int[]{f.recentX() + f.recentW() + 1 - w, f.gridY() - 3 + recentPaneH(f) + 4, w, 16};
             }
             return new int[]{f.catX() - 3, f.gridY() + categories().size() * CELL + 6, CATS + 1, 16};
         }
@@ -1272,7 +1272,7 @@ public final class Recipes {
         // over the world is a dim window, three small ones are shelves you can see past.
         // There was a solid look once; nobody wanted it back once this existed.
         Draw.glass(g, f.catX() - 3, f.gridY() - 3, 23, categories().size() * CELL + 4, 5);
-        if (f.recentW() > 0) Draw.glass(g, f.recentX() - 1, f.gridY() - 16, f.recentW() + 2, recentPaneH(f), 5);
+        if (f.recentW() > 0) Draw.glass(g, f.recentX() - 1, f.gridY() - 3, f.recentW() + 2, recentPaneH(f), 5);
         Draw.glass(g, f.gridX() - 4, f.y, f.gridW() + 8, f.h, Theme.RADIUS);
 
         List<String> list = visible();
@@ -1346,18 +1346,22 @@ public final class Recipes {
 
     /** How many recent rows fit and exist. */
     private static int recentCount(Frame f) {
-        return Math.min(recentRows().size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+        return Math.min(recentRows().size(), RECENT_MAX);
     }
 
-    /** The recent list's pane: its label, its rows, or "none". */
+    /** The recent pane spans the category column exactly: top with the first icon, bottom with the last. */
     private static int recentPaneH(Frame f) {
-        int n = recentCount(f);
-        return 16 + (n == 0 ? 14 : n * RECENT_ROW) + 2;
+        return Math.max(categories().size() * CELL + 4, 18 + RECENT_MAX * RECENT_ROW);
+    }
+
+    /** Rows stretch so six of them fill the pane under its label. */
+    private static int recentRowH(Frame f) {
+        return Math.max(RECENT_ROW, (recentPaneH(f) - 18) / RECENT_MAX);
     }
 
     private static void drawRecent(GuiGraphicsExtractor g, Font font, Frame f, Map<String, Integer> have, int mx, int my) {
-        int x = f.recentX(), y = f.gridY();
-        Draw.text(g, font, "Recent", x + 2, y - 13, Theme.muted());
+        int x = f.recentX(), y = f.gridY() + 13, rh = recentRowH(f);
+        Draw.text(g, font, "Recent", x + 2, f.gridY() + 1, Theme.muted());
         List<String> list = recentRows();
         int max = recentCount(f);
         if (max == 0) {
@@ -1368,19 +1372,19 @@ public final class Recipes {
             String name = list.get(i);
             Recipe r = RECIPES.get(name);
             if (r == null) continue;
-            int ry = y + i * RECENT_ROW;
-            boolean hover = mx >= x && mx < x + f.recentW() && my >= ry && my < ry + RECENT_ROW;
+            int ry = y + i * rh;
+            boolean hover = mx >= x && mx < x + f.recentW() && my >= ry && my < ry + rh;
             int[] rd = ready(r, have);
             boolean done = complete(rd);
             boolean isOpen = name.equals(openRecipe);
-            slab(g, x, ry, f.recentW(), RECENT_ROW - 1, isOpen ? Theme.accent() : done ? Theme.pos() : 0,
+            slab(g, x, ry, f.recentW(), rh - 1, isOpen ? Theme.accent() : done ? Theme.pos() : 0,
                     isOpen ? 0.32f : 0.18f, hover);
             ItemStack icon = ICONS.get(name);
-            if (icon != null) g.fakeItem(icon, x + 1, ry + 1);
-            Draw.text(g, font, fit(font, name, f.recentW() - 32), x + 20, ry + 5,
+            if (icon != null) g.fakeItem(icon, x + 1, ry + (rh - 16) / 2);
+            Draw.text(g, font, fit(font, name, f.recentW() - 32), x + 20, ry + (rh - 8) / 2,
                     done ? Theme.pos() : Theme.text());
             boolean overX = hover && mx >= x + f.recentW() - 12;
-            Draw.text(g, font, "x", x + f.recentW() - 9, ry + 5, overX ? Theme.neg() : Theme.dim());
+            Draw.text(g, font, "x", x + f.recentW() - 9, ry + (rh - 8) / 2, overX ? Theme.neg() : Theme.dim());
             if (hover && !overX) tooltip(g, font, r, have, mx, my);
         }
     }
@@ -1956,9 +1960,9 @@ public final class Recipes {
         // Most recent recipe shortcuts.
         if (f.recentW() > 0 && mx >= f.recentX() && mx < f.recentX() + f.recentW()
                 && my >= f.gridY() && my < f.gridY() + f.gridH()) {
-            int i = (int) ((my - f.gridY()) / RECENT_ROW);
+            int i = my < f.gridY() + 13 ? -1 : (int) ((my - f.gridY() - 13) / recentRowH(f));
             List<String> recent = recentRows();
-            int max = Math.min(recent.size(), Math.min(RECENT_MAX, Math.max(1, f.gridH() / RECENT_ROW)));
+            int max = recentCount(f);
             if (i >= 0 && i < max) {
                 String name = recent.get(i);
                 if (mx >= f.recentX() + f.recentW() - 12) {    // the row's X

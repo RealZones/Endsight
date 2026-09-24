@@ -138,7 +138,7 @@ public final class MiningSession {
             java.util.regex.Matcher m = PET_DROP.matcher(line);
             if (v.find()) {
                 what = v.group(1);
-                kind = "mining drop";
+                kind = "";              // the name says it; a subtitle under it is noise
             } else if (m.find() && (tier = com.endsight.qol.Drops.petTier(raw)) >= 2) {
                 what = m.group(1).trim();
                 kind = "pet drop";

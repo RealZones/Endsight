@@ -474,7 +474,15 @@ public final class PowderTracker {
         // class only because it is the one reading the drill and the blocks. Turning the
         // powder readout off took both down with it, which is not what the toggle says.
         if (showFuel && fuel >= 0) HudLayout.draw(FUEL_ID, g, mc.font, false);
-        if (!enabled || (total[0] < 0 && total[1] < 0)) return;
+        boolean show = enabled && (total[0] >= 0 || total[1] >= 0);
+        // The readout has gone missing mid-session with nothing in the log to say why.
+        // Every flip of the one gate that hides it is written down, with the state behind
+        // it, so the next disappearance names its own cause instead of being guessed at.
+        if (show != wasShown) {
+            wasShown = show;
+            log("VIS", show ? "shown" : "hidden", "enabled=" + enabled, "ender=" + total[0], "void=" + total[1]);
+        }
+        if (!show) return;
         HudLayout.draw(ID, g, mc.font, false);
     }
 
@@ -620,6 +628,8 @@ public final class PowderTracker {
      * themselves are read off pet tooltips as they go past, per pet and rarity.
      */
     private static String petKey = "";
+    /** Whether the readout was drawn last frame, so only the changes are logged. */
+    private static boolean wasShown;
 
     public static void petChanged(String pet) {
         petKey = pet;

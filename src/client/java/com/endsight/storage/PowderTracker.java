@@ -104,6 +104,16 @@ public final class PowderTracker {
     private static boolean remind = true;
     private static final long[] total = {-1, -1};
     private static final long[] sessionBase = {-1, -1};
+    /**
+     * Whether the session's starting point is known, kept apart from its value.
+     *
+     * It used to be "sessionBase < 0 means unknown", and spending powder subtracts from
+     * the base - so an evening of HOTD purchases drove it past zero and the readout read
+     * its own baseline as unknown: Session +0 and Powder/h 0 for the rest of the session,
+     * while the blocks kept counting. A base below zero is perfectly ordinary once you
+     * have spent more than you had when the session began.
+     */
+    private static final boolean[] sessionSet = new boolean[2];
     private static final int[] buff = {24, 24};
     // Blocks broken, weighted: a Void block mined under Void Infusion counts as two, since
     // the drill's ability doubles Void Powder for its 30s. So the learned rate is the base
@@ -198,7 +208,10 @@ public final class PowderTracker {
     }
 
     private static void reset() {
-        for (int t = 0; t < 2; t++) sessionBase[t] = total[t] < 0 ? -1 : estimate(t);
+        for (int t = 0; t < 2; t++) {
+            sessionSet[t] = total[t] >= 0;
+            sessionBase[t] = sessionSet[t] ? estimate(t) : -1;
+        }
         for (int k = 0; k < KIND.length; k++) blocksAtSession[k] = blocks[k];
         recent.clear();
         activeMs = 0;
@@ -425,10 +438,11 @@ public final class PowderTracker {
         // counts what was mined before it at the learned rates, and only a drop with
         // nothing mined since - a perk bought in the menu - moves the start, so spending
         // is never negative mining.
-        if (sessionBase[t] < 0) {
+        if (!sessionSet[t]) {
             double before = 0;
             for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) before += effective(k) * (blocks[k] - blocksAtSession[k]);
             sessionBase[t] = value - Math.round(before);
+            sessionSet[t] = true;
         } else {
             // The menu's correction goes into the session only when it could be mining:
             // the gain since the last visit within half to twice what its blocks were
@@ -582,7 +596,7 @@ public final class PowderTracker {
     }
 
     private static long gain(int t) {
-        return sessionBase[t] < 0 ? 0 : Math.max(0, estimate(t) - sessionBase[t]);
+        return sessionSet[t] ? Math.max(0, estimate(t) - sessionBase[t]) : 0;
     }
 
     /** Powder per hour of mining time: the session gain over the active clock, which pauses when you stop. */
@@ -675,6 +689,7 @@ public final class PowderTracker {
                         // Carried over, not measured here: the session starts from it, so a
                         // relaunch mid-session does not count the whole total as gained.
                         sessionBase[t] = total[t];
+                        sessionSet[t] = true;
                     }
                     continue;
                 }

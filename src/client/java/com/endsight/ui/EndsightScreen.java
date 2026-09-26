@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * The module browser: sidebar, categories, search, scrolling card grid.
@@ -34,6 +35,10 @@ public class EndsightScreen extends Screen {
     private static String category;
     private static String query = "";
     private static int scroll;
+    private record ViewState(String category, String query, int scroll) {
+    }
+    private static final Map<ModuleRegistry, ViewState> views = new WeakHashMap<>();
+    private static ModuleRegistry activeRegistry;
     /** The module id waiting for a key, or null. Not static: a half-armed chip should not outlive the screen. */
     private String binding;
 
@@ -58,6 +63,16 @@ public class EndsightScreen extends Screen {
         super(Component.literal(brand));
         this.brand = brand;
         this.registry = registry;
+        // A browser reused with another registry must not inherit an unavailable
+        // category or a search that hides all of its modules.
+        if (activeRegistry != registry) {
+            if (activeRegistry != null) views.put(activeRegistry, new ViewState(category, query, scroll));
+            ViewState view = views.get(registry);
+            category = view == null ? null : view.category();
+            query = view == null ? "" : view.query();
+            scroll = view == null ? 0 : view.scroll();
+            activeRegistry = registry;
+        }
     }
 
     // -- geometry -------------------------------------------------------------
@@ -1033,6 +1048,7 @@ public class EndsightScreen extends Screen {
                             gh
                     )
             );
+            if (overGear) g.setTooltipForNextFrame(font, Component.literal("Settings"), mouseX, mouseY);
         }
     }
 

@@ -1,4 +1,10 @@
 # result	count	cell0..cell8 as count*name (blank for empty). Rewritten by the mod on every scan.
+# Lines starting with "-" are grids this file used to ship. A copy of one still in
+# someone's recipes.txt came from here, not from their game, so it is replaced.
+-Amethyst Helmet	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
+-Amethyst Leggings	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst
+-Amethyst Chestplate	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst
+-Amethyst Boots	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
 Crystal Helmet	1	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment			
 Maxor's Helmet	1		1*Maxor's Wand			1*Frozen Blaze Helmet			1*Maxor's Wand	
 Crystal Chestplate	1	10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment
@@ -143,8 +149,8 @@ Lament	1	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endstone Rose Bush	1*Endsto
 Endstone Rose Bush	1		10*End Stone Rose		10*End Stone Rose	10*End Stone Rose	10*End Stone Rose		10*End Stone Rose	
 Void Upgrade Stone	1	32*Null Atom		32*Null Atom		1*Shard of the Shredded		32*Null Atom		32*Null Atom
 Weird Tuba	1	4*Frozen Fragment		4*Frozen Fragment	4*Frozen Fragment		4*Frozen Fragment		4*Frozen Fragment	
-Amethyst Helmet	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
-Amethyst Leggings	1	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst
+Amethyst Helmet	1	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	1*Crying Obsidian Helmet	8*Fine Amethyst			
+Amethyst Leggings	1	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	1*Crying Obsidian Leggings	8*Fine Amethyst	8*Fine Amethyst		8*Fine Amethyst
 Crystal Cluster	1		10*Crystal Fragment		10*Crystal Fragment	10*Crystal Fragment	10*Crystal Fragment		10*Crystal Fragment	
 Frozen Urn	1	5*Frozen Fragment		5*Frozen Fragment	5*Frozen Fragment		5*Frozen Fragment	5*Frozen Fragment	5*Frozen Fragment	5*Frozen Fragment
 Gilded Ring	1	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Golden Hot Potato Book	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel	1*Midas Jewel
@@ -159,8 +165,8 @@ Soulflow Supercell	1	4*Null Atom		4*Null Atom		1*Soulflow Battery		4*Null Atom		
 [Lvl 1] Endermite	1	32*End Stone	32*End Stone	32*End Stone	32*End Stone	1*Null Ovoid	32*End Stone	32*End Stone	32*End Stone	32*End Stone
 [Lvl 1] Obsidian Golem	1	32*Obsidian	32*Obsidian	32*Obsidian	32*Obsidian	1*Null Ovoid	32*Obsidian	32*Obsidian	32*Obsidian	32*Obsidian
 [Lvl 1] Silverfish	1	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	1*Null Ovoid	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone	8*Enchanted End Stone
-Amethyst Chestplate	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst	1*Fine Amethyst
-Amethyst Boots	1	1*Fine Amethyst		1*Fine Amethyst	1*Fine Amethyst		1*Fine Amethyst			
+Amethyst Chestplate	1	8*Fine Amethyst	1*Crying Obsidian Chestplate	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst	8*Fine Amethyst
+Amethyst Boots	1	8*Fine Amethyst		8*Fine Amethyst	8*Fine Amethyst	1*Crying Obsidian Boots	8*Fine Amethyst			
 Crying Obsidian Helmet	1	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Enderite Helmet	1*Refined Crying Obsidian			
 Crying Obsidian Chestplate	1	1*Refined Crying Obsidian	1*Enderite Chestplate	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian
 Crying Obsidian Leggings	1	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Refined Crying Obsidian	1*Enderite Leggings	1*Refined Crying Obsidian	1*Refined Crying Obsidian		1*Refined Crying Obsidian
@@ -234,6 +240,25 @@ Void Omelette	1		1*Fine Amethyst		64*Enchanted Obsidian	1*Ender Omelette	32*Ench
 Void Plate	1		2*Refined End Stone			1*Refined Obsidian			5*Flawed Amethyst	
 Void-Polished Engine	1		32*Refined Crying Obsidian		5*Drill Motor	1*Crying-Polished Engine	1*Perfect Amethyst		16*Obsidian Plate	
 Void Powder Coating	1		16*Amethyst Mixture			16*Refined Crying Obsidian			5*Void Fragment	
+Glacial Scythe	1	1*Golden Droplet	1*Frozen Core	1*Golden Droplet	64*Golden Fragment	1*Frozen Scythe	64*Golden Fragment	1*Golden Droplet	64*Golden Fragment	1*Golden Droplet
+Riftrender Katana	1	8*Seraph Plating	4*Void Fang	8*Seraph Plating	2*Riftstring	1*Atomsplit Katana	2*Riftstring		4*Flesh Fang	
+Riftwalker Helmet	1		3*Seraph Plating			1*Final Destination Helmet			16*Null Atom	
+Riftwalker Chestplate	1		5*Seraph Plating			1*Final Destination Chestplate			24*Null Atom	
+Riftwalker Leggings	1		4*Seraph Plating			1*Final Destination Leggings			20*Null Atom	
+Riftwalker Boots	1		2*Seraph Plating			1*Final Destination Boots			12*Null Atom	
+Ooze Scepter	1		16*Gelatinous Membrane		2*Gelatinous Glob	1*Corrupted Core	2*Gelatinous Glob		64*Rift Goo	
+Bonemerang	1		1*Flesh Fang			1*Flesh Fang			1*Flesh Fang	
+Anchorbreaker	1		1*Riftstring			1*Runaan's Bow			32*Null Atom	
+Voidfang Dagger	1		1*Void Fang		64*Null Ovoid	1*Atomsplit Katana	64*Null Ovoid		16*Null Atom	
+Valkyrie	1	1*Necron Aegis	2*Shard of the Shredded	1*Necron Aegis	1*Necron Aegis	2*Warden Heart	1*Necron Aegis	1*Necron Aegis	1*Necron's Blade (Unrefined)	1*Necron Aegis
+Scylla	1	1*Maxor's Wand	2*Void Upgrade Stone	1*Maxor's Wand	1*Maxor's Wand	2*Judgement Core	1*Maxor's Wand	1*Maxor's Wand	1*Necron's Blade (Unrefined)	1*Maxor's Wand
+Necron's Blade (Unrefined)	1		64*Rift Goo			1*Corrupted Core			1*Necron's Handle	
+Hyperion	1	1*Storm's Wand	64*Frozen Fragment	1*Storm's Wand	1*Storm's Wand	2*Frozen Core	1*Storm's Wand	1*Storm's Wand	1*Necron's Blade (Unrefined)	1*Storm's Wand
+Fleshrend Dagger	1		1*Flesh Fang		64*Revenant Viscera	1*Axe of the Shredded	64*Revenant Viscera		16*Null Atom	
+Gooey Ring	1	64*Rift Goo	64*Rift Goo	32*Rift Goo		1*Gooey Talisman			8*Null Atom	
+Gooey Artifact	1	64*Rift Goo	64*Rift Goo	64*Rift Goo	64*Rift Goo	1*Gooey Ring	64*Rift Goo		2*Goop	
+Goop Bait	1					48*Rift Goo				
+Goop	1	64*Rift Goo	64*Rift Goo	32*Rift Goo						
 
 # categories, as the server's menu lists them
 @Combat	Crystal Helmet	Crystal Chestplate	Crystal Leggings	Crystal Boots	Frozen Blaze Helmet	Frozen Blaze Chestplate	Frozen Blaze Leggings		Frozen Blaze Boots	Storm Helmet	Storm Chestplate	Storm Leggings	Storm Boots	Maxor's Helmet	Maxor's Chestplate	Maxor's Leggings	Maxor's Boots	Necron Helmet	Necron Chestplate	Necron Leggings	Necron Boots	Sorrow Helmet	Sorrow Chestplate	Sorrow Leggings	Sorrow Boots	Axe of the Shredded	Blinding Sword	Bouquet of Lies	Edible Mace	Flower of Truth	Frozen Scythe	Giant's Sword	Golden Sceptre	Midas Staff	Golden Cannon
@@ -242,3 +267,5 @@ Void Powder Coating	1		16*Amethyst Mixture			16*Refined Crying Obsidian			5*Void
 @Mining	Prospector's Helmet	Prospector's Chestplate	Prospector's Leggings	Prospector's Boots	Obsidian Miner Helmet	Obsidian Miner Chestplate	Obsidian Miner Leggings	Obsidian Miner Boots	Enderite Helmet	Enderite Chestplate	Enderite Leggings	Enderite Boots	Crying Obsidian Helmet	Crying Obsidian Chestplate	Crying Obsidian Leggings	Crying Obsidian Boots	Amethyst Helmet	Amethyst Chestplate	Amethyst Leggings	Amethyst Boots	Helmet of the Void	Chestplate of the Void	Leggings of the Void	Boots of the Void	Obsidian Pickaxe	Refined Obsidian Pickaxe	Crying Obsidian Pickaxe	Enderite Pickaxe	Refined Enderite Pickaxe	Amethyst Drill AX-15	Amethyst Drill AX-522	Enderite Drill EX-226	Enderite Drill EX-326	Obsidian Drill OD-355	Obsidian Drill OD-455	Obsidian Drill OD-555	Obsidian Drill OD-655	Crying Drill CD-12	Void Drill	Amethyst Gauntlet	Fuel Tank	End-Infused Fuel Tank	Obsidian-Infused Fuel Tank	Amethyst Fuel Tank	Perfectly-Cut Fuel Tank	Drill Motor	Bejeweled Handle	End-Plated Engine	Obsidian-Plated Engine	Amethyst-Polished Engine	Crying-Polished Engine	Void-Polished Engine	Ender Omelette	Blazing Omelette	Void Omelette	Dragon Seasoning	Void Powder Coating	Amethyst Geode	Amethyst Jewel	Flawed Amethyst	Fine Amethyst	Flawless Amethyst	Perfect Amethyst	Amethyst Mixture	Enchanted End Stone	Enchanted Obsidian	Enchanted Crying Obsidian	Refined End Stone	Refined Obsidian	Refined Crying Obsidian	Pure Obsidian	Obsidian Plate	Void Plate	Void Shard	Void Canister	Void Cell	Void Alloy
 @Accessories	Average Greed	Big Loan	Crystal Cluster	Draconic Artifact	Draconic Ring	Draconic Talisman	Ender Artifact		Ender Relic	Ender Ring	Ender Talisman	Frozen Urn	Gilded Ring	The Greediest of Them All	High Greed	Low Greed	Personal Compactor 4000	Personal Compactor 5000	Personal Compactor 6000	Personal Compactor 7000	Protector's Shield	Reaper Orb	Revenant Talisman	Revenant Ring	Revenant Artifact	Ritualist's Artifact	Ritualist's Ring	Rose Artifact	Rose Ring	Rose Talisman	Small Loan	Soulflow Battery	Soulflow Supercell	Spare Change Talisman	Void Artifact	Void Relic	Void Ring	Void Talisman	Warden Talisman	Warden's Blade	Weak Greedness	Wilted Rose Artifact	Wilted Rose Ring	Wilted Rose Talisman	Zealot Artifact	Zealot Ring	Zealot Talisman	Zombie Artifact	Zombie Relic	Zombie Ring
 @Consumables & Misc	[Lvl 1] Endermite	[Lvl 1] Obsidian Golem	Tier Boost	[Lvl 1] Silverfish	Golden Hot Potato Book	Lament	Endstone Rose Bush		Void Upgrade Stone	Weird Tuba
+# Rift is not a tab in the server's menu: the Rift update's recipes, learned by opening each one.
+@Rift	Riftwalker Helmet	Riftwalker Chestplate	Riftwalker Leggings	Riftwalker Boots	Riftrender Katana	Voidfang Dagger	Fleshrend Dagger	Anchorbreaker	Bonemerang	Ooze Scepter	Necron's Blade (Unrefined)	Hyperion	Scylla	Valkyrie	Gooey Ring	Gooey Artifact	Goop	Goop Bait

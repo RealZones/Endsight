@@ -176,10 +176,13 @@ public final class PowderTracker {
                 "Tracks Ender/Void powder, powder rates, and HOTD upgrade reminders.", "Mining",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Readout"),
                         new Setting.Toggle("Powder Rates", "Shows Ender/Void powder gain and powder per hour.",
                                 () -> showPowder, v -> showPowder = v),
+                        new Setting.Section("Alerts"),
                         new Setting.Toggle("HOTD Reminders", "Alerts when you can afford a Heart of the Dragon upgrade.",
                                 () -> remind, v -> remind = v),
+                        new Setting.Section("Session"),
                         new Setting.Action("Reset Session", "Clears powder, XP, and rate totals.", "Reset", PowderTracker::reset),
                         new Setting.Note("Status", PowderTracker::status)));
     }

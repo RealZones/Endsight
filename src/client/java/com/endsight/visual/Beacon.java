@@ -51,8 +51,10 @@ public final class Beacon {
                 "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Bosses"),
                         new Setting.Toggle("Protector", "A beam over the Endstone Protector.", () -> protector, v -> protector = v),
                         new Setting.Toggle("Warden", "A beam over the Warden.", () -> warden, v -> warden = v),
+                        new Setting.Section("Appearance"),
                         new Setting.Slider("Range",
                                 "How far away it still draws.",
                                 16, 256, 8, () -> range, v -> range = v, "m"),

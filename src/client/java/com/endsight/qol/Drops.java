@@ -109,6 +109,12 @@ public final class Drops {
             if (note != null && RARITY_NOTE.matcher(note).find()) {
                 return once(new Drop(item, rank(note)));
             }
+            // A boss or slayer pet has no bracket - "[Lvl 1] Ender Dragon" - and its rarity is
+            // only the colour of the name: gold legendary, purple epic. The tier list names the
+            // pet, not the rarity, so every Ender Dragon pet read as legendary; Delox got two
+            // epic ones and the mod called both legendary.
+            int pet = petTier(raw);
+            if (pet >= 0) return once(new Drop(item, pet));
             return once(new Drop(item, tierOf(item, rank(a.group(1)))));
         }
         Matcher l = LOOT.matcher(raw);

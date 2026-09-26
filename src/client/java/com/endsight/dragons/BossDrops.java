@@ -118,6 +118,23 @@ public final class BossDrops {
     /** What zealots and the golden ones drop: never a boss's, whatever the timing says. */
     private static final Set<String> NEST = Set.of("summoning eye", "enderman", "null ovoid", "ender pearl",
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
+    /**
+     * Mined, never a boss's. Mining amethyst beside the golem put a Void Fragment in its
+     * window; the window only knows timing.
+     */
+    private static final Set<String> MINED = Set.of("void fragment", "void core");
+    /**
+     * Each boss's loot as its bestiary page lists it - pets by name, any level. A boss on
+     * this list takes nothing else from its window: timing alone gave the golem Golden Eyes
+     * and a Void Fragment. Bosses not on it (dragons, slayers) still go by timing.
+     */
+    private static final Map<String, Set<String>> LOOT = Map.of(
+            GOLEM, Set.of("giant's core", "precursor gear", "golem", "tier boost core", "mysterious handle",
+                    "livid dagger", "defender talisman", "endstone rose bush", "hot potato book"),
+            WARDEN, Set.of("giant's core", "warden core", "precursor gear", "warden", "lament", "golem upgrader",
+                    "golem", "tier boost core", "mysterious handle", "livid dagger", "endstone rose bush", "hot potato book"));
+    /** Real loot, but not worth a row: it still proves a kill was yours, it is just not counted. */
+    private static final Set<String> FODDER = Set.of("defender talisman", "endstone rose bush", "hot potato book");
     /** Fodder nobody wants a row for, at any setting. */
     // Travel Scroll and Hot Potato Book are not dragon drops; they were golem loot landing
     // in a dragon window.
@@ -274,9 +291,9 @@ public final class BossDrops {
                 // "loot number → Golden Dragon Leggings" landing in the second a Warden
                 // died is the dragon's, not the Warden's.
                 String lower = d.item().toLowerCase(Locale.ROOT);
-                if (!NEST.contains(lower)) {
+                if (!NEST.contains(lower) && !MINED.contains(lower)) {
                     if (death != null) {
-                        if (isDragon(death.boss) || !lower.contains("dragon")) death.drops.add(d);
+                        if ((isDragon(death.boss) || !lower.contains("dragon")) && belongs(death.boss, d.item())) death.drops.add(d);
                     }
                     else {
                         held = d;
@@ -424,7 +441,7 @@ public final class BossDrops {
         if (death != null && !death.boss.equals(boss)) settle();
         if (death == null) {
             death = new Death(boss, now);
-            if (takeHeld && held != null && now - heldAt < BEFORE_MS) death.drops.add(held);
+            if (takeHeld && held != null && now - heldAt < BEFORE_MS && belongs(boss, held.item())) death.drops.add(held);
         }
         held = null;
         return death;
@@ -472,8 +489,26 @@ public final class BossDrops {
      * check saw the other, and every drop counted as two. Fifteen seconds is longer than
      * the gap between the two lines and shorter than any two real drops of one item.
      */
+    /** A drop's name as the lists hold it: lower case, a pet's "[Lvl 1] " taken off. */
+    private static String lootName(String item) {
+        return item.toLowerCase(Locale.ROOT).replaceFirst("^\\[lvl \\d+\\]\\s*", "").trim();
+    }
+
+    /** Whether a drop can be this boss's at all: on its bestiary list where it has one, and never a mined drop. */
+    private static boolean belongs(String boss, String item) {
+        String l = lootName(item);
+        if (MINED.contains(l)) return false;
+        Set<String> loot = LOOT.get(boss);
+        return loot == null || loot.contains(l);
+    }
+
+    /** Whether a drop of this boss's gets a row: its loot, less the fodder. */
+    private static boolean counted(String boss, String item) {
+        return belongs(boss, item) && !(LOOT.containsKey(boss) && FODDER.contains(lootName(item)));
+    }
+
     private static void drop(String boss, Drops.Drop d) {
-        if (hidden(d.item())) return;
+        if (hidden(d.item()) || !counted(boss, d.item())) return;
         long now = System.currentTimeMillis();
         counted.values().removeIf(t -> now - t > SAME_DROP_MS);
         Long last = counted.put(d.item().toLowerCase(Locale.ROOT), now);
@@ -591,7 +626,8 @@ public final class BossDrops {
             for (String line : Files.readAllLines(file(), StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 if (p[0].equals("kill") && p.length == 3) of(loaded, p[1]).kills = Integer.parseInt(p[2]);
-                else if (p[0].equals("drop") && p.length == 4) of(loaded, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
+                // Ones counted before the lists existed are left out, and the next save drops them.
+                else if (p[0].equals("drop") && p.length == 4 && counted(p[1], p[2])) of(loaded, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
                 else if (p[0].equals("tier") && p.length == 3) seen.put(p[1], Integer.parseInt(p[2]));
             }
             fileStamp = Files.getLastModifiedTime(file()).toMillis();

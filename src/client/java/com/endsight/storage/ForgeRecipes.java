@@ -58,6 +58,7 @@ public final class ForgeRecipes {
     private static final Pattern TIME_PART = Pattern.compile("(\\d+)\\s*([dhms])");
     private static final String FORGE = "The Forge";
     private static final String TIMER_ID = "storage.forge.timer";
+    private static final int TIMER_MAX_W = 190;
     /** Four: the ones you are actually cycling between. The panel is only as tall as its rows. */
     private static final int RECENT_MAX = 4;
     private static boolean inTooltip;
@@ -99,9 +100,11 @@ public final class ForgeRecipes {
                 "Forge timers, ready slot outlines and recent Forge crafts.", "Mining",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Readout"),
                         new Setting.Toggle("Forge timer",
                                 "Show active Forge slots and ready crafts on the HUD.",
                                 () -> timer, v -> timer = v),
+                        new Setting.Section("Forge menu"),
                         new Setting.Toggle("Ready outline",
                                 "Outline completed Forge slots while the Forge menu is open.",
                                 () -> readyOutline, v -> readyOutline = v),
@@ -700,12 +703,14 @@ public final class ForgeRecipes {
     }
 
     private static int[] drawTimer(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        List<Row> rows = group(sample ? sampleRows() : rows(true));
+        List<Row> raw = sample ? sampleRows() : rows(true);
+        List<Row> rows = displayRows(raw);
         List<Row> status = new ArrayList<>(sample ? List.of(new Row(-1, "Active", "2/3", false)) : statusRows());
-        String count = slotCount(sample, rows);
+        String count = slotCount(sample, raw);
         int w = Readout.width(font, "FORGE", count);
         for (Row row : status) w = Math.max(w, Readout.width(font, row.name(), row.value()));
         for (Row row : rows) w = Math.max(w, Readout.width(font, shortName(row.name()), row.value()));
+        w = Math.min(TIMER_MAX_W, w);
         int h = Readout.ROW_H + 3 + Math.max(1, status.size() + rows.size()) * (Readout.ROW_H + 2);
         if (g == null) return new int[]{w, h};
 
@@ -723,7 +728,8 @@ public final class ForgeRecipes {
             Draw.text(g, font, "No active slots", Readout.left(x), ry, Theme.dim());
         } else {
             for (Row row : rows) {
-                Draw.text(g, font, Draw.fit(font, shortName(row.name()), w - 52), Readout.left(x), ry,
+                int labelWidth = Readout.right(x, w) - Readout.left(x) - font.width(row.value()) - 12;
+                Draw.text(g, font, Draw.fit(font, shortName(row.name()), Math.max(24, labelWidth)), Readout.left(x), ry,
                         row.hot() ? Theme.accent() : Theme.dim());
                 Draw.textRight(g, font, row.value(), Readout.right(x, w), ry,
                         row.hot() ? Theme.accent() : Theme.text());
@@ -733,42 +739,44 @@ public final class ForgeRecipes {
         return new int[]{w, h};
     }
 
-    /** Crafts finishing at the same time share a row: "Ref. Obsidian, Ref. Crying   27m". */
     /**
-     * Slots finishing at the same moment become one row. Named once with a count, not
-     * listed: seven Refined End Stone on one line ran off the edge of the screen and
-     * said nothing the count does not. Only same-name neighbours are counted this way -
-     * two different crafts landing together still read as both names.
+     * A full batch of ready slots only needs a count on the HUD; the Forge menu shows
+     * their individual items. One or two ready crafts keep their names.
      */
-    private static List<Row> group(List<Row> rows) {
-        List<Row> out = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        for (Row r : rows) {
-            Row last = out.isEmpty() ? null : out.get(out.size() - 1);
-            if (last != null && last.value().equals(r.value())) {
-                String name = names.get(names.size() - 1);
-                String merged = name.startsWith(shortName(r.name()) + " x") || name.equals(shortName(r.name()))
-                        ? shortName(r.name()) + " x" + (count(name) + 1)
-                        : name + ", " + shortName(r.name());
-                names.set(names.size() - 1, merged);
-                out.set(out.size() - 1, new Row(last.slot(), merged, r.value(), last.hot() || r.hot()));
-            } else {
-                out.add(new Row(r.slot(), shortName(r.name()), r.value(), r.hot()));
-                names.add(shortName(r.name()));
-            }
+    private static List<Row> displayRows(List<Row> rows) {
+        List<Row> ready = new ArrayList<>();
+        List<Row> working = new ArrayList<>();
+        for (Row row : rows) {
+            if (row.value().equals("Ready")) ready.add(row);
+            else working.add(row);
         }
+        List<Row> out = new ArrayList<>();
+        if (ready.size() >= 3) out.add(new Row(-1, "Ready crafts", ready.size() + " slots", true));
+        else out.addAll(group(ready));
+        out.addAll(group(working));
         return out;
     }
 
-    /** The "x3" on a grouped name, or 1 when it has none. */
-    private static int count(String name) {
-        int i = name.lastIndexOf(" x");
-        if (i < 0) return 1;
-        try {
-            return Integer.parseInt(name.substring(i + 2));
-        } catch (NumberFormatException e) {
-            return 1;
+    /** Only identical crafts with the same displayed time share a row. */
+    private static List<Row> group(List<Row> rows) {
+        List<Row> out = new ArrayList<>();
+        Map<String, Integer> positions = new HashMap<>();
+        Map<String, Integer> counts = new HashMap<>();
+        for (Row r : rows) {
+            String name = shortName(r.name());
+            String key = name + "\0" + r.value();
+            Integer index = positions.get(key);
+            if (index != null) {
+                int count = counts.merge(key, 1, Integer::sum);
+                Row old = out.get(index);
+                out.set(index, new Row(old.slot(), name + " x" + count, old.value(), old.hot() || r.hot()));
+            } else {
+                positions.put(key, out.size());
+                counts.put(key, 1);
+                out.add(new Row(r.slot(), name, r.value(), r.hot()));
+            }
         }
+        return out;
     }
 
     private static String slotCount(boolean sample, List<Row> rows) {

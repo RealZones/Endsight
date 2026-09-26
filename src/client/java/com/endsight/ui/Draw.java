@@ -2,17 +2,18 @@ package com.endsight.ui;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
 
 /**
- * Drawing built from the two calls this version actually gives us: fill and text.
- *
- * No blit, no scissor, no pose stack, no custom RenderPipeline. That is a choice,
- * not a limitation being worked around - a package meant to be copied into another
- * mod should depend on as little of the render API as possible, because that is the
- * part that changes every Minecraft version. Rounded corners cost a handful of extra
- * fills and survive updates that a shader would not.
+ * Surfaces are built from fill and text to avoid a custom rendering pipeline.
+ * Rounded corners stay banded fills; the settings icon alone uses the game's
+ * built-in texture pipeline so it stays readable with any font pack.
  */
 public final class Draw {
+
+    private static final Identifier SETTINGS_ICON = Identifier.fromNamespaceAndPath(
+            "endsight", "textures/gui/settings.png");
 
     private Draw() {
     }
@@ -92,25 +93,10 @@ public final class Draw {
         }
     }
 
-    /**
-     * The settings gear, drawn as a font glyph rather than plotted pixel by pixel.
-     *
-     * Three hand-drawn versions failed here: rectangles tuned into a washer, a stroked
-     * ring that read as a donut, and a 15x13 pixel map that turned to mush at the size
-     * it is actually used. The problem was never the tuning - a gear is curves and fine
-     * gaps, and neither survives being built from axis-aligned fills at ten pixels.
-     *
-     * Minecraft loads unifont as a fallback (confirmed in the client log:
-     * unifont_all_no_pua), which covers U+2699 GEAR. So the game already ships a gear
-     * drawn by someone who does this properly, at exactly the size we want, hinted for
-     * a pixel grid. Using it is less code and a better icon.
-     *
-     * If it ever renders as a box, the fallback font stopped covering it and this needs
-     * to go back to drawing - that is the one failure mode to watch for.
-     */
+    /** A fixed-size texture keeps the gear legible regardless of the active font pack. */
     public static void gearIcon(GuiGraphicsExtractor g, Font font, int cx, int cy, int color) {
-        String glyph = "⚙";
-        g.text(font, glyph, cx - font.width(glyph) / 2, cy - 4, color);
+        g.blit(RenderPipelines.GUI_TEXTURED, SETTINGS_ICON, cx - 8, cy - 8,
+                0f, 0f, 16, 16, 32, 32, 32, 32, color);
     }
 
     /**

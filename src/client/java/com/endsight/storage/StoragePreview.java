@@ -84,6 +84,7 @@ public final class StoragePreview {
                 "Hover a storage page to see inside. Item search.", "Storage",
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
+                        new Setting.Section("Preview"),
                         new Setting.Toggle("Snapshot on close",
                                 "Remember each page as you leave it.",
                                 () -> capturing, v -> capturing = v),

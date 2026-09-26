@@ -57,6 +57,7 @@ public final class MiningSession {
     private static boolean enabled = true;
     private static boolean showWhenPaused = true;
     private static boolean profitEstimate = true;
+    private static boolean breakdown = true;
     private static String materialUnits = ENCH;
     private static long activeMs;
     private static long lastTick;
@@ -82,6 +83,38 @@ public final class MiningSession {
     }
     private static boolean mining;
     private static String currentMaterial = "Material";
+    /** The ore trying to take the display, and since when. */
+    private static String pendingMaterial = "";
+    private static long pendingSince;
+    /** How long a new ore must hold the cursor before the readout follows it. */
+    private static final long FOCUS_MS = 3_000;
+
+    /**
+     * Which ore the readout is about. It used to be assigned outright from whatever the
+     * cursor touched, so mining crying obsidian and plain obsidian along one path flipped
+     * it several times a second and every row flipped with it. A new ore now has to hold
+     * the cursor for three unbroken seconds before the display moves, which is longer than
+     * any stray block on the way past and far shorter than a real switch. The first ore of
+     * a session is taken at once - there is nothing to flicker against yet.
+     */
+    private static void focus(String m, long now) {
+        if (m == null || m.equals(currentMaterial)) {
+            pendingMaterial = "";
+            return;
+        }
+        if ("Material".equals(currentMaterial)) {
+            currentMaterial = m;
+            pendingMaterial = "";
+            return;
+        }
+        if (!m.equals(pendingMaterial)) {
+            pendingMaterial = m;
+            pendingSince = now;
+        } else if (now - pendingSince >= FOCUS_MS) {
+            currentMaterial = m;
+            pendingMaterial = "";
+        }
+    }
     private static final Map<String, Long> lastValues = new LinkedHashMap<>();
     private static final Map<String, Long> totals = new LinkedHashMap<>();
     private static final Map<String, Long> activeByMaterial = new LinkedHashMap<>();
@@ -92,23 +125,34 @@ public final class MiningSession {
                 "Active mining time, material gain and rate; pauses when you stop mining.", "Mining",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Readout"),
                         new Setting.Toggle("Show while paused", "Keep the readout up after you stop mining.",
                                 () -> showWhenPaused, v -> showWhenPaused = v),
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
                                 List.of(RAW, ENCH, REF), () -> materialUnits, v -> materialUnits = v),
+                        new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
+                                () -> profitEstimate, v -> profitEstimate = v),
+                        new Setting.Toggle("Breakdown", "A row per ore mined this session, richest first.",
+                                () -> breakdown, v -> breakdown = v),
+
+                        new Setting.Section("Extra lines"),
                         new Setting.Toggle("Drill CD", "Drill CD line: Ready, or the countdown.",
                                 com.endsight.visual.Cooldowns::drillOn, com.endsight.visual.Cooldowns::setDrillOn),
                         new Setting.Toggle("Fuel", "Fuel line read off the drill in your hand.",
                                 () -> PowderTracker.showFuel, v -> PowderTracker.showFuel = v),
-                        new Setting.Toggle("Drop alert", "Alert for a Void Fragment, a Void Core or an epic or better pet while you mine.",
-                                () -> petAlert, v -> petAlert = v),
                         new Setting.Toggle("Void Fragments", "How long to the next one, from your Magic Find, perks, meter and pace.",
                                 () -> VoidFragments.show, v -> VoidFragments.show = v),
                         new Setting.Toggle("Meter on fragments", "The RNG meter's selected drop is the Void Fragment. Set itself when you open the meter.",
                                 () -> VoidFragments.meterOn, v -> VoidFragments.meterOn = v),
-                        new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
-                                () -> profitEstimate, v -> profitEstimate = v),
+
+                        new Setting.Section("Alerts"),
+                        new Setting.Toggle("Drop alert", "Alert for a Void Fragment, a Void Core or an epic or better pet while you mine.",
+                                () -> petAlert, v -> petAlert = v),
+                        new Setting.Toggle("Drill ready", "Big alert and a bell when the drill's ability is back.",
+                                com.endsight.visual.Cooldowns::readyAlertOn, com.endsight.visual.Cooldowns::setReadyAlert),
+
+                        new Setting.Section("Session"),
                         new Setting.Action("Session", "Start the mining readout over.", "Reset", MiningSession::reset),
                         new Setting.Note("Now", () -> currentMaterial + ": "
                                 + formatMaterialCount(currentMaterial, totals.getOrDefault(currentMaterial, 0L))
@@ -181,14 +225,18 @@ public final class MiningSession {
         boolean active = miningNow(mc);
         String target = active ? targetMaterial(mc) : null;
         if (active) {
-            if (target != null) currentMaterial = target;
+            if (target != null) focus(target, now);
             lastActive = now;
         }
         boolean counting = active || (lastActive != 0 && now - lastActive <= GRACE_MS);
         if (counting && lastTick != 0) {
             long dt = Math.min(now - lastTick, 1_000);
             activeMs += dt;
-            if (!"Material".equals(currentMaterial)) activeByMaterial.merge(currentMaterial, dt, Long::sum);
+            // Credited to the ore under the cursor, not the one on screen. The display
+            // lags on purpose (see focus); the per-ore clocks must not, or a rate would
+            // be divided by someone else's seconds.
+            String credit = target != null ? target : currentMaterial;
+            if (!"Material".equals(credit)) activeByMaterial.merge(credit, dt, Long::sum);
         }
         // Not with a window open: what comes out of the PV or a chest in the grace window
         // after a swing is not mined. 21 Fine "mined" in four minutes were 21 Fine pulled.
@@ -262,7 +310,7 @@ public final class MiningSession {
                 long after = Math.max(0, before + delta);
                 if (after == before) continue;
                 totals.put(m, after);
-                if (delta > 0) currentMaterial = m;
+                if (delta > 0) focus(m, System.currentTimeMillis());
                 audit(m, after - before, after, "bag");
             }
         }
@@ -399,14 +447,34 @@ public final class MiningSession {
         // Profit is for the block you are on: its value over the time spent on it, not the
         // whole session blended - ten minutes of end stone was dragging the obsidian rate
         // down for an hour after switching. Sold coins stay session-wide; they are real.
-        long materialValue = sample ? 2_420_000L : value(material, materialAmount);
-        String profit = profitEstimate && (sample || materialValue > 0) ? rate(materialValue, materialMs)
+        // Profit is the whole session: every ore's worth over the session clock. Scoped to
+        // one ore it counted that ore's coins over that ore's seconds, so switching ore
+        // swung it six-fold - 39.0m/h against 6.2m/h for the same fifteen minutes. Rate
+        // stays per-ore, because units an hour across two different ores means nothing.
+        String profit = profitEstimate && (sample || totalEst > 0) ? rate(totalEst, shownMs)
                 : coins > 0 || sample ? rate(coins, shownMs) : "";
         List<String[]> rows = new ArrayList<>();
-        rows.add(new String[]{shortMaterial(material), amount});
+        // Time leads: it is the one row every other number is read against.
+        rows.add(new String[]{"Time", time(shownMs)});
+        if (!breakdown) rows.add(new String[]{shortMaterial(material), amount});
         rows.add(new String[]{"Rate", rate});
         if (!profit.isEmpty()) rows.add(new String[]{"Profit", profit});
-        rows.add(new String[]{"Time", time(materialMs)});   // on this block, like Rate and Profit
+        if (breakdown) {
+            // One row per ore actually mined, richest first: the same detail a per-ore
+            // filter would have given, filled in from what happened rather than from a
+            // box that can be left unticked.
+            List<Map.Entry<String, Long>> mined = sample
+                    ? List.of(Map.entry("Crying Obsidian", 9L), Map.entry("Obsidian", 14L))
+                    : new ArrayList<>(totals.entrySet());
+            mined = mined.stream().filter(e -> e.getValue() > 0)
+                    .sorted((a, b) -> Long.compare(value(b.getKey(), b.getValue()), value(a.getKey(), a.getValue())))
+                    .limit(5).toList();
+            for (Map.Entry<String, Long> e : mined) {
+                long worth = value(e.getKey(), e.getValue());
+                rows.add(new String[]{shortMaterial(e.getKey()),
+                        formatMaterialCount(e.getKey(), e.getValue()) + (worth > 0 ? "  " + compact(worth) : "")});
+            }
+        }
         if (VoidFragments.show && (sample || "Amethyst".equals(material))) {
             String frag = VoidFragments.row(sample);
             if (!frag.isEmpty()) rows.add(new String[]{"Void Frag", frag});

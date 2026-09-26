@@ -97,3 +97,21 @@ rare	Transmission Tuner
 rare	Etherwarp Conduit
 common	Revenant Viscera
 common	Null Atom
+
+# ── the Rift's bosses: The Disturbed and Riftborn Seraph RNG meters, by their odds ─
+# 1/333-1/500 rare, 1/667-1/1,250 epic, 1/1,333 and rarer legendary.
+legendary	Implosion Scroll
+legendary	Necron's Handle
+legendary	Art of War
+legendary	Shadow Warp Scroll
+legendary	Seraph Quill
+legendary	Magical Scroll
+legendary	Seraph's Halo
+epic	Corrupted Core
+epic	Rift Hourglass
+epic	Heart of the Disturbed
+epic	Primordial Ooze
+epic	Seraph's Tally
+rare	Void Fang
+rare	Flesh Fang
+rare	Riftstring

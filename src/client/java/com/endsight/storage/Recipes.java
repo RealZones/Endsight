@@ -630,6 +630,19 @@ public final class Recipes {
                 int star = cell.indexOf('*');
                 if (star > 0) grid[i] = new Ingredient(cell.substring(star + 1), Integer.parseInt(cell.substring(0, star)));
             }
+            // "-": a grid the bundle used to ship. Only the bundle fills in what is missing,
+            // so a wrong shipped recipe - the amethyst armour at one Fine Amethyst a cell -
+            // stayed in every recipes.txt it had been written to. A copy identical to the
+            // retired one came from the bundle and makes way for the new line; a copy read
+            // off your own game differs, and is left alone.
+            if (line.startsWith("-")) {
+                Recipe mine = RECIPES.get(p[0].substring(1));
+                if (missingOnly && mine != null && mine.count() == Integer.parseInt(p[1]) && Arrays.equals(mine.grid(), grid)) {
+                    RECIPES.remove(mine.name());
+                    changed = true;
+                }
+                continue;
+            }
             Recipe r = new Recipe(p[0], Integer.parseInt(p[1]), grid);
             if (missingOnly && RECIPES.containsKey(r.name())) continue;
             Recipe old = RECIPES.put(r.name(), r);
@@ -1195,8 +1208,28 @@ public final class Recipes {
         page = idx < 0 ? 0 : idx / Math.max(1, f.cols() * f.rows());
     }
 
+    private static ItemStack riftIcon;
+
     private static ItemStack categoryIcon(String c) {
-        if (c != null) return ICONS.get(c);
+        if (c != null) {
+            ItemStack own = ICONS.get(c);
+            if (own != null) return own;
+            // Rift is the mod's own category, not a button in the server's menu, so it has
+            // no face to copy: it gets a dead bush with the enchant glint.
+            if (c.equals("Rift")) {
+                if (riftIcon == null) {
+                    riftIcon = new ItemStack(net.minecraft.world.item.Items.DEAD_BUSH);
+                    riftIcon.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+                }
+                return riftIcon;
+            }
+            // Any other category with no button wears its first item's face, not a letter.
+            for (String n : CATEGORY.getOrDefault(c, new LinkedHashSet<>())) {
+                ItemStack s = ICONS.get(n);
+                if (s != null) return s;
+            }
+            return null;
+        }
         for (Map.Entry<String, ItemStack> e : ICONS.entrySet()) {
             if (e.getKey().startsWith("All Recipes")) return e.getValue();
         }

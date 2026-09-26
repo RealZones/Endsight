@@ -121,26 +121,9 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             registry.replace(MenuButton.module());
-            extra("register", registry);
             Config.load(registry);
         }
         return registry;
-    }
-
-    /**
-     * Another mod may add modules to this browser: if a class of this name is on the
-     * classpath it is asked to register and initialise them. Looked up by name so this
-     * compiles without it, and with it absent the lookup fails quietly and the mod is
-     * simply what is in the repository.
-     */
-    private static void extra(String method, ModuleRegistry registry) {
-        try {
-            Class<?> hook = Class.forName("com.endsight.lang.Hook");
-            if (registry != null) hook.getMethod(method, ModuleRegistry.class).invoke(null, registry);
-            else hook.getMethod(method).invoke(null);
-        } catch (ReflectiveOperationException ignored) {
-            // Not built in.
-        }
     }
 
     @Override
@@ -180,7 +163,6 @@ public class EndsightClient implements ClientModInitializer {
         Cooldowns.init();
         Slayer.init();
         ZealotTracker.init();
-        extra("init", null);
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any
         // module can raise it; only one shows at a time, because two things shouting

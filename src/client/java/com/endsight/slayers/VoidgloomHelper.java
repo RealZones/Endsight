@@ -3,6 +3,7 @@ package com.endsight.slayers;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.HudLayout;
+import com.endsight.hud.Project;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -19,9 +20,11 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.monster.Guardian;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -49,9 +52,8 @@ import java.util.regex.Pattern;
  * nothing is looked for, which is what keeps a decorative head in the End from
  * being marked as a threat.
  *
- * What is deliberately not drawn: the radiation beams. They are "witch" particles,
- * indistinguishable in the packet from the boss's ordinary sparkle, so a beam renderer
- * drew itself at random round the boss and was dropped.
+ * Radiation beams come from invisible guardians aimed at invisible stands. Their
+ * actual endpoints define the lines; normal boss sparkle must never define a beam.
  */
 public final class VoidgloomHelper {
 
@@ -63,6 +65,14 @@ public final class VoidgloomHelper {
     private static boolean highlight = true;
     private static boolean heads = true;
     private static boolean beams = true;
+    private static boolean themeBeams = true;
+    private static int beamColor = 0xFFFF26CB;
+    private static double beamWidth = 4.5;
+    private static boolean radiationTimer = true;
+    private static boolean bossRadiating;
+    private static final long RADIATION_NS = 8_200_000_000L;
+    private static long radiationStarted;
+    private static boolean radiationVehicleSeen;
     /**
      * The beam phase opens with "BROKEN HEART RADIATION! Stay within 15 blocks and dodge
      * the beams!", once per phase. Not anchored: the line arrives behind a skull icon and
@@ -95,9 +105,14 @@ public final class VoidgloomHelper {
                 "Hits, phase and health display. Boss and glyph highlight and tracer.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Readout"),
                         new Setting.Toggle("On screen",
                                 "Shield hits left, then boss health.",
                                 () -> onScreen, v -> onScreen = v),
+                        new Setting.Toggle("Radiation timer",
+                                "Seconds left above your Voidgloom boss.",
+                                () -> radiationTimer, v -> radiationTimer = v),
+                        new Setting.Section("Highlights"),
                         new Setting.Toggle("Highlight boss",
                                 "Box and line to your boss.",
                                 () -> highlight, v -> highlight = v),
@@ -107,9 +122,19 @@ public final class VoidgloomHelper {
                         new Setting.Toggle("Highlight Nukekubi",
                                 "Box and line to each Nukekubi head.",
                                 () -> heads, v -> heads = v),
+                        new Setting.Section("Radiation beams"),
                         new Setting.Toggle("Beams alert",
-                                "On-screen alert when the radiation beams start.",
-                                () -> beams, v -> beams = v)));
+                                "Highlight radiation beams and alert when they start.",
+                                () -> beams, v -> beams = v),
+                        new Setting.Toggle("Use theme color",
+                                "Match the beams to your Endsight accent.",
+                                () -> themeBeams, v -> themeBeams = v),
+                        new Setting.Color("Beam color",
+                                "Used when theme color is off.",
+                                () -> beamColor, v -> beamColor = v),
+                        new Setting.Slider("Beam width", "Thickness of the radiation beams.",
+                                2, 8, 0.5, () -> beamWidth,
+                                v -> beamWidth = Double.isFinite(v) ? Mth.clamp(v, 2, 8) : 4.5, "px")));
     }
 
     public static void init() {
@@ -120,9 +145,14 @@ public final class VoidgloomHelper {
         LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> gizmos());
         ClientTickEvents.END_CLIENT_TICK.register(VoidgloomHelper::tick);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay || !enabled || !beams) return;
+            if (overlay || !enabled) return;
             if (!BEAMS.matcher(message.getString()).find()) return;
-            Alert.show("BEAMS", "stay within 15 blocks", 0xFFFF3B8A, 1.15f, Alerts.seconds());
+            if (Slayer.bossUp()) {
+                radiationStarted = System.nanoTime();
+                radiationVehicleSeen = false;
+            }
+            if (!beams) return;
+            Alert.show("BEAMS", "stay within 15 blocks", beamTint(), 1.15f, Alerts.seconds());
             Minecraft mc = Minecraft.getInstance();
             if (Alerts.sound() && mc.player != null) {
                 mc.player.playSound(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 1.6f);
@@ -184,16 +214,21 @@ public final class VoidgloomHelper {
             bossEntity = null;
             bossPos = null;
             bossSeen = 0;
+            radiationStarted = 0;
+            radiationVehicleSeen = false;
+            bossRadiating = false;
             return;
         }
+        bossRadiating = false;
         Entity e = bossEntity;
-        if (e == null || e.isRemoved()) e = claim(mc, bossPos == null ? mc.player.position() : bossPos);
+        if (e == null || e.isRemoved() || e.level() != mc.level) e = claim(mc, bossPos == null ? mc.player.position() : bossPos);
         if (e == null) return;
         String plain = plainName(e);
         if (plain == null) return;
         Matcher m = BOSS.matcher(plain);
         if (!m.find()) return;
         bossTier = m.group(1);
+        bossRadiating = plain.contains("Radiation");
         bossHp = m.group(2);
         bossMax = m.group(3);
         bossHits = m.group(4) == null ? -1 : Integer.parseInt(m.group(4));
@@ -294,6 +329,8 @@ public final class VoidgloomHelper {
             mark(mc, bossEntity.getBoundingBox(), 2f);
         }
 
+        drawBeams(mc);
+
         for (BlockPos b : beacons) mark(mc, new AABB(b), 2.5f);
 
         if (heads && Slayer.bossUp()) {
@@ -308,15 +345,109 @@ public final class VoidgloomHelper {
         }
     }
 
+    private static boolean showBeams(Minecraft mc) {
+        return enabled && beams && !mc.options.hideGui && mc.level != null && mc.player != null
+                && Slayer.bossUp() && bossRadiating && "IV".equals(bossTier)
+                && bossEntity != null && !bossEntity.isRemoved() && bossEntity.level() == mc.level
+                && System.currentTimeMillis() - bossSeen < 250;
+    }
+
+    private static RadiationBeams.Point point(Vec3 v) {
+        return new RadiationBeams.Point(v.x, v.y, v.z);
+    }
+
+    private static RadiationBeams.Line beamLine(Guardian guardian, float partial) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!showBeams(mc) || guardian.level() != mc.level || guardian.isRemoved()) return null;
+        var target = guardian.getActiveAttackTarget();
+        if (target == null || target.isRemoved()) return null;
+        Vec3 from = guardian.getEyePosition(partial);
+        // Match GuardianRenderer's target interpolation, including its half-height anchor.
+        Vec3 to = new Vec3(Mth.lerp(partial, target.xOld, target.getX()),
+                Mth.lerp(partial, target.yOld, target.getY()) + target.getBbHeight() * 0.5,
+                Mth.lerp(partial, target.zOld, target.getZ()));
+        return RadiationBeams.match(true, point(bossEntity.getPosition(partial)),
+                new RadiationBeams.Candidate(guardian.hasActiveAttackTarget(), guardian.isInvisible(),
+                        target instanceof ArmorStand, target.isInvisible(), point(from), point(to)));
+    }
+
+    /** Only replace validated radiation beams; disabling the helper restores vanilla rendering. */
+    public static boolean replacesBeam(Guardian guardian, float partial) {
+        return beamLine(guardian, partial) != null;
+    }
+
+    private static void drawBeams(Minecraft mc) {
+        if (!showBeams(mc)) return;
+        float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        int color = beamTint();
+        float width = (float) beamWidth;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof Guardian guardian)) continue;
+            RadiationBeams.Line line = beamLine(guardian, partial);
+            if (line == null) continue;
+            Vec3 from = new Vec3(line.from().x(), line.from().y(), line.from().z());
+            Vec3 to = new Vec3(line.to().x(), line.to().y(), line.to().z());
+            // Keep depth testing: a beam behind the wall should stay behind the wall.
+            Gizmos.line(from, to, (color & 0x00FFFFFF) | 0x44000000, width * 2);
+            Gizmos.line(from, to, color, width);
+        }
+        Gizmos.circle(bossEntity.getPosition(partial).add(0, 0.03, 0), 15f,
+                GizmoStyle.stroke((color & 0x00FFFFFF) | 0x88000000, 1.5f));
+    }
+
+    private static int beamTint() {
+        return 0xFF000000 | (themeBeams ? Theme.accent() : Setting.Color.live(beamColor));
+    }
+
     // ── on the screen ─────────────────────────────────────────────────────────
 
     private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled || !onScreen) return;
+        if (!enabled || (!onScreen && !radiationTimer)) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         // Only while a boss has been seen in the last couple of seconds.
         if (bossSeen == 0 || System.currentTimeMillis() - bossSeen >= 2000) return;
 
-        HudLayout.draw("slayer.voidgloom", g, mc.font, false);
+        if (onScreen) HudLayout.draw("slayer.voidgloom", g, mc.font, false);
+        if (radiationTimer) drawRadiationTimer(g, mc);
+    }
+
+    private static void drawRadiationTimer(GuiGraphicsExtractor g, Minecraft mc) {
+        if (radiationStarted == 0 || bossEntity == null || bossEntity.isRemoved()
+                || !"IV".equals(bossTier)) return;
+
+        double remaining = (RADIATION_NS - (System.nanoTime() - radiationStarted)) / 1e9;
+        Entity vehicle = bossEntity.getVehicle();
+        if (vehicle != null) {
+            double vehicleRemaining = 8.2 - vehicle.tickCount / 20.0;
+            if (vehicleRemaining > 0 && vehicleRemaining <= 8.2) {
+                remaining = vehicleRemaining;
+                radiationVehicleSeen = true;
+            }
+        } else if (radiationVehicleSeen) {
+            radiationStarted = 0;
+            return;
+        }
+        if (remaining <= 0) {
+            radiationStarted = 0;
+            return;
+        }
+
+        float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        double above = bossEntity instanceof ArmorStand ? 0.35 : bossEntity.getBbHeight() * 0.88 + 0.45;
+        Vec3 point = bossEntity.getPosition(partial).add(0, above, 0);
+        double[] screen = Project.toScreen(point, g.guiWidth(), g.guiHeight());
+        if (screen == null || screen[0] < 20 || screen[0] > g.guiWidth() - 20
+                || screen[1] < 15 || screen[1] > g.guiHeight() - 15) return;
+
+        int tenths = (int) Math.ceil(remaining * 10);
+        String label = (tenths / 10) + "." + (tenths % 10) + "s";
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate((float) screen[0], (float) screen[1]);
+        pose.scale(1.4f, 1.4f);
+        g.text(mc.font, label, -mc.font.width(label) / 2, -mc.font.lineHeight / 2,
+                0xFFFFFFFF, true);
+        pose.popMatrix();
     }
 }

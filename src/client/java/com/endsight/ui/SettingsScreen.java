@@ -138,8 +138,12 @@ public class SettingsScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        scroll = Math.max(0, Math.min(scroll, maxScroll()));
         layout();
+        int clamped = Math.max(0, Math.min(scroll, maxScroll()));
+        if (clamped != scroll) {
+            scroll = clamped;
+            layout();
+        }
 
         Font font = this.font;
         g.fill(0, 0, width, height, Theme.scrim());
@@ -227,8 +231,11 @@ public class SettingsScreen extends Screen {
             return;
         }
 
+        // Clip the content, not whole rows: adding sections must not make controls
+        // disappear before their visible part has scrolled out of the viewport.
+        g.enableScissor(contentX(), top, contentX() + contentW(), bottom);
         for (Row r : rows) {
-            if (r.y + r.h < top || r.y + r.h > bottom || r.y < top) continue;
+            if (r.y + r.h <= top || r.y >= bottom) continue;
 
             if (r.setting instanceof Setting.Section sec) {
                 Draw.text(g, font, sec.label().toUpperCase(), r.x, r.y + 14, Theme.muted());
@@ -298,6 +305,7 @@ public class SettingsScreen extends Screen {
             }
         }
 
+        g.disableScissor();
         Draw.roundedRect(g, contentX(), bottom, contentW(), panelY() + panelH() - bottom,
                 Theme.RADIUS_LG, Theme.bg(), false, false, false, true);
     }
@@ -474,10 +482,13 @@ public class SettingsScreen extends Screen {
             }
         }
 
+        if (!contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my)) {
+            return super.mouseClicked(event, doubleClick);
+        }
         for (Row r : rows) {
-            if (r.y + r.h < contentTop() || r.y > contentBottom()) continue;
+            if (r.y + r.h <= contentTop() || r.y >= contentBottom()) continue;
             if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
-            if (r.setting instanceof Setting.Note) return true;   // nothing to do, but it is ours
+            if (r.setting instanceof Setting.Note || r.setting instanceof Setting.Section) return true;
             if (r.setting instanceof Setting.Command c) {
                 int fy = r.y + r.h / 2 - 10, fw = cmdFieldW(r);
                 if (contains(r.x, fy, fw, 20, mx, my)) {

@@ -6,7 +6,9 @@
 		"ContainerSlotMixin",
 		"HotbarSlotMixin",
 		"OverlayMessageMixin",
-		"LightmapMixin"
+		"LightmapMixin",
+		"GuardianRendererMixin",
+		"GuardianParticlesMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

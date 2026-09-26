@@ -133,15 +133,18 @@ public final class Slayer {
                 "Kills, average kill time and rate.", "Trackers",
                 () -> timerOn, v -> timerOn = v,
                 List.of(
+                        new Setting.Section("Readout"),
                         new Setting.Slider("Hide when idle",
                                 "Fade out after this long idle. 0 never.",
                                 0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Toggle("Kill time in chat",
                                 "Print each boss's own time when it dies.",
                                 () -> killTimeInChat, v -> killTimeInChat = v),
+                        new Setting.Section("Alerts"),
                         new Setting.Toggle("Quest reminder",
                                 "When you enter a slayer area without a quest, print a clickable /slayer reminder.",
                                 () -> questReminder, v -> questReminder = v),
+                        new Setting.Section("Session"),
                         new Setting.Action("Reset session",
                                 "Zero the kill count and the clock.",
                                 "Reset", Slayer::resetSession)));

@@ -75,7 +75,8 @@ jobs:
           # The two jars people choose between: endsight-<v>.jar never updates,
           # endsight-autoupdate-<v>.jar updates itself.
           files: |
-            build/libs/*.jar
+            build/libs/endsight-${{ steps.info.outputs.version }}.jar
+            build/libs/endsight-autoupdate-${{ steps.info.outputs.version }}.jar
 
       - name: Post to Discord
         if: contains(github.event.head_commit.message, '[discord]')

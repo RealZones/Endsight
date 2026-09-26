@@ -33,11 +33,11 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
+import java.util.stream.Stream;
 import java.util.regex.Pattern;
 
 /**
- * The Voidgloom fight: the boss's numbers on screen, a mark on the boss, a mark on the
+ * The Voidgloom and Riftborn fights: the boss's numbers on screen, a mark on the boss, a mark on the
  * Yang Glyph.
  *
  * The marks are gizmos - the game's own 3D debug shapes, added fresh every frame from
@@ -70,6 +70,7 @@ public final class VoidgloomHelper {
     private static double beamWidth = 4.5;
     private static boolean radiationTimer = true;
     private static boolean bossRadiating;
+    private static boolean bossSupportsRadiation;
     private static final long RADIATION_NS = 8_200_000_000L;
     private static long radiationStarted;
     private static boolean radiationVehicleSeen;
@@ -92,10 +93,8 @@ public final class VoidgloomHelper {
      * the number you need and the hardest to read in the crowd - so they go on screen
      * big, and the health takes their place the rest of the fight.
      */
-    private static final Pattern BOSS = Pattern.compile(
-            "Voidgloom Seraph (\\S+)\\s+([\\d.,]+[kKmMbB]?)/([\\d.,]+[kKmMbB]?)❤(?:\\s+(\\d+) Hits?)?");
     private static Entity bossEntity;
-    private static String bossHp = "", bossMax = "", bossTier = "";
+    private static String bossHp = "", bossMax = "", bossLabel = "";
     private static int bossHits = -1;
     private static double bossDist = -1;
     private static long bossSeen;
@@ -104,13 +103,13 @@ public final class VoidgloomHelper {
         return new Module("slayer.boss", "Voidgloom Helper",
                 "Hits, phase and health display. Boss and glyph highlight and tracer.", "Visual",
                 () -> enabled, v -> enabled = v,
-                List.of(
+                Stream.concat(Stream.of(
                         new Setting.Section("Readout"),
                         new Setting.Toggle("On screen",
                                 "Shield hits left, then boss health.",
                                 () -> onScreen, v -> onScreen = v),
                         new Setting.Toggle("Radiation timer",
-                                "Seconds left above your Voidgloom boss.",
+                                "Seconds left above your boss.",
                                 () -> radiationTimer, v -> radiationTimer = v),
                         new Setting.Section("Highlights"),
                         new Setting.Toggle("Highlight boss",
@@ -134,10 +133,17 @@ public final class VoidgloomHelper {
                                 () -> beamColor, v -> beamColor = v),
                         new Setting.Slider("Beam width", "Thickness of the radiation beams.",
                                 2, 8, 0.5, () -> beamWidth,
-                                v -> beamWidth = Double.isFinite(v) ? Mth.clamp(v, 2, 8) : 4.5, "px")));
+                                v -> beamWidth = Double.isFinite(v) ? Mth.clamp(v, 2, 8) : 4.5, "px")),
+                        Summons.settings().stream()).toList());
+    }
+
+    /** Whether the helper is switched on: its Summons section rides on the same switch. */
+    static boolean on() {
+        return enabled;
     }
 
     public static void init() {
+        Summons.init();
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "voidgloom"),
                 (g, delta) -> draw(g));
         // A gizmo lives one frame, so the marks are added again every frame, just
@@ -169,7 +175,7 @@ public final class VoidgloomHelper {
     private static int[] drawBoss(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         boolean shield = sample || bossHits >= 0;
         String big = sample ? "57 HITS" : shield ? bossHits + " HITS" : bossHp + " / " + bossMax;
-        String small = sample ? "Seraph IV  -  9m" : "Seraph " + bossTier + "  -  " + Math.round(bossDist) + "m";
+        String small = sample ? "Seraph IV  -  9m" : bossLabel + "  -  " + Math.round(bossDist) + "m";
         float scale = 2.5f;
         int w = (int) Math.max(font.width(big) * scale, font.width(small)) + 8;
         int h = (int) (9 * scale) + 14;
@@ -217,6 +223,7 @@ public final class VoidgloomHelper {
             radiationStarted = 0;
             radiationVehicleSeen = false;
             bossRadiating = false;
+            bossSupportsRadiation = false;
             return;
         }
         bossRadiating = false;
@@ -225,13 +232,14 @@ public final class VoidgloomHelper {
         if (e == null) return;
         String plain = plainName(e);
         if (plain == null) return;
-        Matcher m = BOSS.matcher(plain);
-        if (!m.find()) return;
-        bossTier = m.group(1);
-        bossRadiating = plain.contains("Radiation");
-        bossHp = m.group(2);
-        bossMax = m.group(3);
-        bossHits = m.group(4) == null ? -1 : Integer.parseInt(m.group(4));
+        SeraphBoss boss = SeraphBoss.read(plain);
+        if (boss == null) return;
+        bossLabel = boss.label();
+        bossSupportsRadiation = boss.supportsRadiation();
+        bossRadiating = boss.radiating();
+        bossHp = boss.health();
+        bossMax = boss.maxHealth();
+        bossHits = boss.hits();
         bossDist = e.position().distanceTo(mc.player.position());
         bossEntity = e;
         bossPos = e.position();
@@ -244,7 +252,7 @@ public final class VoidgloomHelper {
         double bestD = CLAIM_RANGE * CLAIM_RANGE;
         for (Entity e : mc.level.entitiesForRendering()) {
             String plain = plainName(e);
-            if (plain == null || !plain.contains("Voidgloom Seraph")) continue;
+            if (SeraphBoss.read(plain) == null) continue;
             double d = e.position().distanceToSqr(near);
             if (d < bestD) {
                 bestD = d;
@@ -347,7 +355,7 @@ public final class VoidgloomHelper {
 
     private static boolean showBeams(Minecraft mc) {
         return enabled && beams && !mc.options.hideGui && mc.level != null && mc.player != null
-                && Slayer.bossUp() && bossRadiating && "IV".equals(bossTier)
+                && Slayer.bossUp() && bossRadiating && bossSupportsRadiation
                 && bossEntity != null && !bossEntity.isRemoved() && bossEntity.level() == mc.level
                 && System.currentTimeMillis() - bossSeen < 250;
     }
@@ -414,7 +422,7 @@ public final class VoidgloomHelper {
 
     private static void drawRadiationTimer(GuiGraphicsExtractor g, Minecraft mc) {
         if (radiationStarted == 0 || bossEntity == null || bossEntity.isRemoved()
-                || !"IV".equals(bossTier)) return;
+                || !bossSupportsRadiation) return;
 
         double remaining = (RADIATION_NS - (System.nanoTime() - radiationStarted)) / 1e9;
         Entity vehicle = bossEntity.getVehicle();

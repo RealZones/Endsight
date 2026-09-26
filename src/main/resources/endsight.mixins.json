@@ -8,7 +8,10 @@
 		"OverlayMessageMixin",
 		"LightmapMixin",
 		"GuardianRendererMixin",
-		"GuardianParticlesMixin"
+		"GuardianParticlesMixin",
+		"LivingEntityRenderStateMixin",
+		"LivingEntityRendererMixin",
+		"EntityRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

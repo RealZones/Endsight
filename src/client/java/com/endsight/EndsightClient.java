@@ -15,6 +15,7 @@ import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugOnJoin;
 import com.endsight.qol.GlobalChat;
 import com.endsight.qol.CopyChat;
+import com.endsight.qol.ArmorGuard;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
@@ -100,6 +101,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
+            registry.replace(ArmorGuard.module());
             registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
             registry.replace(RarityOutline.module());
@@ -138,6 +140,7 @@ public class EndsightClient implements ClientModInitializer {
         Protector.init();
         BossDrops.init();
         EyeGuard.init();
+        ArmorGuard.init();
         DamageNumbers.init();
         DebugOnJoin.init();
         GlobalChat.init();

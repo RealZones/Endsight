@@ -180,25 +180,42 @@ public final class Beacon {
         Draw.rect(g, x, cy - half, 1, half * 2, color);
     }
 
-    /** Nearest entity named for the live boss in range, or null. Pets and labels reuse boss words too. */
+    /**
+     * The entity a masked mob would be, when its name cannot say.
+     *
+     * The Rift renames every mob "Dinnerbone", so a name that has to contain "Endstone
+     * Protector" matches nothing there and the beam never appears. Type is the one thing
+     * the mask does not take away.
+     */
+    private static boolean isType(Entity e, String match) {
+        return PROTECTOR.equals(match) ? e instanceof net.minecraft.world.entity.animal.golem.IronGolem
+                : WARDEN.equals(match) && e instanceof net.minecraft.world.entity.monster.warden.Warden;
+    }
+
     private static Entity find(LocalPlayer player, String match) {
         Minecraft mc = Minecraft.getInstance();
         Entity best = null;
         double bestDist = range * range;
 
+        Entity typed = null;
+        double bestTyped = range * range;
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == player || e instanceof net.minecraft.world.entity.player.Player) continue;
             String name = plainName(e);
-            if (name == null || !name.contains(match)) continue;
-            if (petName(name)) continue;
-
             double d = e.position().distanceToSqr(player.position());
-            if (d < bestDist) {
-                bestDist = d;
-                best = e;
+            // The name wins wherever there is one to read, so nothing changes in the End.
+            if (name != null && name.contains(match) && !petName(name)) {
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = e;
+                }
+            } else if ("Dinnerbone".equals(name) && isType(e, match) && d < bestTyped) {
+                bestTyped = d;
+                typed = e;
             }
         }
-        return best;
+        // Only if no name matched at all: in the Rift every candidate is masked.
+        return best != null ? best : typed;
     }
 
     private static boolean petName(String name) {

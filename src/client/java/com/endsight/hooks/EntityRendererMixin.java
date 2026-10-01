@@ -1,6 +1,7 @@
 package com.endsight.hooks;
 
 import com.endsight.slayers.Summons;
+import com.endsight.visual.NameGradient;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.world.entity.Entity;
@@ -21,5 +22,7 @@ abstract class EntityRendererMixin {
             + "Lnet/minecraft/client/renderer/entity/state/EntityRenderState;F)V", at = @At("TAIL"))
     private void endsight$hideSoulTag(Entity entity, EntityRenderState state, float partial, CallbackInfo ci) {
         if (Summons.hideTag(entity)) state.nameTag = null;
+        else if (entity instanceof net.minecraft.world.entity.player.Player player)
+            state.nameTag = NameGradient.nametag(state.nameTag, player);
     }
 }

@@ -617,9 +617,11 @@ public class SettingsScreen extends Screen {
             return true;
         }
         if (binding != null) {
-            // Escape cancels rather than binding, so there is a way out of a chip you
-            // armed by accident; anything else, including a modifier on its own, binds.
-            if (event.key() != 256) Keybinds.set(binding, event.key());
+            // Escape clears the binding, so a chip armed by accident has a way out and a
+            // key set by accident has a way off; anything else, including a modifier on
+            // its own, binds.
+            if (event.key() == 256) Keybinds.clear(binding);
+            else Keybinds.set(binding, event.key());
             binding = null;
             return true;
         }

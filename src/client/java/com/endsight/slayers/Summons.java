@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
@@ -38,10 +39,20 @@ public final class Summons {
     /** The tags go too: a faded body already says which mobs are souls, and three tags a soul fill the screen. */
     private static boolean hideTags = true;
     private static final Set<Integer> SOULS = new HashSet<>();
-    /** Whatever carries a soul tag - the stand over the body, or the body itself. */
+    /** Whatever carries a soul tag - a stand, TextDisplay, or the body itself. */
     private static final Set<Integer> TAGS = new HashSet<>();
     /** "(ImFear's soul)", with either apostrophe a font might send. */
     private static final Pattern SOUL = Pattern.compile("\\(\\S+['’]s soul\\)");
+
+    static boolean isSoulLabel(String text) {
+        if (text == null) return false;
+        String plain = Zealots.strip(text);
+        return SOUL.matcher(plain).find() || SOUL.matcher(new StringBuilder(plain).reverse()).find();
+    }
+
+    static boolean isUnderTag(double dx, double dy, double dz) {
+        return dx * dx + dz * dz <= 0.75 * 0.75 && dy >= -0.5 && dy <= 4.5;
+    }
 
     /** The Summons section of the Voidgloom Helper page; the helper's own switch turns it on. */
     static List<Setting> settings() {
@@ -67,13 +78,18 @@ public final class Summons {
             // the name - so it is treated as a tag, and the fade goes to the body under it.
             boolean body = e instanceof LivingEntity && !(e instanceof ArmorStand) && !(e instanceof Player)
                     && !e.isInvisible();
-            Component name = e.getCustomName();
+            Component name = e instanceof Display.TextDisplay text ? text.getText() : e.getCustomName();
             // Stripped first: the server writes its colours into the name as literal codes,
             // "§7(§dImFear's soul§7)", and the colour change before the bracket kept the
             // first build from ever matching a soul.
-            if (name != null && SOUL.matcher(Zealots.strip(name.getString())).find()) {
+            if (name != null && isSoulLabel(name.getString())) {
                 TAGS.add(e.getId());
                 if (body) SOULS.add(e.getId());
+                else if (e.getVehicle() instanceof LivingEntity riderBody
+                        && !(riderBody instanceof ArmorStand) && !(riderBody instanceof Player)) {
+                    SOULS.add(riderBody.getId());
+                    TAGS.add(riderBody.getId());
+                }
                 else tags.add(e);
             } else if (body) bodies.add((LivingEntity) e);
         }
@@ -81,15 +97,18 @@ public final class Summons {
         // standing together must be three bodies, not the closest one three times.
         for (Entity tag : tags) {
             LivingEntity best = null;
-            double bestSq = 9;
+            double bestSq = 0.75 * 0.75;
             for (LivingEntity b : bodies) {
                 double up = tag.getY() - b.getY(), dx = b.getX() - tag.getX(), dz = b.getZ() - tag.getZ();
                 double sq = dx * dx + dz * dz;
-                if (up < -0.5 || up > 4 || sq >= bestSq || SOULS.contains(b.getId())) continue;
+                if (!isUnderTag(dx, up, dz) || sq >= bestSq || SOULS.contains(b.getId())) continue;
                 best = b;
                 bestSq = sq;
             }
-            if (best != null) SOULS.add(best.getId());
+            if (best != null) {
+                SOULS.add(best.getId());
+                TAGS.add(best.getId());
+            }
         }
     }
 

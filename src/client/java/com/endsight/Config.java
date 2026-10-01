@@ -138,6 +138,8 @@ public final class Config {
         }
 
         Keybinds.all().forEach((id, key) -> p.setProperty("bind." + id, String.valueOf(key)));
+        // Preserve an intentional unbind: SlotLock supplies L only on first launch.
+        p.setProperty("bind.qol.slotLock.lock", String.valueOf(Keybinds.get("qol.slotLock.lock")));
         com.endsight.qol.CommandBinds.save(p);
 
         for (Module m : registry.all()) {

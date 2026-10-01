@@ -22,6 +22,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.monster.Guardian;
@@ -61,6 +62,7 @@ public final class VoidgloomHelper {
     }
 
     private static boolean enabled = false;
+
     private static boolean onScreen = true;
     private static boolean highlight = true;
     private static boolean heads = true;
@@ -88,7 +90,8 @@ public final class VoidgloomHelper {
     private static final List<BlockPos> beacons = new ArrayList<>();
 
     /**
-     * The boss, read off its own name tag: "Voidgloom Seraph IV 817.8M/2.5B<3 57 Hits".
+     * The boss, read off its tag - its own name, or the text riding it (see tag()):
+     * "Voidgloom Seraph IV 817.8M/2.5B<3 57 Hits".
      * The hits are only there while the hitshield is up, which is exactly when they are
      * the number you need and the hardest to read in the crowd - so they go on screen
      * big, and the health takes their place the rest of the fight.
@@ -206,17 +209,22 @@ public final class VoidgloomHelper {
      * Radiation", nothing like the "(Fear's soul)" the devotees get - so ownership
      * cannot be read off the entity. What can be read is timing and place: your boss
      * spawns at your feet in the second after YOUR "SLAYER BOSS SPAWNING" line, which
-     * nobody else's chat prints. So while your quest has a boss up, the nearest Seraph
-     * within twenty blocks is taken as yours and then HELD by entity for the rest of
-     * the fight, rather than re-picked every tick - re-picking is how the first version
-     * wandered onto whoever's boss walked closest. If the server re-sends the entity
-     * mid-fight it is picked up again from where the old one last stood.
+     * nobody else's chat prints. A short claim window and ten-block radius identify it;
+     * the entity is then held for the fight instead of re-picked every tick.
      */
-    private static final double CLAIM_RANGE = 20;
     private static Vec3 bossPos;
+    /** Rising edge of your own boss spawning, and how long a claim stays open after it. */
+    private static boolean wasUp;
+    private static long claimUntil;
+    private static final long CLAIM_WINDOW_MS = 15_000;
+    /** Your own boss spawns on top of you; a neighbour's is further out. */
+    private static final double SPAWN_RANGE = 10;
 
     private static void readBoss(Minecraft mc) {
         if (!enabled || mc.player == null || mc.level == null || !Slayer.bossUp()) {
+            // Reset the rising edge after each fight so the next spawn can be claimed.
+            wasUp = false;
+            claimUntil = 0;
             bossEntity = null;
             bossPos = null;
             bossSeen = 0;
@@ -227,13 +235,33 @@ public final class VoidgloomHelper {
             return;
         }
         bossRadiating = false;
+        // Your boss, and only yours. The Rift puts several players' Seraphs inside claiming
+        // range of each other, and the nearest one is often somebody else's - sitting at
+        // full health, which the readout then showed for the whole fight while the real
+        // number moved on a tag two blocks away. It reads "Radiation" off that tag too, so
+        // a neighbour's boss also killed the radiation highlight.
+        //
+        // So a claim is only opened when YOUR boss spawns - bossUp going true - and only
+        // for a few seconds after, long enough for it to render and walk into range. Once
+        // an entity is claimed it is kept until it is gone; a boss that dies leaves the
+        // readout empty rather than quietly adopting the nearest stranger.
+        boolean up = Slayer.bossUp();
+        if (up && !wasUp) {
+            claimUntil = System.currentTimeMillis() + CLAIM_WINDOW_MS;
+            bossEntity = null;
+            bossPos = null;
+        }
+        wasUp = up;
         Entity e = bossEntity;
-        if (e == null || e.isRemoved() || e.level() != mc.level) e = claim(mc, bossPos == null ? mc.player.position() : bossPos);
+        if (e != null && (e.isRemoved() || e.level() != mc.level)) e = null;
+        if (e == null && System.currentTimeMillis() < claimUntil) {
+            e = claim(mc, bossPos == null ? mc.player.position() : bossPos, SPAWN_RANGE);
+        }
         if (e == null) return;
-        String plain = plainName(e);
-        if (plain == null) return;
-        SeraphBoss boss = SeraphBoss.read(plain);
+        SeraphBoss boss = tag(e);
         if (boss == null) return;
+        SeraphBoss live = liveDisplay(mc, e, boss);
+        if (live != null) boss = live;
         bossLabel = boss.label();
         bossSupportsRadiation = boss.supportsRadiation();
         bossRadiating = boss.radiating();
@@ -246,13 +274,63 @@ public final class VoidgloomHelper {
         bossSeen = System.currentTimeMillis();
     }
 
-    /** The nearest Seraph to a point, within claiming range, or null. */
-    private static Entity claim(Minecraft mc, Vec3 near) {
+    /**
+     * What a Seraph calls itself: its own name, or the text riding it.
+     *
+     * The End's T4 wore its tag as its own name. The T4 recorded in the Rift on
+     * 2026-09-29 does not: its body is an Enderman named "Dinnerbone" - the server's
+     * upside-down trick - and "☠ Voidgloom Seraph IV 2.0B/2.5B❤ Radiation" is a
+     * TextDisplay riding it. Read by name alone, nothing in that fight was a Seraph, so
+     * no boss was ever claimed and the HP, the hit count and the beams all stayed dark.
+     * The body is what gets claimed, not the text: the beams are measured from it, and
+     * the text sits four blocks above it.
+     */
+    private static SeraphBoss tag(Entity e) {
+        SeraphBoss own = SeraphBoss.read(plainName(e));
+        if (own != null) return own;
+        for (Entity rider : e.getPassengers()) {
+            if (!(rider instanceof Display.TextDisplay display)) continue;
+            SeraphBoss riding = SeraphBoss.read(stripName(display.getText()));
+            if (riding != null) return riding;
+        }
+        return null;
+    }
+
+    private static SeraphBoss liveDisplay(Minecraft mc, Entity body, SeraphBoss staticTag) {
+        if (!staticTag.family().equals("Riftborn")) return null;
+        SeraphBoss best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (Display.TextDisplay display : mc.level.getEntitiesOfClass(Display.TextDisplay.class,
+                body.getBoundingBox().inflate(0.65, 4.0, 0.65))) {
+            if (display.isRemoved()) continue;
+            double dx = display.getX() - body.getX();
+            double dy = display.getY() - body.getY();
+            double dz = display.getZ() - body.getZ();
+            SeraphBoss candidate = SeraphBoss.liveDisplay(staticTag, stripName(display.getText()),
+                    dx, dy, dz, display.getVehicle() == body);
+            if (candidate == null) continue;
+            double distance = dx * dx + dz * dz + Math.abs(dy - 2.9) * 0.01;
+            if (display.getVehicle() == body) distance -= 1;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The nearest Seraph to a point, within claiming range, or null.
+     *
+     * The range is tighter for your own spawn than for spectating: your boss appears at
+     * your feet, so a wide radius only makes room to pick up the neighbour whose boss is
+     * already halfway across the arena.
+     */
+    private static Entity claim(Minecraft mc, Vec3 near, double range) {
         Entity best = null;
-        double bestD = CLAIM_RANGE * CLAIM_RANGE;
+        double bestD = range * range;
         for (Entity e : mc.level.entitiesForRendering()) {
-            String plain = plainName(e);
-            if (SeraphBoss.read(plain) == null) continue;
+            if (tag(e) == null) continue;
             double d = e.position().distanceToSqr(near);
             if (d < bestD) {
                 bestD = d;
@@ -283,8 +361,11 @@ public final class VoidgloomHelper {
     private static String plainName(Entity e) {
         Component name = e.getCustomName();
         if (name == null) name = e.getDisplayName();
-        if (name == null) return null;
-        return name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        return stripName(name);
+    }
+
+    private static String stripName(Component name) {
+        return name == null ? null : name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
     }
 
     // ── in the world ──────────────────────────────────────────────────────────

@@ -55,6 +55,8 @@ public final class Drops {
     private static final Pattern RARITY_NOTE =
             Pattern.compile("\\((?:COMMON|UNCOMMON|RARE|EPIC|LEGENDARY|MYTHIC)\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LOOT = Pattern.compile("loot number:[^→]*→\\s*(?:§[k-or])*(§[0-9a-f])?(.+)$");
+    /** A pet drop carries its level: "[Lvl 1] Ender Dragon". Its rarity is not in the name. */
+    private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl \\d+\\]");
 
     /** Longest needle first, so "Golden Hot Potato Book" wins over "Hot Potato Book". */
     private static List<Rule> rules;
@@ -120,6 +122,16 @@ public final class Drops {
         Matcher l = LOOT.matcher(raw);
         if (l.find()) {
             String item = Zealots.strip(l.group(2)).trim();
+            // A pet is the one drop this line must not answer for. Its tier is its own
+            // rarity, and nothing here carries it: the colour on a loot line is the loot
+            // table's, not the item's, and the tier list names the pet rather than the
+            // rarity - so "Ender Dragon" answered legendary whatever had dropped. Worse,
+            // the answer is remembered for a second and a half, so the announcement a
+            // tick later, which does carry the rarity as the colour of the name, arrived
+            // as a repeat of a drop already seen and was thrown away: an epic dragon pet
+            // rang the legendary call with no second chance to correct it. The
+            // announcement always follows, so a pet waits for it.
+            if (PET_LEVEL.matcher(item).find()) return null;
             int tier = tierOf(item, -1);
             return tier < 0 ? null : once(new Drop(item, tier));
         }

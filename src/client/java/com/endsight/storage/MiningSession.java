@@ -1,6 +1,7 @@
 package com.endsight.storage;
 
 import com.endsight.dragons.DragonTimer;
+import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
@@ -12,6 +13,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
@@ -62,6 +64,9 @@ public final class MiningSession {
     private static long activeMs;
     private static long lastTick;
     private static long lastActive;
+    private static long lastToolHeld;
+    private static ClientLevel hudLevel;
+    private static Area.Where hudArea = Area.Where.UNKNOWN;
     private static boolean petAlert = true;
     private static final java.util.regex.Pattern PET_DROP = java.util.regex.Pattern.compile("DROP!.*\\[Lvl \\d+\\]\\s*(.+)$");
     private static final java.util.regex.Pattern VOID_DROP = java.util.regex.Pattern.compile("DROP!\\s*(Void Fragment|Void Core)\\b");
@@ -72,9 +77,33 @@ public final class MiningSession {
      * obsidian sessions and slayer both.
      */
     public static boolean amethystActive() {
-        boolean up = mining || (showWhenPaused && activeMs > 0 && System.currentTimeMillis() - lastActive <= 300_000);
-        return up && "Amethyst".equals(currentMaterial)
+        boolean up = mining || (showWhenPaused && activeMs > 0);
+        return hudVisible() && up && "Amethyst".equals(currentMaterial)
                 && com.endsight.zealots.ZealotTracker.lastActivity() <= lastActive;
+    }
+
+    /** Shared by the mining and powder readouts; visibility never resets their totals. */
+    public static boolean hudVisible() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null && mc.level != null && mc.level == hudLevel
+                && hudVisibleAt(System.currentTimeMillis(), lastToolHeld, Area.end());
+    }
+
+    private static boolean hudVisibleAt(long now, long heldAt, boolean miningArea) {
+        return miningArea && heldAt > 0 && now >= heldAt && now - heldAt < GRACE_MS;
+    }
+
+    private static void watchHud(Minecraft mc) {
+        Area.Where area = Area.where();
+        // A warp must not carry the old pocket's grace window into another activity.
+        if (mc.level != hudLevel || area != hudArea) lastToolHeld = 0;
+        hudLevel = mc.level;
+        hudArea = area;
+        if (mc.player == null || mc.level == null || !Area.end()) {
+            lastToolHeld = 0;
+        } else if (miningTool(mc.player.getMainHandItem())) {
+            lastToolHeld = System.currentTimeMillis();
+        }
     }
 
     /** When mining last happened, for anything that should stand down while it is going on. */
@@ -126,7 +155,7 @@ public final class MiningSession {
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Section("Readout"),
-                        new Setting.Toggle("Show while paused", "Keep the readout up after you stop mining.",
+                        new Setting.Toggle("Show while paused", "Keep paused totals visible while a mining tool is held or was just put away.",
                                 () -> showWhenPaused, v -> showWhenPaused = v),
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
@@ -216,6 +245,8 @@ public final class MiningSession {
     }
 
     private static void tick(Minecraft mc) {
+        // Powder has its own toggle, so its visibility must still update with this off.
+        watchHud(mc);
         if (!enabled || mc.player == null || mc.level == null) {
             lastTick = 0;
             mining = false;
@@ -276,7 +307,12 @@ public final class MiningSession {
         if (s.isEmpty()) return false;
         if (s.is(ItemTags.PICKAXES)) return true;
         String name = Zealots.strip(s.getHoverName().getString()).toLowerCase(Locale.ROOT);
-        return name.contains("pickaxe") || name.contains("drill");
+        return miningToolName(name);
+    }
+
+    private static boolean miningToolName(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.contains("pickaxe") || (lower.contains("drill") && !lower.contains("drill motor"));
     }
 
     private static String targetMaterial(Minecraft mc) {
@@ -425,8 +461,8 @@ public final class MiningSession {
 
     private static void draw(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
-        if (!enabled || mc.player == null || mc.options.hideGui) return;
-        if (!mining && (!showWhenPaused || activeMs <= 0 || System.currentTimeMillis() - lastActive > 300_000)) return;
+        if (!enabled || mc.player == null || mc.options.hideGui || !hudVisible()) return;
+        if (!mining && (!showWhenPaused || activeMs <= 0)) return;
         if (com.endsight.zealots.ZealotTracker.lastActivity() > lastActive) return;
         HudLayout.draw(ID, g, mc.font, false);
     }

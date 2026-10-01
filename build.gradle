@@ -69,6 +69,90 @@ tasks.named('build') {
 	dependsOn 'autoupdateJar'
 }
 
+sourceSets.test.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.client.runtimeClasspath
+
+tasks.register('bossDropsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dragons.BossDropsChecks'
+}
+
+tasks.register('cooldownsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.visual.CooldownsChecks'
+}
+
+tasks.register('miningVisibilityChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.MiningVisibilityChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks'
+}
+
+tasks.register('inventoryVisualChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.visual.InventoryVisualChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'inventoryVisualChecks'
+}
+
+tasks.register('inventoryHookChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.visual.InventoryHookChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'inventoryHookChecks'
+}
+
+tasks.register('dropsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.DropsChecks'
+}
+
+tasks.register('npcPricesChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.NpcPricesChecks'
+}
+
+tasks.register('slotLockChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.SlotLockChecks'
+}
+
+tasks.register('seraphBossChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.SeraphBossChecks'
+}
+
+tasks.register('summonsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.SummonsChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'dropsChecks', 'npcPricesChecks', 'slotLockChecks', 'seraphBossChecks', 'summonsChecks'
+}
+
+tasks.named('test') {
+	// Regression runners above do not use a framework; future framework tests still run.
+	failOnNoDiscoveredTests = false
+}
+
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
 }

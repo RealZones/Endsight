@@ -20,6 +20,17 @@ public final class Zealots {
     /** Bruisers live in the layer below; nobody farming eyes is counting them. */
     private static final String EXCLUDE = "Bruiser";
     private static final String SCYTHE = "Scythe";
+    /**
+     * The Rift replaces every mob's name with "Dinnerbone" - the vanilla trick that renders
+     * it upside down - so nothing there says "Zealot" and every name-based check went blind:
+     * no tracker, no beam. A masked enderman is therefore counted as a zealot, and the one
+     * enderman that never is, is the boss: both Voidgloom and Riftborn say Seraph.
+     *
+     * A nameless enderman is still left alone. Masked mobs are named, not nameless, so this
+     * covers the Rift without plain vanilla endermen starting to count.
+     */
+    private static final String MASK = "Dinnerbone";
+    private static final String BOSS = "Seraph";
     /** The Flower of Truth and the Bouquet of Lies: a right-click throws a homing rose. */
     private static final String[] ROSES = {"Flower of Truth", "Bouquet of Lies"};
 
@@ -28,6 +39,8 @@ public final class Zealots {
         Component name = e.getCustomName();
         if (name == null) return false;
         String plain = strip(name.getString());
+        if (plain.contains(BOSS)) return false;
+        if (plain.equals(MASK)) return true;
         return plain.contains(MATCH) && !plain.contains(EXCLUDE);
     }
 

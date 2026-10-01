@@ -9,12 +9,20 @@ import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -104,11 +112,12 @@ public final class Cooldowns {
     private static final Timer SWORD = new Timer("cooldown.sword", "Giant's Sword", "giant's sword", "slam", 5);
     private static final Timer TUBA = new Timer("cooldown.tuba", "Tuba", "tuba", "howl", 20);
     private static final Timer KATANA = new Timer("cooldown.katana", "Soulcry", "katana", "soulcry", 4);
+    private static final Timer RIFTWALKER = new Timer("cooldown.riftwalker", "Riftwalker", "riftwalker chestplate", "", 8);
     /** The drill's Void Infusion: "You used Void Infusion!" starts it, the lore says 108s. */
     private static final Timer DRILL = new Timer("cooldown.drill", "Drill", "drill", "void infusion", 108);
     private static final long DRILL_LINGER_MS = 15_000;
     private static long drillVisibleUntil;
-    private static final List<Timer> ABILITIES = List.of(SWORD, TUBA, KATANA);
+    private static final List<Timer> ABILITIES = List.of(SWORD, TUBA, KATANA, RIFTWALKER);
     private static final List<Timer> TIMERS = List.of(SWORD, TUBA, KATANA, DRILL);
 
     /** The Drill CD line's switch is on the Mining Session page with the fuel line's. */
@@ -170,19 +179,34 @@ public final class Cooldowns {
 
     public static Module module() {
         return new Module("visual.cooldowns", "Ability Cooldowns",
-                "Ready times for carried abilities.", "Visual",
+                "Ready times for abilities and Riftwalker armor.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Section("Abilities"),
                         new Setting.Toggle("Giant's Sword", "Track Giant's Slam.", () -> SWORD.on, v -> SWORD.on = v),
                         new Setting.Toggle("Tuba", "Track Howl.", () -> TUBA.on, v -> TUBA.on = v),
                         new Setting.Toggle("Katanas", "Track Vorpal and Atomsplit Soulcry.", () -> KATANA.on, v -> KATANA.on = v),
+                        new Setting.Toggle("Riftwalker", "Track the next double hit with all four pieces equipped.",
+                                () -> RIFTWALKER.on, v -> RIFTWALKER.on = v),
                         new Setting.Section("Appearance"),
                         new Setting.Slider("Background opacity", "Dark backdrop behind ability cooldowns.",
                                 0, 100, 1, () -> backgroundOpacity, v -> backgroundOpacity = v, "%")));
     }
 
     public static void init() {
+        AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+            Minecraft mc = Minecraft.getInstance();
+            if (player == mc.player && hand == InteractionHand.MAIN_HAND
+                    && entity instanceof LivingEntity && !(entity instanceof ArmorStand)
+                    && player.getMainHandItem().is(ItemTags.SWORDS) && riftwalkerEquipped(player)) {
+                long until = riftwalkerAfterHit(RIFTWALKER.until, ticks);
+                if (until != RIFTWALKER.until) {
+                    RIFTWALKER.start = ticks;
+                    RIFTWALKER.until = until;
+                }
+            }
+            return InteractionResult.PASS;
+        });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             // Before anything returns: cooldowns keep running through a warp's loading screen.
             countTick(mc);
@@ -252,6 +276,26 @@ public final class Cooldowns {
         t.start = ticks;
         t.until = ticks + (t.learnedFor == t.lore ? t.learned : t.lore);
         if (t == DRILL) readySaid = false;
+    }
+
+    static long riftwalkerAfterHit(long currentUntil, long now) {
+        // Normal hits while charging do not restart the eight-second bonus.
+        return now >= currentUntil ? now + 160 : currentUntil;
+    }
+
+    static boolean riftwalkerPiece(String name, String piece) {
+        return name.toLowerCase(Locale.ROOT).contains("riftwalker " + piece);
+    }
+
+    private static boolean riftwalkerEquipped(Player player) {
+        return hasPiece(player.getItemBySlot(EquipmentSlot.HEAD), "helmet")
+                && hasPiece(player.getItemBySlot(EquipmentSlot.CHEST), "chestplate")
+                && hasPiece(player.getItemBySlot(EquipmentSlot.LEGS), "leggings")
+                && hasPiece(player.getItemBySlot(EquipmentSlot.FEET), "boots");
+    }
+
+    private static boolean hasPiece(ItemStack stack, String piece) {
+        return !stack.isEmpty() && riftwalkerPiece(stack.getHoverName().getString(), piece);
     }
 
     /**
@@ -325,7 +369,7 @@ public final class Cooldowns {
         Minecraft mc = Minecraft.getInstance();
         if (!enabled || mc.player == null || mc.options.hideGui) return;
         boolean abilitiesVisible = false;
-        for (Timer t : ABILITIES) if (t.on && (ticks < t.until || carrying(mc, t))) abilitiesVisible = true;
+        for (Timer t : ABILITIES) if (visible(mc, t)) abilitiesVisible = true;
         if (abilitiesVisible) HudLayout.draw("cooldown.abilities", g, mc.font, false);
         if (DRILL.on && System.currentTimeMillis() < drillVisibleUntil)
             HudLayout.draw(DRILL.id, g, mc.font, false);
@@ -333,6 +377,11 @@ public final class Cooldowns {
 
     /** Looked up four times a second, not per frame: it scans the inventory for each visible line. */
     private static boolean carrying(Minecraft mc, Timer t) {
+        if (t == RIFTWALKER) {
+            if (mc.player == null || !riftwalkerEquipped(mc.player)) return false;
+            t.icon = mc.player.getItemBySlot(EquipmentSlot.CHEST).copy();
+            return true;
+        }
         long now = System.currentTimeMillis();
         if (now - t.carryCheckedAt < 250) return t.carrying;
         t.carryCheckedAt = now;
@@ -342,11 +391,17 @@ public final class Cooldowns {
         return t.carrying;
     }
 
+    private static boolean visible(Minecraft mc, Timer t) {
+        if (!t.on) return false;
+        if (t == RIFTWALKER) return carrying(mc, t);
+        return ticks < t.until || carrying(mc, t);
+    }
+
     private static int[] drawAbilities(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         Minecraft mc = Minecraft.getInstance();
         int rows = 0;
         for (Timer t : ABILITIES)
-            if (sample || (t.on && (ticks < t.until || (mc.player != null && carrying(mc, t))))) rows++;
+            if (sample || visible(mc, t)) rows++;
         int w = 154, h = Math.max(18, rows * 19 - 1);
         if (g == null) return new int[]{w, h};
 
@@ -354,10 +409,11 @@ public final class Cooldowns {
         if (alpha > 0) Draw.roundedRect(g, x, y, w, h, 3, alpha << 24);
         int row = 0;
         for (Timer t : ABILITIES) {
-            if (!sample && (!t.on || (ticks >= t.until && !carrying(mc, t)))) continue;
+            if (!sample && !visible(mc, t)) continue;
             ItemStack icon = t.icon;
-            if (icon == null) icon = Recipes.icon(t.label);
-            if (icon == null) icon = new ItemStack(t == TUBA ? Items.GOAT_HORN : Items.DIAMOND_SWORD);
+            if (icon == null) icon = Recipes.icon(t == RIFTWALKER ? "Riftwalker Chestplate" : t.label);
+            if (icon == null) icon = new ItemStack(t == RIFTWALKER ? Items.DIAMOND_CHESTPLATE
+                    : t == TUBA ? Items.GOAT_HORN : Items.DIAMOND_SWORD);
             int top = y + row * 19;
             g.fakeItem(icon, x + 3, top + 1);
             g.text(font, t.label, x + 23, top + 5, 0xFFE8E8E8, true);

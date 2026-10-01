@@ -490,14 +490,16 @@ public final class PowderTracker {
         // The fuel line and the fragment line have their own switches and live in this
         // class only because it is the one reading the drill and the blocks. Turning the
         // powder readout off took both down with it, which is not what the toggle says.
-        if (showFuel && fuel >= 0) HudLayout.draw(FUEL_ID, g, mc.font, false);
-        boolean show = enabled && (total[0] >= 0 || total[1] >= 0);
+        boolean miningHud = MiningSession.hudVisible();
+        if (miningHud && showFuel && fuel >= 0) HudLayout.draw(FUEL_ID, g, mc.font, false);
+        boolean show = miningHud && enabled && (total[0] >= 0 || total[1] >= 0);
         // The readout has gone missing mid-session with nothing in the log to say why.
         // Every flip of the one gate that hides it is written down, with the state behind
         // it, so the next disappearance names its own cause instead of being guessed at.
         if (show != wasShown) {
             wasShown = show;
-            log("VIS", show ? "shown" : "hidden", "enabled=" + enabled, "ender=" + total[0], "void=" + total[1]);
+            log("VIS", show ? "shown" : "hidden", "enabled=" + enabled, "mining=" + miningHud,
+                    "ender=" + total[0], "void=" + total[1]);
         }
         if (!show) return;
         HudLayout.draw(ID, g, mc.font, false);

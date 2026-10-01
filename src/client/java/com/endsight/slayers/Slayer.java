@@ -103,8 +103,8 @@ public final class Slayer {
      *
      * The average, not the last kill: one bad spawn or one lucky burst says nothing
      * about your night. Elapsed is time spent on THIS slayer, starting at its first
-     * line rather than at launch, with breaks standing still taken off, so the rate
-     * describes something.
+     * line rather than at launch, with breaks taken off - standing still, or going
+     * without a slayer line (see breakAfter) - so the rate describes something.
      */
     private static final class Run {
         long lastKillMs, totalKillMs;
@@ -113,6 +113,8 @@ public final class Slayer {
         long lastActivity;
         long lastMoved;
         Vec3 lastPos;
+        /** The last slayer line, and how much standing still has come off since it. */
+        long lastLine, afkSinceLine;
     }
 
     private static final java.util.Map<String, Run> runs = new java.util.LinkedHashMap<>();
@@ -156,6 +158,8 @@ public final class Slayer {
         r.lastKillMs = 0;
         r.totalKillMs = 0;
         r.sessionStart = 0;
+        r.lastLine = 0;
+        r.afkSinceLine = 0;
     }
 
     public static void init() {
@@ -427,8 +431,32 @@ public final class Slayer {
         long now = System.currentTimeMillis();
         Run r = cur();
         if (r.sessionStart == 0) r.sessionStart = now;
+        // Back from a break: the whole gap since the last line comes off, less whatever
+        // standing still inside it has already taken, so no minute comes off twice.
+        else if (r.lastLine != 0 && now - r.lastLine > breakAfter()) {
+            r.sessionStart += Math.max(0, now - r.lastLine - r.afkSinceLine);
+        }
+        r.lastLine = now;
+        r.afkSinceLine = 0;
         r.lastActivity = now;
         r.lastMoved = now;
+    }
+
+    /**
+     * No slayer line for this long is a break, even on the move.
+     *
+     * Standing still was the only break the clock knew, and it missed the one that
+     * mattered: on 2026-09-29 eight T4s died between 20:50 and 20:59, the quest failed,
+     * and the next hour and a half was spent walking the Rift with no quest at all. The
+     * clock ran through every minute of it and the readout said 4/h for a night that
+     * was going at nearly sixty. Here a quest's lines come seconds apart - the quest
+     * starts, the boss spawns under a minute later, dies forty seconds after that - so
+     * five quiet minutes is not the mob grind. A fight prints nothing between its spawn
+     * and its kill, so while your boss is up it gets fifteen, the same span after which
+     * questActive stops believing in a boss nobody has heard from.
+     */
+    private static long breakAfter() {
+        return bossUp ? 15 * 60_000L : 5 * 60_000L;
     }
 
     /**
@@ -449,7 +477,10 @@ public final class Slayer {
         Vec3 pos = mc.player.position();
         long now = System.currentTimeMillis();
         if (r.lastPos == null || pos.distanceToSqr(r.lastPos) > 0.01) {
-            if (r.lastMoved != 0 && now - r.lastMoved > AFK_MS) r.sessionStart += now - r.lastMoved;
+            if (r.lastMoved != 0 && now - r.lastMoved > AFK_MS) {
+                r.sessionStart += now - r.lastMoved;
+                r.afkSinceLine += now - r.lastMoved;
+            }
             r.lastMoved = now;
         }
         r.lastPos = pos;
@@ -503,7 +534,13 @@ public final class Slayer {
         if (r.sessionStart == 0) return 0;
         long now = System.currentTimeMillis();
         long still = r.lastMoved == 0 ? 0 : now - r.lastMoved;
-        return (still > AFK_MS ? r.lastMoved : now) - r.sessionStart;
+        long end = still > AFK_MS ? r.lastMoved : now;
+        // In a break the clock stands at the last line. The standing still already taken
+        // off inside the gap moved sessionStart forward, so it moves the end too.
+        if (r.lastLine != 0 && now - r.lastLine > breakAfter()) {
+            end = Math.min(end, r.lastLine + r.afkSinceLine);
+        }
+        return end - r.sessionStart;
     }
 
     /** Kills per hour, or -1 while the sample is too short to mean anything. */

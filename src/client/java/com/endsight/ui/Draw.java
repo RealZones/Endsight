@@ -93,6 +93,39 @@ public final class Draw {
         }
     }
 
+    /**
+     * The ring only, with nothing painted inside it.
+     *
+     * roundedOutline cannot do this: it fills the whole shape in the border colour and then
+     * paints a smaller one over the middle, which works only while that inner colour is
+     * opaque. Hand it a transparent fill and the border colour stays covering everything -
+     * which is exactly how a glass inventory at zero opacity still arrived as a solid sheet,
+     * and why its opacity slider appeared to do nothing: it was only ever setting the alpha
+     * of the part you could not see.
+     *
+     * Same cap arithmetic as roundedRect, so a ring and a filled shape of the same radius
+     * agree on where the curve is.
+     */
+    public static void roundedRing(GuiGraphicsExtractor g, int x, int y, int w, int h,
+                                   int radius, int color) {
+        if (w <= 1 || h <= 1) return;
+        int r = Math.min(radius, Math.min(w, h) / 2);
+
+        rect(g, x + r, y, w - 2 * r, 1, color);
+        rect(g, x + r, y + h - 1, w - 2 * r, 1, color);
+        rect(g, x, y + r, 1, h - 2 * r, color);
+        rect(g, x + w - 1, y + r, 1, h - 2 * r, color);
+
+        for (int i = 0; i < r; i++) {
+            double dy = r - i - 0.5;
+            int inset = (int) Math.round(r - Math.sqrt(Math.max(0, (double) r * r - dy * dy)));
+            rect(g, x + inset, y + i, 1, 1, color);
+            rect(g, x + w - inset - 1, y + i, 1, 1, color);
+            rect(g, x + inset, y + h - i - 1, 1, 1, color);
+            rect(g, x + w - inset - 1, y + h - i - 1, 1, 1, color);
+        }
+    }
+
     /** A fixed-size texture keeps the gear legible regardless of the active font pack. */
     public static void gearIcon(GuiGraphicsExtractor g, Font font, int cx, int cy, int color) {
         g.blit(RenderPipelines.GUI_TEXTURED, SETTINGS_ICON, cx - 8, cy - 8,

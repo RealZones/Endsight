@@ -1288,8 +1288,12 @@ public class EndsightScreen extends Screen {
             KeyEvent event
     ) {
         if (binding != null) {
-            // Escape cancels; anything else binds, modifiers included.
-            if (event.key() != 256) {
+            // Escape clears the binding; anything else binds, modifiers included. It used
+            // to merely cancel, which left no way to unbind at all - so a key set by
+            // accident, the Windows key in one case, was permanent.
+            if (event.key() == 256) {
+                Keybinds.clear(binding);
+            } else {
                 Keybinds.set(binding, event.key());
             }
             binding = null;

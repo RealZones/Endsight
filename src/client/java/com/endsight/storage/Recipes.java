@@ -138,6 +138,34 @@ public final class Recipes {
      * you were wearing and Upgrades found nothing to upgrade.
      */
     private static final Pattern CHEST = Pattern.compile("^(?:Ender Chest|Accessory Bag)(?: \\(\\d+/\\d+\\))?$");
+    /** "Accessory Bag (1/2)" and "Accessory Bag" are the same page one. */
+    private static final Pattern CHEST_PAGE = Pattern.compile("^(.*?)(?: \\((\\d+)/\\d+\\))?$");
+    /** A title that is already a key, as the file hands it back. */
+    private static final Pattern KEYED = Pattern.compile("^(.*?) #(\\d+)(?: #\\d+)*$");
+
+    /**
+     * One key per window and page, rather than per raw title.
+     *
+     * These were keyed by the title as the server wrote it, so the day a window started
+     * paginating, the old entry was orphaned: "Accessory Bag" and "Accessory Bag (1/2)"
+     * became two chests, the bare one never captured again and so never refreshed - yet
+     * still counted. Anything taken out of it stayed "owned" forever and anything in both
+     * counted twice, which is how a Warden Core nobody has ever owned reads as two.
+     */
+    private static String chestKey(String title) {
+        // The file saves these keys as the titles, so on load the key comes back in. Run
+        // through the pattern below it gained another " #1" every relaunch - the saved
+        // file held "Accessory Bag #1 #1 #1" beside a fresh "Accessory Bag #1", the old
+        // page never refreshed and still counted: the same double count as before, one
+        // launch later. Found reading recipes-items.nbt for the Slayer loan. The first
+        // " #n" is the real page; any after it are that bug, and fold away on load.
+        Matcher keyed = KEYED.matcher(title);
+        if (keyed.matches()) return keyed.group(1) + " #" + keyed.group(2);
+        Matcher m = CHEST_PAGE.matcher(title);
+        if (!m.matches()) return title;
+        String page = m.group(2) == null ? "1" : m.group(2);
+        return m.group(1).trim() + " #" + page;
+    }
 
     public static Module module() {
         return new Module("storage.recipes", "Recipes",
@@ -223,7 +251,7 @@ public final class Recipes {
             if (any) {
                 List<ItemStack> copy = new ArrayList<>();
                 for (ItemStack s : slots) copy.add(s.copy());
-                CHESTS.put(title, copy);
+                CHESTS.put(chestKey(title), copy);
                 iconsDirty = true;
             }
         }
@@ -321,7 +349,9 @@ public final class Recipes {
                     for (Tag tag : c.getListOrEmpty("items")) {
                         items.add(ItemStack.OPTIONAL_CODEC.parse(ops, tag).result().orElse(ItemStack.EMPTY));
                     }
-                    CHESTS.put(c.getStringOr("title", "Ender Chest"), items);
+                    // Normalised on the way in too, so a file already holding both an
+                    // "Accessory Bag" and an "Accessory Bag (1/2)" collapses to one on load.
+                    CHESTS.put(chestKey(c.getStringOr("title", "Ender Chest")), items);
                 }
             }
             return changed;
@@ -357,6 +387,15 @@ public final class Recipes {
         if (s != null) return s;
         String key = recipeFor(item);
         return key == null ? null : ICONS.get(key);
+    }
+
+    /** Every page of the Accessory Bag as it was last open: the accessories that are on. */
+    public static List<ItemStack> accessoryBag() {
+        List<ItemStack> out = new ArrayList<>();
+        CHESTS.forEach((key, items) -> {
+            if (key.startsWith("Accessory Bag #")) out.addAll(items);
+        });
+        return out;
     }
 
     /** A stack of this name you are holding or have in storage, or null. */

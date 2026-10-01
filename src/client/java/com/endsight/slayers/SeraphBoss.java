@@ -28,6 +28,16 @@ record SeraphBoss(String family, String tier, String health, String maxHealth, i
                 match.group(3), match.group(4), hits, name.substring(match.end()).contains("Radiation"));
     }
 
+    /** T5's changing label is a separate TextDisplay just above the static mob tag. */
+    static SeraphBoss liveDisplay(SeraphBoss body, String text, double dx, double dy, double dz,
+                                  boolean ridingBody) {
+        if (body == null || !body.family.equals("Riftborn") ||
+                !ridingBody && (dx * dx + dz * dz > 0.6 * 0.6 || dy < 1.5 || dy > 4.5)) return null;
+        SeraphBoss live = read(text);
+        return live != null && live.family.equals(body.family) && live.maxHealth.equals(body.maxHealth)
+                ? live : null;
+    }
+
     String label() {
         return family.equals("Riftborn") ? "Riftborn Seraph" : "Seraph " + tier;
     }

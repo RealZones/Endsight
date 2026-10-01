@@ -4,6 +4,8 @@
 	"compatibilityLevel": "JAVA_25",
 	"client": [
 		"ContainerSlotMixin",
+		"SlotLockMixin",
+		"SlotLockPlayerMixin",
 		"HotbarSlotMixin",
 		"OverlayMessageMixin",
 		"LightmapMixin",
@@ -11,7 +13,14 @@
 		"GuardianParticlesMixin",
 		"LivingEntityRenderStateMixin",
 		"LivingEntityRendererMixin",
-		"EntityRendererMixin"
+		"EntityRendererMixin",
+		"SummonTextDisplayMixin",
+		"InventoryGlassMixin",
+		"ScreenBackdropMixin",
+		"ChestGlassMixin",
+		"ContainerGlassLabelsMixin",
+		"ChatNameGradientMixin",
+		"TabNameGradientMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

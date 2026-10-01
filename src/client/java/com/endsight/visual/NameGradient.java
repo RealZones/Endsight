@@ -1,8 +1,5 @@
 package com.endsight.visual;
 
-import com.endsight.hud.Toast;
-import com.endsight.ui.Module;
-import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -15,12 +12,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.WeakHashMap;
 
-/** Animates the server-supplied gradient, so recipients need no separate colour-sync service. */
+/**
+ * Animates the server-supplied gradient, so recipients need no separate colour-sync service.
+ *
+ * Always on, and deliberately not a module: it is not a feature anyone picks, it is how
+ * that name looks to everyone running the mod. 1.2.0 shipped it as a card in the menu with
+ * its own switch and colour pickers, and players asked why it was an option. The colours
+ * are set in game with /gradient, and this follows them.
+ */
 public final class NameGradient {
     private static final String NAME = "ImFear";
-    private static boolean enabled = true;
-    /** What the pickers hold for Apply. Overwritten by the server's gradient whenever it changes. */
-    private static int first = 0xFF500740, second = 0xFF5100FF;
     /**
      * The gradient the server gives ImFear right now, or -1 until one has been seen.
      *
@@ -45,35 +46,11 @@ public final class NameGradient {
 
     private NameGradient() {}
 
-    public static Module module() {
-        return new Module("visual.nameGradient", "Animated Name", "Animate ImFear in chat, tab and nametags.", "Visual",
-                () -> enabled, value -> enabled = value, List.of(
-                new Setting.Section("Colours"),
-                new Setting.Color("First colour", "One end of the moving gradient.", () -> first, value -> { if (value != 0) first = value; }),
-                new Setting.Color("Second colour", "The other end of the gradient.", () -> second, value -> { if (value != 0) second = value; }),
-                new Setting.Action("Server gradient", "Set ImFear's in-game gradient to these colours.", "Apply", NameGradient::apply)));
-    }
-
     /** On this server players' chat arrives as system lines, so GAME is where a new one shows up. */
     public static void init() {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay) observe(message);
         });
-    }
-
-    private static void apply() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.getConnection() == null || !mc.player.getGameProfile().name().equalsIgnoreCase(NAME)) {
-            Toast.warn("Animated Name", "Only ImFear can apply these colours.");
-            return;
-        }
-        mc.getConnection().sendCommand(String.format(java.util.Locale.ROOT, "gradient %06X %06X", first & 0xFFFFFF, second & 0xFFFFFF));
-        CACHE.clear();
-        COMPONENT_CACHE.clear();
-        NAMETAG_CACHE.clear();
-        // Shown at once rather than when the tab entry comes back; the tab then confirms it.
-        liveFirst = first & 0xFFFFFF;
-        liveSecond = second & 0xFFFFFF;
     }
 
     /** Read ImFear's tab entry again if it has been replaced - at most twice a second. */
@@ -97,13 +74,10 @@ public final class NameGradient {
         if (plan.start < 0 || plan.a < 0 || (plan.a == liveFirst && plan.b == liveSecond)) return;
         liveFirst = plan.a;
         liveSecond = plan.b;
-        // The pickers follow the server, so Apply starts from the gradient you really have.
-        first = 0xFF000000 | plan.a;
-        second = 0xFF000000 | plan.b;
     }
 
     public static FormattedCharSequence animate(FormattedCharSequence original) {
-        if (!enabled || original == null) return original;
+        if (original == null) return original;
         refreshLive();
         Plan plan = CACHE.get(original);
         if (plan == null) {
@@ -131,7 +105,7 @@ public final class NameGradient {
     }
 
     public static Component animate(Component original) {
-        if (!enabled || original == null) return original;
+        if (original == null) return original;
         refreshLive();
         // Vanilla invalidates this key when a mutable component changes. Negative matches
         // are cached too, so the tab list does not rebuild every other player's text each frame.
@@ -147,7 +121,7 @@ public final class NameGradient {
     }
 
     public static Component nametag(Component original, net.minecraft.world.entity.player.Player player) {
-        if (!enabled || original == null || !player.getGameProfile().name().equalsIgnoreCase(NAME)) return original;
+        if (original == null || !player.getGameProfile().name().equalsIgnoreCase(NAME)) return original;
         refreshLive();
         return nametagText(original);
     }

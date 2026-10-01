@@ -113,7 +113,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(SlotLock.module());
             registry.replace(InventoryGlass.module());
             registry.replace(InventoryPreview.module());
-            registry.replace(NameGradient.module());
             registry.replace(Etherwarp.module());
             registry.replace(Cooldowns.module());
             registry.replace(LootAlerts.module());

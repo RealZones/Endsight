@@ -287,8 +287,28 @@ public final class Cooldowns {
         return name.toLowerCase(Locale.ROOT).contains("riftwalker " + piece);
     }
 
+    /**
+     * A helmet that stands in for any set's: the Warden Helmet's Chameleon ability, "counts
+     * as the helmet of any armor set". Riftwalker with one on is a full set, and the tracker
+     * had stayed hidden for someone wearing exactly that. Read off the ability text so a
+     * future Chameleon helmet works too; the name is the fallback if the tooltip changes.
+     */
+    static boolean anySetHelmet(String name, List<String> lore) {
+        if (name.toLowerCase(Locale.ROOT).contains("warden helmet")) return true;
+        return String.join(" ", lore).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ")
+                .contains("counts as the helmet of any armor set");
+    }
+
+    private static boolean anySetHelmet(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        var lore = stack.get(net.minecraft.core.component.DataComponents.LORE);
+        return anySetHelmet(Zealots.strip(stack.getHoverName().getString()),
+                lore == null ? List.of() : lore.lines().stream().map(c -> Zealots.strip(c.getString())).toList());
+    }
+
     private static boolean riftwalkerEquipped(Player player) {
-        return hasPiece(player.getItemBySlot(EquipmentSlot.HEAD), "helmet")
+        ItemStack head = player.getItemBySlot(EquipmentSlot.HEAD);
+        return (hasPiece(head, "helmet") || anySetHelmet(head))
                 && hasPiece(player.getItemBySlot(EquipmentSlot.CHEST), "chestplate")
                 && hasPiece(player.getItemBySlot(EquipmentSlot.LEGS), "leggings")
                 && hasPiece(player.getItemBySlot(EquipmentSlot.FEET), "boots");

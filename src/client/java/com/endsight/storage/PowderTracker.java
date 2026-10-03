@@ -245,7 +245,6 @@ public final class PowderTracker {
 
     /** The action bar as the server sets it; the XP popup lives there. */
     public static void onActionBar(String text) {
-        VoidFragments.onActionBar(text);
         if (!enabled) return;
         Matcher m = MINING_XP.matcher(Zealots.strip(text));
         if (!m.find()) return;
@@ -258,8 +257,7 @@ public final class PowderTracker {
     }
 
     private static void tick(Minecraft mc) {
-        // Not gated on the powder module: the fuel and fragment lines are fed from here
-        // and they are switched on their own.
+        // Not gated on the powder module: the fuel and pet readouts are fed from here.
         if (mc.player == null || mc.level == null) return;
         tickN++;
         watchBlocks(mc);
@@ -272,12 +270,10 @@ public final class PowderTracker {
         while (!recentXp.isEmpty() && recentXp.peekFirst()[0] < cut) recentXp.pollFirst();
         if (mc.screen instanceof AbstractContainerScreen<?> s) {
             if (tickN % SCREEN_EVERY == 0 && clean(s.getTitle().getString()).equalsIgnoreCase(HOTD)) scanHotd(s);
-            if (tickN % SCREEN_EVERY == 0 && VoidFragments.isMeter(clean(s.getTitle().getString()))) VoidFragments.scanMeter(s);
         } else if (mc.screen == null && remind) {
             remindReady();
         }
         VoidFragments.tick(mc);
-        VoidFragments.maybeSave();
         if (nowMs - lastFlush > FLUSH_MS) flush();
     }
 
@@ -382,7 +378,6 @@ public final class PowderTracker {
                 if (l.find()) {
                     level = (int) num(l.group(1));
                     max = (int) num(l.group(2));
-                    VoidFragments.perk(name, level);
                     continue;
                 }
                 Matcher cost = COST.matcher(line);

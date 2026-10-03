@@ -26,6 +26,7 @@ import com.endsight.qol.Updates;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
+import com.endsight.slayers.SlayerSpawnMarker;
 import com.endsight.slayers.VoidgloomHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -40,6 +41,7 @@ import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
+import com.endsight.visual.ExplosionParticles;
 import com.endsight.visual.Cooldowns;
 import com.endsight.visual.Etherwarp;
 import com.endsight.visual.Fullbright;
@@ -102,12 +104,14 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Protector.module());
             registry.replace(BossDrops.module());
             registry.replace(Slayer.killTimerModule());
+            registry.replace(SlayerSpawnMarker.module());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
             registry.replace(ArmorGuard.module());
             registry.replace(DamageNumbers.module());
             registry.replace(Beacon.module());
+            registry.replace(ExplosionParticles.module());
             registry.replace(RarityOutline.module());
             registry.replace(Fullbright.module());
             registry.replace(SlotLock.module());
@@ -176,6 +180,7 @@ public class EndsightClient implements ClientModInitializer {
         Etherwarp.init();
         Cooldowns.init();
         Slayer.init();
+        SlayerSpawnMarker.init();
         ZealotTracker.init();
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any

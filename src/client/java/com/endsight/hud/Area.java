@@ -57,6 +57,13 @@ public final class Area {
         return where == Where.VOID_SEPULTURE;
     }
 
+    /** A place line in the current sidebar, not just the last proxy warp hint. */
+    public static boolean sidebarShows(Minecraft mc, Where place) {
+        if (mc.level == null || place == Where.UNKNOWN) return false;
+        for (String line : sidebar(mc)) if (placeLine(line) == place) return true;
+        return false;
+    }
+
     public static void init() {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
@@ -99,6 +106,7 @@ public final class Area {
 
     /** A move line from the proxy: "warping to crypts…", "moving you to dragon's den #2...". */
     private static Where classify(String s) {
+        if (s.contains("void sepulture")) return Where.VOID_SEPULTURE;
         if (s.contains("crypt")) return Where.CRYPTS;
         if (s.contains("dragon") || s.contains("the end")) return Where.END;
         if (s.contains("village") || s.contains("spawn") || s.contains("hub")) return Where.HUB;

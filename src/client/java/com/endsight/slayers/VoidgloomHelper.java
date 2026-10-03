@@ -422,7 +422,10 @@ public final class VoidgloomHelper {
 
         for (BlockPos b : beacons) mark(mc, new AABB(b), 2.5f);
 
-        if (heads && Slayer.bossUp()) {
+        // Altar eyes also use nameless player-head stands. A slayer chat flag alone
+        // can outlive a missed kill message, so only scan after a recent boss claim.
+        if (heads && Slayer.bossUp() && bossEntity != null && !bossEntity.isRemoved()
+                && bossEntity.level() == mc.level && System.currentTimeMillis() - bossSeen < 2000) {
             for (Entity e : mc.level.entitiesForRendering()) {
                 if (e == mc.player || !isHead(e)) continue;
                 if (e.position().distanceTo(mc.player.position()) > HEAD_RANGE) continue;

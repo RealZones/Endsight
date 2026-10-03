@@ -69,6 +69,10 @@ public final class Alert {
         text = null;
     }
 
+    public static boolean active() {
+        return text != null && System.currentTimeMillis() < until;
+    }
+
     public static void draw(GuiGraphicsExtractor g) {
         if (text == null) return;
         Minecraft mc = Minecraft.getInstance();

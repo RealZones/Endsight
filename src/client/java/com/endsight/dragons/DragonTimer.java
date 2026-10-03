@@ -100,19 +100,16 @@ public final class DragonTimer {
     /**
      * When eyes become placeable again, as a wall-clock time.
      *
-     * Measured, not guessed: across 195 events in real server logs the gap from
-     * "has de-spawned" to "The Egg has Spawned" was 24s every single time (n=32,
-     * min 24, max 25). So the countdown starts the moment the dragon dies.
-     *
-     * Each later milestone re-anchors it - the server announces "respawning in 10
-     * seconds", then "has respawned" 10s on, then the egg 4s after that - so an
-     * estimate that started slightly wrong is corrected three times before it matters
-     * and can never drift.
+     * On 2026-10-02 the server shortened the interval from 24s to about 6s.
+     * The "respawning in 6 seconds" announcement now arrives with the dragon's
+     * de-spawn line, and the egg appears 5-6s later in the recorded logs. Both
+     * lines anchor the countdown; the egg-spawn line clears it immediately.
      */
     private static long eggAt;
+    private static boolean eggReady;
 
-    private static final long DEATH_TO_EGG = 24_000L;
-    private static final long SOON_TO_EGG = 14_000L;   // 10s countdown + 4s to the egg
+    private static final long DEATH_TO_EGG = 6_000L;
+    private static final long SOON_TO_EGG = 6_000L;
     private static final long RESPAWNED_TO_EGG = 4_000L;
 
     public static Module module() {
@@ -184,6 +181,8 @@ public final class DragonTimer {
         if ((m = SPAWNED.matcher(line)).find()) {
             dragon = m.group(1);
             dragonSince = System.currentTimeMillis();
+            eggAt = 0;
+            eggReady = false;
             return;
         }
 
@@ -191,6 +190,7 @@ public final class DragonTimer {
             lastDragon = m.group(1);
             lastDragonEnded = System.currentTimeMillis();
             eggAt = lastDragonEnded + DEATH_TO_EGG;
+            eggReady = false;
             dragon = null;
             // A cycle ends when the dragon does, so the eye count resets here rather
             // than when the next egg appears - between the two you want to still see
@@ -201,11 +201,14 @@ public final class DragonTimer {
 
         if (line.contains(EGG_SOON)) {
             eggAt = System.currentTimeMillis() + SOON_TO_EGG;
+            eggReady = false;
             resetCycle();
         } else if (line.contains(EGG_RESPAWNED)) {
             eggAt = System.currentTimeMillis() + RESPAWNED_TO_EGG;
+            eggReady = false;
         } else if (line.contains(EGG_UP)) {
             eggAt = 0;                                  // placeable now
+            eggReady = true;
             resetCycle();
         } else if (line.contains(EYES_DONE)) {
             eyes = eyesNeeded;
@@ -237,6 +240,7 @@ public final class DragonTimer {
         lastDragon = null;
         lastDragonEnded = 0;
         eggAt = 0;
+        eggReady = false;
     }
 
     /**
@@ -261,7 +265,7 @@ public final class DragonTimer {
     /**
      * One boxless line, plus a bar when there is something to fill.
      *
-     * The respawn wait is the case that earns the bar: "Eggs in 14s" tells you the
+     * The respawn wait is the case that earns the bar: "Eggs in 6s" tells you the
      * number, the bar tells you how close that is without reading it, and between runs
      * that is the only thing you actually want to know.
      */
@@ -291,7 +295,7 @@ public final class DragonTimer {
 
         if (sample) {
             label = "Egg Respawn";
-            value = "14s";
+            value = "6s";
             hot = false;
             progress = 0.55f;
         } else if (dragon != null) {
@@ -308,6 +312,10 @@ public final class DragonTimer {
             value = eyes + "/" + eyesNeeded;
             hot = eyes >= eyesNeeded;
             progress = eyes / (float) eyesNeeded;
+        } else if (eggReady || eggAt > 0) {
+            label = "Egg";
+            value = "Ready";
+            hot = true;
         } else if (lastDragon != null && now - lastDragonEnded < 300_000) {
             // Five minutes of "45s ago" is context; forty-five minutes of it is clutter.
             label = lastDragon;
@@ -319,10 +327,10 @@ public final class DragonTimer {
             hot = false;
         }
 
-        int w = Readout.width(font, label, value);
+        int w = Readout.width(font, label, value, false);
         int h = Readout.height(progress >= 0);
         if (g != null) {
-            Readout.draw(g, font, x, y, w, label, value, hot, progress);
+            Readout.draw(g, font, x, y, w, label, value, hot, progress, false);
         }
 
         if (details && !sample) {
@@ -336,7 +344,7 @@ public final class DragonTimer {
                     int gold = golden.getOrDefault(e.getKey(), 0);
                     String who = Draw.fit(font, e.getKey(), w - 34 - gold * 8);
                     Readout.draw(g, font, x, ry, w, who,
-                            e.getValue() + (gold > 0 ? " " + "✦".repeat(gold) : ""), gold > 0, -1);
+                            e.getValue() + (gold > 0 ? " " + "✦".repeat(gold) : ""), gold > 0, -1, false);
                 }
                 ry += Readout.height(false) + 2;
                 h += Readout.height(false) + 2;

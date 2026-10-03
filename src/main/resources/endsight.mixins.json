@@ -11,6 +11,7 @@
 		"LightmapMixin",
 		"GuardianRendererMixin",
 		"GuardianParticlesMixin",
+		"ExplosionParticlesMixin",
 		"LivingEntityRenderStateMixin",
 		"LivingEntityRendererMixin",
 		"EntityRendererMixin",

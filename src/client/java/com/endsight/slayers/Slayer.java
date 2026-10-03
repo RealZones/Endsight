@@ -2,13 +2,16 @@ package com.endsight.slayers;
 
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
+import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.Readout;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
+import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.ChatFormatting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,8 +22,11 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.fabricmc.loader.api.FabricLoader;
 
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -53,6 +59,7 @@ public final class Slayer {
     // Here the symbol is the only thing separating an announcement from a sentence.
     private static final Pattern MINIBOSS = Pattern.compile("^⚠[ ]*(.+?) has appeared!");
     private static final Pattern TARGET = Pattern.compile("Slay ([\\d,]+) Combat XP worth of (\\w+)");
+    private static final Pattern SIDEBAR_XP = Pattern.compile("/([\\d,]+)");
     private static final Pattern LEVEL = Pattern.compile("(\\w+) Slayer LVL (\\d+)");
 
     private static final String QUEST_START = "SLAYER QUEST STARTED";
@@ -71,6 +78,9 @@ public final class Slayer {
 
     // ── tracked ───────────────────────────────────────────────────────────────
     private static long bossSpawnedAt;
+    private static int questXp;
+    private static final SlayerBest BEST = new SlayerBest();
+    private static final SlayerTiers TIERS = new SlayerTiers();
 
     /** Whether a slayer boss is up right now - spawned and not yet slain. */
     public static boolean bossUp() {
@@ -89,10 +99,9 @@ public final class Slayer {
     private static boolean questActive;
     private static String reminderArea = "";
     private static long reminderEnteredAt;
-    private static long lastReminderAt;
     private static boolean reminderQueued;
-    private static final long REMINDER_DELAY_MS = 1_000;
-    private static final long REMINDER_COOLDOWN_MS = 45_000;
+    private static final long REMINDER_DELAY_MS = 2_000;
+    enum QuestStatus { UNKNOWN, ACTIVE, NOT_STARTED }
 
     /**
      * One slayer's session: zombies in the Crypts and endermen in the End are two
@@ -163,6 +172,9 @@ public final class Slayer {
     }
 
     public static void init() {
+        BEST.load(bestFile());
+        TIERS.load(tierFile());
+        ClientSendMessageEvents.COMMAND.register(command -> TIERS.sent(command, reminderSlayer(), System.currentTimeMillis()));
         ClientTickEvents.END_CLIENT_TICK.register(Slayer::watchAfk);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
@@ -192,15 +204,22 @@ public final class Slayer {
                 r.lastKillMs = System.currentTimeMillis() - bossSpawnedAt;
                 r.totalKillMs += r.lastKillMs;
                 r.bossesKilled++;
-                reportKill(r.lastKillMs);
+                boolean personalBest = BEST.record(currentSlayer(), currentQuestXp(), r.lastKillMs);
+                if (personalBest) BEST.save(bestFile());
+                reportKill(r.lastKillMs, personalBest);
             }
             bossUp = false;
             return;
         }
         if (line.contains(QUEST_START) || line.contains(QUEST_DONE) || line.contains(QUEST_FAILED)) {
             questActive = line.contains(QUEST_START);
+            if (questActive) questXp = 0;
             bossUp = false;
-            if (line.contains(QUEST_FAILED) && reminderSlayer() != null) {
+            if (questActive) {
+                reminderQueued = false;
+                if (TIERS.questStarted(reminderSlayer(), System.currentTimeMillis())) TIERS.save(tierFile());
+            }
+            if (line.contains(QUEST_FAILED) && !reminderSlayer().isEmpty()) {
                 reminderEnteredAt = System.currentTimeMillis();
                 reminderQueued = true;
             }
@@ -210,6 +229,12 @@ public final class Slayer {
         Matcher m = TARGET.matcher(line);
         if (m.find()) {
             questActive = true;
+            reminderQueued = false;
+            try {
+                questXp = Integer.parseInt(m.group(1).replace(",", ""));
+            } catch (NumberFormatException ignored) {
+                questXp = 0;
+            }
             slayer = slayerName(m.group(2));
             return;
         }
@@ -228,7 +253,7 @@ public final class Slayer {
             // The server prefixes a warning sign; strip anything that is not part of
             // the name so the toast does not show a stray glyph.
             who = who.replaceAll("^[^A-Za-z]+", "").trim();
-            if (who.isEmpty() || who.length() > 40) return;
+            if (!who.equalsIgnoreCase("Deformed Revenant")) return;
             fire(who, "has appeared", false);
         }
     }
@@ -302,15 +327,49 @@ public final class Slayer {
      * difference between two runs that felt different. Past a minute - a Voidgloom
      * fight - the decimal is noise and it reads as minutes and seconds instead.
      */
-    private static void reportKill(long ms) {
+    private static void reportKill(long ms, boolean personalBest) {
         if (!killTimeInChat) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        mc.player.sendSystemMessage(Component.literal("")
+        Component line = Component.literal("")
                 .append(Component.literal("Boss killed in ").withStyle(ChatFormatting.GRAY))
                 .append(Component.literal(ms < 60_000 ? String.format("%.1fs", ms / 1000.0) : secs(ms))
-                        .withStyle(ChatFormatting.GREEN)));
+                        .withStyle(ChatFormatting.GREEN));
+        if (personalBest) line = line.copy().append(Component.literal(" PERSONAL BEST!")
+                .withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD));
+        mc.player.sendSystemMessage(line);
+    }
+
+    private static Path bestFile() {
+        return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("slayer-bests.properties");
+    }
+
+    private static Path tierFile() {
+        return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("slayer-tiers.properties");
+    }
+
+    /** "Revenant" or "Voidgloom": by the area when it says, otherwise the quest; null before either. */
+    private static String currentSlayer() {
+        if (Area.crypts()) return REVENANT;
+        if (Area.voidSepulture()) return VOIDGLOOM;
+        return slayer;
+    }
+
+    private static int currentQuestXp() {
+        if (questXp > 0) return questXp;
+        return requiredXp(Area.sidebarLine(Minecraft.getInstance(), "XP:"));
+    }
+
+    static int requiredXp(String xpLine) {
+        if (xpLine == null) return 0;
+        Matcher match = SIDEBAR_XP.matcher(Zealots.strip(xpLine));
+        if (!match.find()) return 0;
+        try {
+            return Integer.parseInt(match.group(1).replace(",", ""));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static void fire(String who, String sub, boolean major) {
@@ -473,6 +532,7 @@ public final class Slayer {
     private static void watchAfk(Minecraft mc) {
         Run r = cur();
         watchQuestReminder(mc);
+        watchQuestTier(mc);
         if (mc.player == null || r.sessionStart == 0) return;
         Vec3 pos = mc.player.position();
         long now = System.currentTimeMillis();
@@ -484,6 +544,17 @@ public final class Slayer {
             r.lastMoved = now;
         }
         r.lastPos = pos;
+    }
+
+    private static int tierTick;
+
+    private static void watchQuestTier(Minecraft mc) {
+        if (mc.player == null || mc.level == null || ++tierTick % 20 != 0) return;
+        boolean changed = TIERS.observeSidebar(Area.sidebarLine(mc, "Slayer:"));
+        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Atoned Horror"));
+        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Revenant Horror"));
+        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Voidgloom Seraph"));
+        if (changed) TIERS.save(tierFile());
     }
 
     /**
@@ -499,17 +570,37 @@ public final class Slayer {
             reminderEnteredAt = now;
             reminderQueued = !area.isEmpty();
         }
-        if (area.isEmpty() || !questReminder || questActive || bossUp || mc.player == null) return;
+        if (area.isEmpty() || !questReminder || mc.player == null) return;
         if (!reminderQueued || now - reminderEnteredAt < REMINDER_DELAY_MS) return;
-        if (now - lastReminderAt < REMINDER_COOLDOWN_MS) return;
+        Area.Where place = REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE;
+        QuestStatus status = questStatus(Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
+                Area.sidebarShows(mc, place));
+        if (status == QuestStatus.UNKNOWN) return; // The new sidebar has not arrived yet.
         reminderQueued = false;
-        lastReminderAt = now;
+        if (status != QuestStatus.NOT_STARTED) return;
+        String command = reminderCommand(area);
         mc.player.sendSystemMessage(Component.literal("")
                 .append(Component.literal("[Endsight] ").withStyle(ChatFormatting.DARK_PURPLE))
                 .append(Component.literal("No " + area + " quest detected. ").withStyle(ChatFormatting.GRAY))
-                .append(Component.literal("Open /slayer").withStyle(s -> s
+                .append(Component.literal("Start " + command).withStyle(s -> s
                         .withColor(ChatFormatting.AQUA).withUnderlined(true)
-                        .withClickEvent(new ClickEvent.RunCommand("/slayer")))));
+                        .withClickEvent(new ClickEvent.RunCommand(command)))));
+    }
+
+    static QuestStatus questStatus(String slayerLine, String xpLine, boolean areaConfirmed) {
+        if (xpLine != null) return QuestStatus.ACTIVE;
+        if (slayerLine != null) {
+            String status = slayerLine.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "")
+                    .trim().toLowerCase(Locale.ROOT);
+            return status.contains("not started")
+                    ? areaConfirmed ? QuestStatus.NOT_STARTED : QuestStatus.UNKNOWN
+                    : QuestStatus.ACTIVE;
+        }
+        return areaConfirmed ? QuestStatus.NOT_STARTED : QuestStatus.UNKNOWN;
+    }
+
+    static String reminderCommand(String area) {
+        return TIERS.command(area);
     }
 
     private static String reminderSlayer() {

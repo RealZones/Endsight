@@ -23,6 +23,13 @@ public final class MiningVisibilityChecks {
         equal(tool("Suspicious Vorpal Katana"), false);
         equal(tool("Refined Obsidian"), false);
         equal(tool(""), false);
+        equal(VoidFragments.announced("RARE DROP! Void Fragment"), 1L);
+        equal(VoidFragments.announced("RARE DROP! Void Fragment x2"), 2L);
+        equal(VoidFragments.announced("RARE DROP! (Void Fragment) (✯ 239%)"), 1L);
+        equal(VoidFragments.announced("[VIP+] Player: RARE DROP! Void Fragment"), 0L);
+        equal(VoidFragments.announced("RARE DROP! Void Core"), 0L);
+        equal(VoidFragments.row(false, 0), "0  -/h");
+        equal(VoidFragments.row(false, 1_800_000), "0  0.0/h");
         System.out.println(checks + " Mining HUD visibility checks passed");
     }
 
@@ -41,5 +48,10 @@ public final class MiningVisibilityChecks {
     private static void equal(boolean actual, boolean expected) {
         checks++;
         if (actual != expected) throw new AssertionError("Expected " + expected + ", got " + actual);
+    }
+
+    private static void equal(Object actual, Object expected) {
+        checks++;
+        if (!expected.equals(actual)) throw new AssertionError("Expected " + expected + ", got " + actual);
     }
 }

@@ -8,6 +8,7 @@ import com.endsight.ui.Theme;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
@@ -20,18 +21,21 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemLore;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -132,6 +136,8 @@ public final class Recipes {
     private static boolean iconsLoaded, iconsDirty;
     /** The ender chest, by title, the last time it was open - /ec holds things too. */
     private static final Map<String, List<ItemStack>> CHESTS = new LinkedHashMap<>();
+    private static boolean mpDirty = true;
+    private static int mpEstimate;
     /**
      * Windows whose contents count as yours. The Accessory Bag was missing: every
      * talisman in it read as not owned, so the list offered to craft the Rose Talisman
@@ -178,12 +184,28 @@ public final class Recipes {
                         new Setting.Toggle("Close to craft",
                                 "List beside the window of what you are nearest to making.",
                                 () -> closeList, v -> closeList = v),
+                        new Setting.Toggle("Magical Power",
+                                "Show an estimated live total in the Accessory Bag.",
+                                () -> showMp, v -> showMp = v),
                         new Setting.Note("Known", () -> RECIPES.size() + " recipes, "
                                 + CATEGORY.size() + " categories, " + ForgeRecipes.recipeCount() + " forge crafts")));
     }
 
     public static void init() {
         load();
+        // The estimate on the bag itself, not only inside it: hovering the Accessory Bag in
+        // the menu gets a Magical Power line under the server's Accessory Power, styled the
+        // same, so the number is there before the bag is even opened.
+        ItemTooltipCallback.EVENT.register((stack, context, flag, lines) -> {
+            if (!enabled || !showMp || stack.isEmpty() || !name(stack).equals("Accessory Bag")) return;
+            if (CHESTS.keySet().stream().noneMatch(key -> key.startsWith("Accessory Bag #"))) return;
+            for (int i = 0; i < lines.size(); i++) {
+                if (!Zealots.strip(lines.get(i).getString()).startsWith("Accessory Power:")) continue;
+                lines.add(i + 1, Component.literal("Magical Power: ").withStyle(ChatFormatting.GRAY)
+                        .append(Component.literal("~" + magicalPower()).withStyle(ChatFormatting.GOLD)));
+                return;
+            }
+        });
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
             // The bag gets the accessory list; the grid would sit on top of it, so the
@@ -253,6 +275,7 @@ public final class Recipes {
                 for (ItemStack s : slots) copy.add(s.copy());
                 CHESTS.put(chestKey(title), copy);
                 iconsDirty = true;
+                mpDirty = true;
             }
         }
     }
@@ -352,6 +375,7 @@ public final class Recipes {
                     // Normalised on the way in too, so a file already holding both an
                     // "Accessory Bag" and an "Accessory Bag (1/2)" collapses to one on load.
                     CHESTS.put(chestKey(c.getStringOr("title", "Ender Chest")), items);
+                    mpDirty = true;
                 }
             }
             return changed;
@@ -398,6 +422,39 @@ public final class Recipes {
         return out;
     }
 
+    private static final Pattern ACCESSORY_RARITY = Pattern.compile(
+            "\\b(VERY SPECIAL|UNCOMMON|LEGENDARY|COMMON|RARE|EPIC|MYTHIC|SPECIAL) ACCESSORY\\b");
+
+    private static int magicalPower() {
+        if (!mpDirty) return mpEstimate;
+        mpDirty = false;
+        List<MagicalPower.Accessory> bag = new ArrayList<>();
+        for (ItemStack stack : accessoryBag()) {
+            if (stack.isEmpty()) continue;
+            ItemLore lore = stack.get(DataComponents.LORE);
+            if (lore == null) continue;
+            for (Component line : lore.lines()) {
+                Matcher rarity = ACCESSORY_RARITY.matcher(Zealots.strip(line.getString()).toUpperCase(Locale.ROOT));
+                if (!rarity.find()) continue;
+                String name = name(stack);
+                String recipe = recipeFor(name);
+                bag.add(new MagicalPower.Accessory(recipe == null ? name : recipe, rarity.group(1)));
+                break;
+            }
+        }
+        Set<String> accessories = CATEGORY.getOrDefault("Accessories", new LinkedHashSet<>());
+        Map<String, List<String>> ingredients = new HashMap<>();
+        for (String name : accessories) {
+            Recipe recipe = RECIPES.get(name);
+            if (recipe != null) ingredients.put(name, recipe.needs().stream().map(Ingredient::name).toList());
+        }
+        Set<String> bagNames = new HashSet<>();
+        for (MagicalPower.Accessory accessory : bag) bagNames.add(accessory.name());
+        Map<String, String> parent = MagicalPower.parents(ingredients, accessories, bagNames);
+        mpEstimate = MagicalPower.total(bag, parent);
+        return mpEstimate;
+    }
+
     /** A stack of this name you are holding or have in storage, or null. */
     public static ItemStack held(String item) {
         Minecraft mc = Minecraft.getInstance();
@@ -426,14 +483,18 @@ public final class Recipes {
      */
     private static String recipeFor(String itemName) {
         if (RECIPES.containsKey(itemName)) return itemName;
-        String hay = plain(itemName);
         String best = null;
         for (String r : RECIPES.keySet()) {
+            if (!matchesRecipeName(itemName, r)) continue;
             String needle = plain(r);
-            if (needle.isEmpty() || !hay.contains(needle)) continue;
             if (best == null || needle.length() > plain(best).length()) best = r;
         }
         return best;
+    }
+
+    static boolean matchesRecipeName(String itemName, String recipeName) {
+        String needle = plain(recipeName);
+        return !needle.isEmpty() && (" " + plain(itemName) + " ").contains(" " + needle + " ");
     }
 
     /** Letters, digits and single spaces; everything the server decorates with, gone. */
@@ -832,6 +893,7 @@ public final class Recipes {
     // ── close to craft ───────────────────────────────────────────────────────
     /** The list beside the window: everything, nearest to craftable first. */
     private static boolean closeList = true;
+    private static boolean showMp = true;
     private static int closePage;
     private static final int CLOSE_W = 172, CLOSE_ROW = 15, CLOSE_HEAD = 22;
     /** The window it belongs beside, and the category it lists. */
@@ -1282,6 +1344,14 @@ public final class Recipes {
         }
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
+        String title = Zealots.strip(s.getTitle().getString()).trim();
+        if (showMp && ACCESSORY_BAG.matcher(title).matches()
+                && CHESTS.keySet().stream().anyMatch(key -> key.startsWith("Accessory Bag #"))) {
+            String value = "~MP " + magicalPower();
+            if (font.width(title) + font.width(value) + 22 <= s.imageWidth) {
+                Draw.textRight(g, font, value, s.leftPos + s.imageWidth - 8, s.topPos + 6, Theme.accent());
+            }
+        }
         // The close list stands on its own: it is beside the window, not part of the
         // grid, and it is still worth having with the grid tucked away.
         if (closeList) drawClose(s, g, font, holdings(), mx, my);

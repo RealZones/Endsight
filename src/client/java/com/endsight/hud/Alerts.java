@@ -65,7 +65,7 @@ public final class Alerts {
                 List.of(
                         new Setting.Section("What to call"),
                         new Setting.Toggle("Miniboss appeared",
-                                "Revenant Champion, Deformed Revenant and friends.",
+                                "Only alert for Deformed Revenant.",
                                 () -> miniboss, v -> miniboss = v),
                         new Setting.Toggle("Slayer boss spawning",
                                 "Your slayer boss is spawning.",

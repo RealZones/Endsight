@@ -90,8 +90,32 @@ tasks.register('miningVisibilityChecks', JavaExec) {
 	mainClass = 'com.endsight.storage.MiningVisibilityChecks'
 }
 
+tasks.register('slayerReminderChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.SlayerReminderChecks'
+}
+
+tasks.register('slayerBestChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.SlayerBestChecks'
+}
+
+tasks.register('slayerSpawnSignalChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.SlayerSpawnSignalChecks'
+}
+
+tasks.register('recipesChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.RecipesChecks'
+}
+
 tasks.named('check') {
-	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks'
+	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'recipesChecks'
 }
 
 tasks.register('inventoryVisualChecks', JavaExec) {

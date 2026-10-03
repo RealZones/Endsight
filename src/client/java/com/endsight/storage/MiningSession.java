@@ -170,10 +170,8 @@ public final class MiningSession {
                                 com.endsight.visual.Cooldowns::drillOn, com.endsight.visual.Cooldowns::setDrillOn),
                         new Setting.Toggle("Fuel", "Fuel line read off the drill in your hand.",
                                 () -> PowderTracker.showFuel, v -> PowderTracker.showFuel = v),
-                        new Setting.Toggle("Void Fragments", "How long to the next one, from your Magic Find, perks, meter and pace.",
+                        new Setting.Toggle("Void Fragments", "Fragments found this session and the observed rate while mining amethyst.",
                                 () -> VoidFragments.show, v -> VoidFragments.show = v),
-                        new Setting.Toggle("Meter on fragments", "The RNG meter's selected drop is the Void Fragment. Set itself when you open the meter.",
-                                () -> VoidFragments.meterOn, v -> VoidFragments.meterOn = v),
 
                         new Setting.Section("Alerts"),
                         new Setting.Toggle("Drop alert", "Alert for a Void Fragment, a Void Core or an epic or better pet while you mine.",
@@ -242,6 +240,7 @@ public final class MiningSession {
         totals.clear();
         activeByMaterial.clear();
         soldCoins = 0;
+        VoidFragments.reset();
     }
 
     private static void tick(Minecraft mc) {
@@ -512,7 +511,7 @@ public final class MiningSession {
             }
         }
         if (VoidFragments.show && (sample || "Amethyst".equals(material))) {
-            String frag = VoidFragments.row(sample);
+            String frag = VoidFragments.row(sample, sample ? 754_000L : activeByMaterial.getOrDefault("Amethyst", 0L));
             if (!frag.isEmpty()) rows.add(new String[]{"Void Frag", frag});
         }
         int w = Readout.width(font, "MINING", title);

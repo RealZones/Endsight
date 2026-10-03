@@ -51,21 +51,28 @@ public final class Readout {
      */
     public static int draw(GuiGraphicsExtractor g, Font font, int x, int y, int w,
                            String label, String value, boolean hot, float progress) {
+        return draw(g, font, x, y, w, label, value, hot, progress, true);
+    }
+
+    /** A tickless variant for readouts whose progress bar already provides the accent. */
+    public static int draw(GuiGraphicsExtractor g, Font font, int x, int y, int w,
+                           String label, String value, boolean hot, float progress, boolean showTick) {
         int accent = hot ? Theme.accent() : Draw.lerp(Theme.line(), Theme.accent(), 0.7f);
 
         // The tick marks the element without enclosing it, on the edge facing the
         // side of the screen the element sits on, so it reads as a margin, not a bar
         // down the middle of the view.
-        tick(g, x, y, w, accent);
+        if (showTick) tick(g, x, y, w, accent);
 
-        int textX = mirror ? x : x + TICK_W + GAP;
-        int right = mirror ? x + w - TICK_W - GAP : x + w;
+        int inset = showTick ? TICK_W + GAP : 0;
+        int textX = mirror ? x : x + inset;
+        int right = mirror ? x + w - inset : x + w;
         Draw.text(g, font, label, textX, y, Theme.muted());
         Draw.textRight(g, font, value, right, y, hot ? Theme.accent() : Theme.text());
 
         if (progress >= 0) {
             int barY = y + ROW_H + 1;
-            int barW = w - (TICK_W + GAP);
+            int barW = w - inset;
             Draw.rect(g, textX, barY, barW, BAR_H, Draw.alpha(Theme.line(), 0.55f));
             int filled = Math.round(barW * Math.max(0f, Math.min(1f, progress)));
             if (filled > 0) Draw.rect(g, textX, barY, filled, BAR_H, accent);
@@ -95,6 +102,11 @@ public final class Readout {
      * that reads as "odd" even when every individual frame is laid out correctly.
      */
     public static int width(Font font, String label, String value) {
-        return Math.max(96, TICK_W + GAP + font.width(label) + 16 + font.width(value));
+        return width(font, label, value, true);
+    }
+
+    public static int width(Font font, String label, String value, boolean showTick) {
+        int inset = showTick ? TICK_W + GAP : 0;
+        return Math.max(showTick ? 96 : 88, inset + font.width(label) + 16 + font.width(value));
     }
 }

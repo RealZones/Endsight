@@ -187,3 +187,19 @@ java {
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
 }
+
+tasks.register('lootRollChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.LootRollChecks'
+}
+
+tasks.register('storageOverviewChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.StorageOverviewChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'storageOverviewChecks', 'lootRollChecks'
+}

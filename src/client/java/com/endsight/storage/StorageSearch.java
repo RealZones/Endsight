@@ -109,6 +109,7 @@ public final class StorageSearch {
             // screen makes typing "e" type an "e" either way. Escape is left alone so it
             // still closes the window.
             ScreenKeyboardEvents.allowKeyPress(screen).register((s, e) -> {
+                if (StorageOverview.active(s)) return true;
                 if (box == null || !box.isFocused() || e.key() == 256) return true;
                 box.keyPressed(e);
                 return false;
@@ -134,7 +135,7 @@ public final class StorageSearch {
     }
 
     private static void drawHits(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g) {
-        if (!enabled || query.isBlank()) return;
+        if (!enabled || query.isBlank() || StorageOverview.active(screen)) return;
         Font font = Minecraft.getInstance().font;
         Container playerInv = Minecraft.getInstance().player == null
                 ? null : Minecraft.getInstance().player.getInventory();
@@ -189,5 +190,18 @@ public final class StorageSearch {
         if (stack == null || stack.isEmpty() || q == null || q.isBlank()) return false;
         return StoragePreview.plainText(stack.getHoverName())
                 .toLowerCase().contains(q.toLowerCase());
+    }
+
+    static String query() {
+        return query;
+    }
+
+    static void setQuery(String value) {
+        query = value;
+        if (box != null && !box.getValue().equals(value)) box.setValue(value);
+    }
+
+    static void suspend() {
+        if (box != null) box.setFocused(false);
     }
 }

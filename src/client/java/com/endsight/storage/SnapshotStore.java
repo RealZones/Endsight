@@ -54,6 +54,7 @@ public final class SnapshotStore {
     private static boolean loaded;
     private static boolean dirty;
     private static long lastSave;
+    private static String loadedServer;
 
     private static Path file() {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight-storage.nbt");
@@ -89,19 +90,29 @@ public final class SnapshotStore {
     // ── reading ───────────────────────────────────────────────────────────────
 
     private static void load() {
-        Path path = file();
-        if (!Files.exists(path)) return;
-
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
+
+        String currentServer = serverKey();
+        Map<Integer, PageSnapshot> into = StoragePreview.snapshots();
+        if (currentServer.equals(loadedServer) && dirty) return;
+        if (!currentServer.equals(loadedServer)) {
+            // Page numbers are server-local. Never carry another server's previews
+            // into this one's overview, even when there is no saved file to load.
+            into.clear();
+            dirty = false;
+            loadedServer = currentServer;
+        }
+
+        Path path = file();
+        if (!Files.exists(path)) return;
 
         try {
             CompoundTag root = NbtIo.readCompressed(path, NbtAccounter.create(32L * 1024 * 1024));
             String savedServer = root.getStringOr(SERVER, "");
-            if (!savedServer.equals(serverKey())) return;      // different server, start empty
+            if (!savedServer.equals(currentServer)) return;
 
             RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess());
-            Map<Integer, PageSnapshot> into = StoragePreview.snapshots();
 
             for (CompoundTag pageTag : root.getListOrEmpty(PAGES).compoundStream().toList()) {
                 int page = pageTag.getIntOr("page", -1);

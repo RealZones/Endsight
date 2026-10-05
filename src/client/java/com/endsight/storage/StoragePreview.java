@@ -67,6 +67,7 @@ public final class StoragePreview {
     private static boolean capturing = true;
     private static double delayMs = 200;
     private static boolean showCounts = true;
+    private static boolean overview = true;
 
     /** Nudge from the default anchor, set on the placement screen. Resets on restart. */
     static int offsetX = 0;
@@ -85,6 +86,9 @@ public final class StoragePreview {
                 () -> enabled, v -> enabled = v,
                 concat(List.of(
                         new Setting.Section("Preview"),
+                        new Setting.Toggle("All-page overview",
+                                "Replace the Storage menu with a browsable view of every page.",
+                                () -> overview, v -> overview = v),
                         new Setting.Toggle("Snapshot on close",
                                 "Remember each page as you leave it.",
                                 () -> capturing, v -> capturing = v),
@@ -139,15 +143,22 @@ public final class StoragePreview {
         List<ItemStack> items = containerSlots(screen);
         if (items.isEmpty()) return;
 
-        // A page that has not arrived yet reads as all-empty for a frame or two after
-        // the window opens. Letting that overwrite a good snapshot would blank the
-        // preview every time you so much as glance at a page, so an empty read never
-        // replaces a filled one. Emptying a page for real costs you one stale preview,
-        // which is the cheaper of the two mistakes.
+        // A newly opened window can be all-empty before its contents arrive. Wait for
+        // an empty read to stay stable, but do eventually record a page the player
+        // really cleared instead of showing old items forever.
         PageSnapshot existing = SNAPSHOTS.get(page);
-        if (existing != null && existing.filled() > 0 && allEmpty(items)) return;
+        long now = System.currentTimeMillis();
+        if (allEmpty(items) && existing != null && existing.filled() > 0) {
+            if (emptyScreen != screen) {
+                emptyScreen = screen;
+                emptySince = now;
+            }
+            if (now - emptySince < 400) return;
+        } else {
+            emptyScreen = null;
+        }
 
-        SNAPSHOTS.put(page, new PageSnapshot(page, count, items, System.currentTimeMillis()));
+        SNAPSHOTS.put(page, new PageSnapshot(page, count, items, now));
         lastPage = page;
         SnapshotStore.markDirty();
     }
@@ -158,6 +169,9 @@ public final class StoragePreview {
         }
         return true;
     }
+
+    private static AbstractContainerScreen<?> emptyScreen;
+    private static long emptySince;
 
     /**
      * The window's own slots, without the player inventory underneath.
@@ -270,6 +284,10 @@ public final class StoragePreview {
     /** The live map, for SnapshotStore to read on save and fill on load. */
     public static Map<Integer, PageSnapshot> snapshots() {
         return SNAPSHOTS;
+    }
+
+    static boolean overviewEnabled() {
+        return enabled && overview;
     }
 
     /** The most recent page seen, for the placement screen to show something real. */

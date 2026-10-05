@@ -25,6 +25,10 @@ import java.util.regex.Pattern;
  * A roll that actually dropped something reads "loot number: 0.10838 → Null Atom",
  * and never matches here - it is the line the drop trackers read, and it is the one
  * line you would not want hidden anyway.
+ *
+ * /debug detailed is judged in {@link LootRoll}, a whole kill at a time. Hiding just
+ * its loot number line here left the table, the result and the rare roll under it,
+ * so the filter looked like it did nothing in that mode.
  */
 public final class LootFilter {
 
@@ -36,8 +40,7 @@ public final class LootFilter {
     private static boolean bothEnds = true;
 
     /** A bare roll: the number and nothing after it. The arrow of a real drop keeps it from matching. */
-    /** Detailed mode adds "(0-100, lower = rarer)" after the number; still the same roll. */
-    private static final Pattern ROLL = Pattern.compile("^\\s*loot number:\\s*([\\d.]+)\\s*(?:\\(0-100[^)]*\\))?\\s*$");
+    private static final Pattern ROLL = Pattern.compile("^\\s*loot number:\\s*([\\d.]+)\\s*$");
 
     public static Module module() {
         return new Module("qol.lootfilter", "Loot Number Filter",
@@ -52,14 +55,23 @@ public final class LootFilter {
                                 () -> bothEnds, v -> bothEnds = v)));
     }
 
+    static boolean on() {
+        return enabled;
+    }
+
+    /** The one rule, for every number: low enough, or as close to 100 when both ends count. */
+    static boolean shows(double roll) {
+        return roll < showUnder || (bothEnds && roll >= 100 - showUnder);
+    }
+
     public static void init() {
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
-            if (!enabled || overlay) return true;
+            // A dragon's detailed block has a bare loot number too; LootRoll judges it with the rest.
+            if (!enabled || overlay || LootRoll.busy()) return true;
             Matcher m = ROLL.matcher(Zealots.strip(message.getString()));
             if (!m.find()) return true;
             try {
-                double roll = Double.parseDouble(m.group(1));
-                return roll < showUnder || (bothEnds && roll >= 100 - showUnder);
+                return shows(Double.parseDouble(m.group(1)));
             } catch (NumberFormatException e) {
                 return true;
             }

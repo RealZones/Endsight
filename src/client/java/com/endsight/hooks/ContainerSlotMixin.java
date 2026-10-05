@@ -3,6 +3,7 @@ package com.endsight.hooks;
 import com.endsight.qol.SlotLock;
 import com.endsight.visual.RarityOutline;
 import com.endsight.storage.ForgeRecipes;
+import com.endsight.storage.StorageOverview;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.Slot;
@@ -18,6 +19,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(AbstractContainerScreen.class)
 abstract class ContainerSlotMixin {
+
+    @Inject(method = "extractTooltip", at = @At("HEAD"), cancellable = true)
+    private void endsight$storageOverviewTooltip(GuiGraphicsExtractor g, int mouseX, int mouseY, CallbackInfo ci) {
+        if (StorageOverview.active((AbstractContainerScreen<?>) (Object) this)) ci.cancel();
+    }
 
     @Inject(method = "extractSlot", at = @At("HEAD"))
     private void endsight$behindSlot(GuiGraphicsExtractor g, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {

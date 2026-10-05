@@ -85,36 +85,6 @@ public final class SlayerSpawnMarker {
         return 0xFF000000 | Math.round(rgb[0] * 255) << 16 | Math.round(rgb[1] * 255) << 8 | Math.round(rgb[2] * 255);
     }
 
-    /**
-     * A flat band lying on the ground, drawn as quads, so it has a width in blocks.
-     *
-     * The ring was screen-space lines first: the same few pixels thick near and far, which
-     * reads as a sticker over the world. The Nebula rings Fear pointed at are thick on the
-     * near side and thin on the far side - a real band on the floor - and that perspective
-     * is most of why they look solid. Faces both ways, so it shows from above and below.
-     * {@code colour} picks each segment's colour by angle, for the hue sweep.
-     */
-    private static void band(Vec3 center, double radius, double width, double start, double sweep,
-                             java.util.function.DoubleFunction<Integer> colour, double fade) {
-        int steps = Math.max(2, (int) Math.ceil(96 * sweep / (Math.PI * 2)));
-        Vec3[] in = new Vec3[steps + 1], out = new Vec3[steps + 1];
-        int[] cols = new int[steps];
-        for (int i = 0; i <= steps; i++) {
-            double a = start + sweep * i / steps;
-            in[i] = point(center, radius - width / 2, a);
-            out[i] = point(center, radius + width / 2, a);
-            if (i < steps) cols[i] = colour.apply(start + sweep * (i + 0.5) / steps);
-        }
-        Gizmos.addGizmo((primitives, opacity) -> {
-            for (int i = 0; i < steps; i++) {
-                int c = cols[i];
-                int col = tint(c, (int) ((c >>> 24) * fade * opacity), 1);
-                primitives.addQuad(in[i], out[i], out[i + 1], in[i + 1], col);
-                primitives.addQuad(in[i + 1], out[i + 1], out[i], in[i], col);
-            }
-        });
-    }
-
     private static final long FADE_NS = TimeUnit.MILLISECONDS.toNanos(250);
     private static final long PREDICT_NS = TimeUnit.MILLISECONDS.toNanos(1300);
     private static final long DETECT_NS = TimeUnit.MILLISECONDS.toNanos(35);
@@ -248,6 +218,35 @@ public final class SlayerSpawnMarker {
         return ((int) Math.round(alpha * fade) << 24) | (rgb & 0x00FFFFFF);
     }
 
+    private static final int SEGMENTS = 48;
+
+    private static void ring(Vec3 center, double radius, double start, double sweep,
+                             int color, float width) {
+        int steps = Math.max(2, (int) Math.ceil(SEGMENTS * sweep / (Math.PI * 2)));
+        Vec3 last = point(center, radius, start);
+        for (int i = 1; i <= steps; i++) {
+            Vec3 next = point(center, radius, start + sweep * i / steps);
+            Gizmos.line(last, next, color, width);
+            last = next;
+        }
+    }
+
+    /** Neon in four passes: a wide faint bloom, a tighter glow, the saturated tube, a near-white core. */
+    private static void neonRing(Vec3 center, double radius, int neon, double fade, float tube) {
+        int hot = Draw.lerp(neon, 0xFFFFFFFF, 0.62f);
+        ring(center, radius, 0, Math.PI * 2, tint(neon, 14, fade), tube * 5.2f);
+        ring(center, radius, 0, Math.PI * 2, tint(neon, 34, fade), tube * 3.0f);
+        ring(center, radius, 0, Math.PI * 2, tint(neon, 255, fade), tube);
+        ring(center, radius, 0, Math.PI * 2, tint(hot, 235, fade), tube * 0.38f);
+    }
+
+    private static void line(Vec3 from, Vec3 to, double fade, int rgb) {
+        Gizmos.line(from, to, tint(rgb, 18, fade), 12f);
+        Gizmos.line(from, to, tint(rgb, 46, fade), 6.5f);
+        Gizmos.line(from, to, tint(rgb, 250, fade), 2.6f);
+        Gizmos.line(from, to, tint(Draw.lerp(rgb, 0xFFFFFFFF, 0.62f), 230, fade), 1f);
+    }
+
     private static Vec3 point(Vec3 center, double radius, double angle) {
         return center.add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
     }
@@ -259,16 +258,17 @@ public final class SlayerSpawnMarker {
      * Clean and sharp on purpose. The version before had a domed cap, bevels and a rounded
      * tip on a head three and a half times the shaft's width - Fear's word was that the tip
      * was way too big for the long part. The head is now under three times the shaft and
-     * about half its length. It hangs low, just over the ring, so its top stays under the
-     * timer at neck height even at the top of its bob.
+     * about half its length. Its tip stays clear of the timer just above the ring, even at
+     * the bottom of its bob.
      */
     private static final double[][] PROFILE = {
-            {1.20, 0.000}, {1.20, 0.070}, {0.65, 0.070}, {0.65, 0.190}, {0.35, 0.000}};
+            {1.35, 0.000}, {1.35, 0.070}, {0.80, 0.070}, {0.80, 0.190}, {0.50, 0.000}};
     /**
-     * The timer's height: a zombie's neck, where the boss's head will appear. It floated at
-     * 2.17, well above the mob, and Fear wanted it where the slayer's head will be.
+     * The timer's height: just above the ring, under the arrow's tip. It was at neck height
+     * (1.55) and before that 2.17; Fear wanted it lower, where you are already looking when
+     * you watch the ring, so it is easier to read.
      */
-    private static final double TIMER_Y = 1.55;
+    private static final double TIMER_Y = 0.22;
     private static final int SIDES = 28;
     /** Light from above and a little in front: lit tops, shaded undersides. */
     private static final double LX = -0.35, LY = 0.82, LZ = -0.45;
@@ -353,14 +353,19 @@ public final class SlayerSpawnMarker {
         double spin = elapsed * 1.6;
         java.util.function.DoubleFunction<Integer> sweep = a ->
                 Draw.lerp(neon, partner, (float) (0.5 + 0.5 * Math.cos(a - spin)));
-        Gizmos.circle(base, 0.80f, GizmoStyle.fill(tint(neon, 14, fade)));          // light on the floor
-        band(base.add(0, 0.002, 0), 0.83, 0.42, 0, Math.PI * 2, a -> (24 << 24) | (sweep.apply(a) & 0xFFFFFF), fade);
-        band(base.add(0, 0.004, 0), 0.83, 0.20, 0, Math.PI * 2, a -> (70 << 24) | (sweep.apply(a) & 0xFFFFFF), fade);
-        band(base.add(0, 0.006, 0), 0.83, 0.12, 0, Math.PI * 2, a -> 0xFF000000 | (sweep.apply(a) & 0xFFFFFF), fade);
-        band(base.add(0, 0.008, 0), 0.83, 0.035, 0, Math.PI * 2,
-                a -> (230 << 24) | (Draw.lerp(sweep.apply(a), 0xFFFFFFFF, 0.6f) & 0xFFFFFF), fade);
-        band(base.add(0, 0.010, 0), 0.83, 0.07, elapsed * 0.75, Math.PI * 0.40,
-                a -> ((int) (120 + pulse * 100) << 24) | 0xFFFFFF, fade);       // the sweeping highlight
+        // The glowing neon line ring. A flat band lying on the ground was tried after it and
+        // Fear put the two side by side in game: this one was "10x better".
+        // Glow spilling onto the ground inside the ring, brightest at the tube and fading in.
+        Gizmos.circle(base, 0.83f, GizmoStyle.fill(tint(neon, 16, fade)));
+        ring(base.add(0, 0.003, 0), 0.76, 0, Math.PI * 2, tint(neon, 46, fade), 5f);
+        ring(base.add(0, 0.003, 0), 0.66, 0, Math.PI * 2, tint(neon, 22, fade), 5f);
+        neonRing(base.add(0, 0.006, 0), 0.83, neon, fade, 4.4f);
+        ring(base.add(0, 0.012, 0), 0.83, elapsed * 0.75, Math.PI * 0.40,
+                tint(0xFFFFFFFF, (int) (150 + pulse * 90), fade), 2.4f);
+        for (int i = 0; i < 4; i++) {
+            double angle = i * Math.PI / 2;
+            line(point(base, 0.97, angle), point(base, 1.11, angle), fade * 0.8, neon);
+        }
 
         arrow(mc, ground.add(0, Math.sin(elapsed * 4.4) * 0.10, 0), fade, sweep);
         tracer(mc, base, fade, neon);

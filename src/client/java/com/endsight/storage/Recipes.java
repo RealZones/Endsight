@@ -1150,6 +1150,7 @@ public final class Recipes {
         // As Item Search does: the box first, and the inventory key hidden from the
         // screen while it is focused, so typing "e" types an "e". Escape still closes.
         ScreenKeyboardEvents.allowKeyPress(screen).register((s, e) -> {
+            if (StorageOverview.active(s)) return true;
             if (!enabled || !panel) return true;
             if (box != null && box.isFocused() && e.key() != 256) {
                 box.keyPressed(e);
@@ -1219,6 +1220,7 @@ public final class Recipes {
      * that the grid never shows, which is where "what is this even for" gets asked.
      */
     private static boolean lookup(AbstractContainerScreen<?> s, boolean uses) {
+        if (StorageOverview.active(s)) return false;
         Minecraft mc = Minecraft.getInstance();
         double mx = mc.mouseHandler.getScaledXPos(mc.getWindow());
         double my = mc.mouseHandler.getScaledYPos(mc.getWindow());
@@ -1338,6 +1340,7 @@ public final class Recipes {
     }
 
     private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
+        if (StorageOverview.active(s)) return;
         if (!enabled || RECIPES.isEmpty()) {
             if (box != null) box.visible = false;
             return;
@@ -2060,6 +2063,7 @@ public final class Recipes {
     // ── input ─────────────────────────────────────────────────────────────────
 
     private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
+        if (StorageOverview.active(s) || StorageOverview.backButton(s, mx, my)) return false;
         if (!enabled || RECIPES.isEmpty()) return false;
         if (clickClose(s, mx, my, button)) return true;
         if (!panel) return false;
@@ -2256,6 +2260,7 @@ public final class Recipes {
     }
 
     private static boolean scroll(AbstractContainerScreen<?> s, double mx, double my, double dy) {
+        if (StorageOverview.active(s)) return false;
         if (!enabled) return false;
         if (scrollClose(s, mx, my, dy)) return true;
         if (!panel || !shown) return false;

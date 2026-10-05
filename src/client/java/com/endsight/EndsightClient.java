@@ -39,6 +39,7 @@ import com.endsight.storage.Pets;
 import com.endsight.storage.PowderTracker;
 import com.endsight.storage.Recipes;
 import com.endsight.storage.StoragePreview;
+import com.endsight.storage.StorageOverview;
 import com.endsight.storage.StorageSearch;
 import com.endsight.visual.Beacon;
 import com.endsight.visual.ExplosionParticles;
@@ -182,6 +183,7 @@ public class EndsightClient implements ClientModInitializer {
         Slayer.init();
         SlayerSpawnMarker.init();
         ZealotTracker.init();
+        StorageOverview.init();
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any
         // module can raise it; only one shows at a time, because two things shouting

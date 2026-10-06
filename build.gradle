@@ -108,6 +108,12 @@ tasks.register('slayerSpawnSignalChecks', JavaExec) {
 	mainClass = 'com.endsight.slayers.SlayerSpawnSignalChecks'
 }
 
+tasks.register('revenantSpawnTilesChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.slayers.RevenantSpawnTilesChecks'
+}
+
 tasks.register('recipesChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -115,7 +121,7 @@ tasks.register('recipesChecks', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'recipesChecks'
+	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'revenantSpawnTilesChecks', 'recipesChecks'
 }
 
 tasks.register('inventoryVisualChecks', JavaExec) {

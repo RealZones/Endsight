@@ -168,6 +168,7 @@ public final class SlayerSpawnMarker {
         level = armedLevel;
         shownNs = armedNs;
         deadlineNs = armedNs + PREDICT_NS;
+        RevenantSpawnTiles.onBurst(ground, armedLevel);
         armedNs = 0;
     }
 

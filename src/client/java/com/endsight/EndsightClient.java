@@ -27,6 +27,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
 import com.endsight.slayers.Slayer;
 import com.endsight.slayers.SlayerSpawnMarker;
+import com.endsight.slayers.RevenantSpawnTiles;
 import com.endsight.slayers.VoidgloomHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -106,6 +107,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(BossDrops.module());
             registry.replace(Slayer.killTimerModule());
             registry.replace(SlayerSpawnMarker.module());
+            registry.replace(RevenantSpawnTiles.module());
             registry.replace(ZealotTracker.module());
             registry.replace(Alerts.module());
             registry.replace(EyeGuard.module());
@@ -182,6 +184,7 @@ public class EndsightClient implements ClientModInitializer {
         Cooldowns.init();
         Slayer.init();
         SlayerSpawnMarker.init();
+        RevenantSpawnTiles.init();
         ZealotTracker.init();
         StorageOverview.init();
 

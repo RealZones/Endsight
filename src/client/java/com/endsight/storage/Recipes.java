@@ -464,6 +464,7 @@ public final class Recipes {
             }
         }
         for (PageSnapshot snap : StoragePreview.snapshots().values()) {
+            if (snap.page() == StoragePreview.ENDER_CHEST) continue;     // counted from CHESTS below
             for (ItemStack s : snap.items()) if (!s.isEmpty() && name(s).equalsIgnoreCase(item)) return s;
         }
         for (List<ItemStack> chest : CHESTS.values()) {
@@ -782,6 +783,9 @@ public final class Recipes {
         }
         if (INV.equals(scope)) return have;
         for (PageSnapshot snap : StoragePreview.snapshots().values()) {
+            // The storage overview keeps its own copy of the ender chest; this list has
+            // one already, and counting both read every ender chest item as two.
+            if (snap.page() == StoragePreview.ENDER_CHEST) continue;
             for (ItemStack s : snap.items()) count(have, s);
         }
         for (List<ItemStack> chest : CHESTS.values()) {

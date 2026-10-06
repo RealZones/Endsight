@@ -90,6 +90,11 @@ public final class Config {
             for (Setting s : m.settings()) {
                 String key = base + ".set." + s.label();
                 String raw = p.getProperty(key);
+                if (raw == null && m.id().equals("slayer.revenantTiles")
+                        && s.label().equals("Nearest tracer")) {
+                    // The old boss-only toggle now also controls the constant tile tracer.
+                    raw = p.getProperty(base + ".set.Spawn tracer");
+                }
                 if (raw == null) continue;
                 apply(s, raw);
             }

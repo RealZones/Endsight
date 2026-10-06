@@ -114,12 +114,15 @@ public final class StorageOverview {
         return StoragePreview.plainText(screen.getTitle()).equals("Storage");
     }
 
+    /** A storage page, or the ender chest - both get the way back to the overview. */
     private static boolean isPage(AbstractContainerScreen<?> screen) {
-        return StoragePreview.isStorageWindow(screen) && !isRoot(screen);
+        return (StoragePreview.isStorageWindow(screen) && !isRoot(screen)) || StoragePreview.isEnderChest(screen);
     }
 
+    /** Every card, the ender chest first: it is the one storage everybody has. */
     private static List<Integer> pages(AbstractContainerScreen<?> screen) {
         Set<Integer> found = new TreeSet<>();
+        found.add(StoragePreview.ENDER_CHEST);
         Container playerInv = Minecraft.getInstance().player == null
                 ? null : Minecraft.getInstance().player.getInventory();
         for (Slot slot : screen.getMenu().slots) {
@@ -171,13 +174,13 @@ public final class StorageOverview {
         Layout l = layout(screen.width, screen.height, pages.size());
         scrollRow = StoragePreview.clamp(scrollRow, 0, l.maxScroll());
         int cached = 0;
-        for (int page : pages) if (StoragePreview.hasSnapshot(page)) cached++;
+        for (int page : pages) if (page != StoragePreview.ENDER_CHEST && StoragePreview.hasSnapshot(page)) cached++;
 
         Draw.rect(g, 0, 0, screen.width, screen.height, Theme.bg());
         Draw.rect(g, 0, 0, screen.width, TOP - 7, Theme.surface());
         Draw.rect(g, 0, TOP - 8, screen.width, 1, Theme.line());
         Draw.text(g, font, "STORAGE", 12, 7, Theme.text());
-        String status = pages.size() + " pages  /  " + cached + " scanned";
+        String status = (pages.size() - 1) + " pages  /  " + cached + " scanned";
         Draw.text(g, font, Draw.fit(font, status, Math.max(40, screen.width - 194)),
                 12, 25, Theme.dim());
         button(g, screen.width - 91, 6, 79, 15, "Vanilla view",
@@ -228,7 +231,8 @@ public final class StorageOverview {
         int border = hovered ? Theme.accent() : Theme.line();
         Draw.roundedOutline(g, x, y, CARD_W, CARD_H, 6, border, Theme.surface());
         if (hovered) Draw.rect(g, x + 1, y + 5, 2, CARD_H - 10, Theme.accent());
-        Draw.text(g, font, "PAGE " + String.format("%02d", page), x + 12, y + 6,
+        boolean ec = page == StoragePreview.ENDER_CHEST;
+        Draw.text(g, font, ec ? "ENDER CHEST" : "PAGE " + String.format("%02d", page), x + 12, y + 6,
                 hovered ? Theme.accent() : Theme.text());
 
         if (snap == null) {
@@ -249,7 +253,10 @@ public final class StorageOverview {
                     matches > 0 ? Theme.accent() : Theme.dim());
         }
 
-        for (int row = 0; row < 5; row++) {
+        // The ender chest is shorter than a page; it gets the rows it has, top-aligned
+        // with the pages beside it, rather than empty cells that would read as free space.
+        int rows = snap == null ? 5 : Math.min(5, Math.max(1, snap.rows() - 1));
+        for (int row = 0; row < rows; row++) {
             for (int col = 0; col < 9; col++) {
                 int cx = x + 12 + col * CELL;
                 int cy = y + GRID_TOP + row * CELL;
@@ -269,7 +276,7 @@ public final class StorageOverview {
             }
         }
         if (hovered && !within(mx, my, x + 12, y + GRID_TOP, 162, 90)) {
-            g.setTooltipForNextFrame(font, Component.literal("Open Storage Page " + page), mx, my);
+            g.setTooltipForNextFrame(font, Component.literal(ec ? "Open Ender Chest" : "Open Storage Page " + page), mx, my);
         }
     }
 
@@ -343,7 +350,10 @@ public final class StorageOverview {
             int row = i / l.cols();
             if (row >= scrollRow + l.visibleRows()) break;
             if (!within(mx, my, l.x(i % l.cols()), l.y(row, scrollRow), CARD_W, CARD_H)) continue;
-            if (mc.getConnection() != null) mc.getConnection().sendCommand("storage " + pages.get(i));
+            int page = pages.get(i);
+            if (mc.getConnection() != null) {
+                mc.getConnection().sendCommand(page == StoragePreview.ENDER_CHEST ? "ec" : "storage " + page);
+            }
             return true;
         }
         return true; // The server's slots remain underneath the replacement view.

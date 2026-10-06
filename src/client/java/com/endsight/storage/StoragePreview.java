@@ -50,6 +50,13 @@ public final class StoragePreview {
     private static final Pattern PAGE_WINDOW = Pattern.compile("^Storage Page \\((\\d+)\\s*/\\s*(\\d+)\\)$");
     private static final Pattern PAGE_ITEM = Pattern.compile("^Storage Page (\\d+)$");
 
+    /**
+     * The ender chest, kept beside the pages under a page number the server never uses,
+     * so the overview can show it as one more card. It opens with /ec, not /storage.
+     */
+    static final int ENDER_CHEST = 0;
+    private static final String ENDER_CHEST_TITLE = "Ender Chest";
+
     private static final Map<Integer, PageSnapshot> SNAPSHOTS = new HashMap<>();
 
     /**
@@ -133,11 +140,18 @@ public final class StoragePreview {
     private static void capture(AbstractContainerScreen<?> screen) {
         if (!enabled || !capturing) return;
 
-        Matcher m = PAGE_WINDOW.matcher(plain(screen.getTitle()));
-        if (!m.matches()) return;
-
-        int page = parse(m.group(1));
-        int count = parse(m.group(2));
+        String title = plain(screen.getTitle());
+        Matcher m = PAGE_WINDOW.matcher(title);
+        int page, count;
+        if (m.matches()) {
+            page = parse(m.group(1));
+            count = parse(m.group(2));
+        } else if (title.equals(ENDER_CHEST_TITLE)) {
+            page = ENDER_CHEST;
+            count = 0;
+        } else {
+            return;
+        }
         if (page < 0) return;
 
         List<ItemStack> items = containerSlots(screen);
@@ -159,7 +173,7 @@ public final class StoragePreview {
         }
 
         SNAPSHOTS.put(page, new PageSnapshot(page, count, items, now));
-        lastPage = page;
+        if (page != ENDER_CHEST) lastPage = page;      // placement previews a storage page
         SnapshotStore.markDirty();
     }
 
@@ -395,6 +409,10 @@ public final class StoragePreview {
     static boolean isStorageWindow(AbstractContainerScreen<?> screen) {
         String t = plain(screen.getTitle());
         return t.equals("Storage") || PAGE_WINDOW.matcher(t).matches();
+    }
+
+    static boolean isEnderChest(AbstractContainerScreen<?> screen) {
+        return plain(screen.getTitle()).equals(ENDER_CHEST_TITLE);
     }
 
     static int pageOfItem(ItemStack stack) {

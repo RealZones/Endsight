@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,6 +47,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Kills and drops from every boss - dragons, the Warden, the Protector, and the two
@@ -99,9 +101,31 @@ public final class BossDrops {
      * so many Golden dragons, and a kill count over every dragon says nothing about it.
      * The readout follows the last kind killed; /drops dragon adds them all up.
      */
-    private static final List<String> KINDS = List.of("Young", "Old", "Strong", "Wise", "Unstable", "Superior", "Protector", "Golden");
+    // Berserk, Chaotic and Arcane (Lv200) came in on 2026-10-08.
+    private static final List<String> KINDS = List.of("Young", "Old", "Strong", "Wise", "Unstable", "Superior", "Protector", "Golden",
+            "Berserk", "Chaotic", "Arcane");
     private static final Pattern DRAGON_DEAD = Pattern.compile("^☠ The (?:(.+?) )?Dragon has de-spawned");
     private static final Pattern OBTAINED = Pattern.compile("^(?:\\[[^\\]]+\\] )?(\\S+?)(?: \\S)? has obtained (.+?)!$");
+    /**
+     * "Here is your loot from the last dragon:" and a line per item, ten seconds after the kill.
+     *
+     * DragSim changed its dragon debug line on 2026-10-07 at about 15:05: "loot number: 38.9 ->
+     * Dragon Claw" became "loot number: 38.9 (the rare table, lower = rarer)", with no item.
+     * That line was where every ordinary dragon drop came from - "has obtained" is only
+     * broadcast for the rare ones - so from then on Dragon Drops counted almost nothing:
+     * 119 dragons that afternoon, five drops, which is what two players reported as drops
+     * "not being counted". The summary names everything you got and is sent only to you,
+     * so it is the source now. Its fragments are the dragon's guaranteed share and never a
+     * row, but they name its kind, which matters when the eye lines were missed.
+     */
+    private static final String SUMMARY = "Here is your loot from the last dragon:";
+    private static final Pattern SUMMARY_LINE = Pattern.compile("^-\\s*(\\d+)x\\s+(.+)$");
+    private static final Pattern FRAGMENT_KIND = Pattern.compile("^(\\w+) Dragon Fragment$");
+    /** Every line of the summary lands in the same tick; this is generous. */
+    private static final long SUMMARY_MS = 1_000;
+    /** Pets share a name across rarities; the tier belongs in the saved drop key. */
+    private static final Pattern PET_NAME = Pattern.compile("^\\[Lvl \\d+\\] ");
+    private static final Pattern PET_RARITY = Pattern.compile(" \\((Common/Uncommon|Rare|Epic|Legendary)\\)$");
     private static final Pattern TARGET = Pattern.compile("Slay [\\d,]+ Combat XP worth of (\\w+)");
     /** The summary box: one message of many lines, "THE WARDEN DOWN!" and your place near the end. */
     private static final Pattern BOX = Pattern.compile(
@@ -109,8 +133,11 @@ public final class BossDrops {
     /** Your eye going in - a Summoning Eye or, for a Golden dragon, a Golden Eye. */
     private static final Pattern EYE_PLACED = Pattern.compile("You placed a (?:Summoning|Golden) Eye");
     /**
-     * Printed to you when the dragon rises, if any of its eyes were yours. The placing
-     * lines are not always shown, so this is the one that settles it.
+     * Printed when the dragon rises - to the whole lobby, whoever placed the eyes. 0.6.1
+     * took it as proof of an eye of yours, so from then every dragon that died near you
+     * counted: a Berserk Dragon he never hit showed one kill, and his logs had 247 of 729
+     * counted dragons without an eye of his. "You placed a Golden Eye" is printed after all;
+     * Golden dragons had gone uncounted because the pattern only knew Summoning Eyes.
      */
     private static final String AWOKEN = "Your Sleeping Eyes have been awoken";
     private static final String EGG_SPAWNED = "Egg has Spawned";
@@ -199,6 +226,11 @@ public final class BossDrops {
     private static final Map<String, Count> session = new LinkedHashMap<>(), loaded = new LinkedHashMap<>();
     /** Since the last write: what the next write adds to whatever the file holds by then. */
     private static final Map<String, Count> unsaved = new LinkedHashMap<>();
+    /**
+     * Other players' dragons the audit already took off each kind's kills. The logs keep
+     * showing them, so without this a second /drops audit apply would take them off again.
+     */
+    private static final Map<String, Integer> lobbyTaken = new LinkedHashMap<>();
     private static long fileStamp;
     /**
      * The tier each item was announced at, for anything your list does not name: the
@@ -223,11 +255,15 @@ public final class BossDrops {
     private static int eyes;
     private static boolean ownDragonUp;
     private static long dragonActivityAt;
+    private static long summaryAt, dragonKillAt;
+    /** The summary being read: raw line, item, count. */
+    private static final List<String[]> summary = new ArrayList<>();
     private static boolean catalyst;
     private static long catalystAt;
     private static int catalysts = -1;
     private static final SlayerCosts spawnCosts = new SlayerCosts();
     private static int menuTicks;
+    private static final AtomicBoolean auditRunning = new AtomicBoolean();
 
     private static Count of(Map<String, Count> m, String boss) {
         boss = bossKey(boss);
@@ -325,6 +361,18 @@ public final class BossDrops {
             String line = Zealots.strip(raw).trim();
             if (DragonTimer.isPlayerChat(line)) return;
             long now = System.currentTimeMillis();
+            if (line.startsWith(SUMMARY)) {
+                settleSummary();
+                summaryAt = now;
+                return;
+            }
+            if (summaryAt != 0 && now - summaryAt < SUMMARY_MS) {
+                String[] item = summaryLine(line);
+                if (item != null) {
+                    summary.add(new String[]{raw, item[0], item[1]});
+                    return;
+                }
+            }
             SlayerCosts.Start start = spawnCosts.onLine(line, now);
             if (start != null) {
                 long coins = SlayerCosts.afterLoan(start.coins(), questDiscount());
@@ -373,10 +421,7 @@ public final class BossDrops {
                 return;
             }
             if (line.contains(AWOKEN)) {
-                // This line is personal even when the placement message was missed.
-                eyes = Math.max(eyes, 1);
-                ownDragonUp = true;
-                show(DRAGON);
+                if (eyes > 0) ownDragonUp = true;
                 return;
             }
             // "has awoken" is broadcast to the whole lobby, so it says nothing about who
@@ -431,13 +476,14 @@ public final class BossDrops {
                 Minecraft mc = Minecraft.getInstance();
                 if (mc.player != null && m.group(1).equalsIgnoreCase(mc.player.getName().getString())) {
                     String item = m.group(2).trim();
-                    drop(lastDragon, new Drops.Drop(item, Drops.tierOf(item)));
+                    drop(lastDragon, obtainedDrop(raw, item));
                 }
             }
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             long now = System.currentTimeMillis();
             if (death != null && now - death.at > HOLD_MS) settle();
+            if (summaryAt != 0 && now - summaryAt >= SUMMARY_MS) settleSummary();
             if (mc.player == null) {
                 catalysts = -1;
                 ownDragonUp = false;
@@ -459,13 +505,15 @@ public final class BossDrops {
         });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, ctx) -> {
             var root = ClientCommands.literal("drops").executes(c -> {
-                Map<String, Count> m = view();
+                Map<String, Count> m = totals();
                 for (String boss : BOSSES) {
                     Count counts = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
                     if (counts.kills > 0 || counts.starts > 0) say(boss);
                 }
                 return 1;
             });
+            root.then(ClientCommands.literal("audit").executes(c -> audit(false))
+                    .then(ClientCommands.literal("apply").executes(c -> audit(true))));
             // /drops dragon is every kind together; /drops golden one kind.
             for (String boss : BOSSES) {
                 root.then(ClientCommands.literal(boss.toLowerCase(Locale.ROOT)).executes(c -> {
@@ -613,7 +661,40 @@ public final class BossDrops {
         return Math.max(Math.max(0, announced), inventoryDelta);
     }
 
+    /** Count what the dragon's loot summary listed, and the kill if the eye lines missed it. */
+    private static void settleSummary() {
+        if (summaryAt == 0) return;
+        summaryAt = 0;
+        List<String> items = new ArrayList<>();
+        for (String[] s : summary) items.add(s[1]);
+        String boss = summaryBoss(items, lastDragon);
+        // The summary goes only to players the dragon paid, so it is a kill of yours. The
+        // usual kill is counted ~7 s before it arrives; one that was missed is counted here.
+        if (System.currentTimeMillis() - dragonKillAt > 15_000) kill(boss);
+        for (String[] s : summary) {
+            if (s[1].endsWith(" Fragment")) continue;
+            drop(boss, obtainedDrop(s[0], s[1]), Integer.parseInt(s[2]));
+        }
+        summary.clear();
+    }
+
+    /** The dragon a summary was for: the kind its fragments name, or the last one seen. */
+    static String summaryBoss(List<String> items, String fallback) {
+        for (String item : items) {
+            Matcher kind = FRAGMENT_KIND.matcher(item);
+            if (kind.find() && KINDS.contains(kind.group(1))) return kind.group(1) + " Dragon";
+        }
+        return fallback;
+    }
+
+    /** One item line of the summary as {item, count}, or null. */
+    static String[] summaryLine(String line) {
+        Matcher m = SUMMARY_LINE.matcher(line);
+        return m.find() ? new String[]{m.group(2).trim(), m.group(1)} : null;
+    }
+
     private static void kill(String boss) {
+        if (isDragon(boss)) dragonKillAt = System.currentTimeMillis();
         of(session, boss).kills++;
         of(unsaved, boss).kills++;
         show(boss);
@@ -643,7 +724,30 @@ public final class BossDrops {
      */
     /** A drop's name as the lists hold it: lower case, a pet's "[Lvl 1] " taken off. */
     private static String lootName(String item) {
-        return item.toLowerCase(Locale.ROOT).replaceFirst("^\\[lvl \\d+\\]\\s*", "").trim();
+        return petBase(item).toLowerCase(Locale.ROOT)
+                .replaceFirst("^\\[lvl \\d+\\]\\s*", "").trim();
+    }
+
+    private static String petBase(String item) {
+        return PET_NAME.matcher(item).find() ? PET_RARITY.matcher(item).replaceFirst("") : item;
+    }
+
+    private static Drops.Drop obtainedDrop(String raw, String item) {
+        // The obtained line still has the pet name's colour. The list calls every
+        // Ender Dragon legendary, including the epic one in the observed game log.
+        int petTier = Drops.petTier(raw);
+        return new Drops.Drop(item, petTier >= 0 ? petTier : Drops.tierOf(item));
+    }
+
+    private static String petKey(String item, int tier) {
+        if (!PET_NAME.matcher(item).find() || PET_RARITY.matcher(item).find()) return item;
+        String rarity = switch (tier) {
+            case 3 -> "Legendary";
+            case 2 -> "Epic";
+            case 1 -> "Rare";
+            default -> "Common/Uncommon";
+        };
+        return item + " (" + rarity + ")";
     }
 
     /** Whether a drop can be this boss's at all: on its bestiary list where it has one, and never a mined drop. */
@@ -659,17 +763,24 @@ public final class BossDrops {
         return belongs(boss, item) && !(LOOT.containsKey(boss) && FODDER.contains(lootName(item)));
     }
 
+    /** The log audit uses the same exclusions as the live tracker without mutating it. */
+    static boolean auditCounted(String boss, String item) {
+        String lower = item.toLowerCase(Locale.ROOT);
+        return !NEST.contains(lower) && !MINED.contains(lower) && !hidden(item) && counted(boss, item);
+    }
+
     private static void drop(String boss, Drops.Drop d) {
         drop(boss, d, 1);
     }
 
     private static void drop(String boss, Drops.Drop d, int quantity) {
         if (quantity <= 0) return;
-        if (hidden(d.item()) || !counted(boss, d.item())) return;
-        if (repeatedDrop(boss, d.item(), System.currentTimeMillis())) return;
-        of(session, boss).drops.merge(d.item(), quantity, Integer::sum);
-        of(unsaved, boss).drops.merge(d.item(), quantity, Integer::sum);
-        seen.merge(d.item(), d.tier(), Math::max);
+        String item = petKey(d.item(), d.tier());
+        if (hidden(item) || !counted(boss, item)) return;
+        if (repeatedDrop(boss, item, System.currentTimeMillis())) return;
+        of(session, boss).drops.merge(item, quantity, Integer::sum);
+        of(unsaved, boss).drops.merge(item, quantity, Integer::sum);
+        seen.merge(item, d.tier(), Math::max);
         show(boss);
         save();
     }
@@ -694,7 +805,7 @@ public final class BossDrops {
 
     /** A name to sort by: a pet's "[Lvl 1] " is not part of what it is, and "[" sorts before every letter. */
     private static String plain(String item) {
-        return item.replaceFirst("^\\[[^\\]]*\\]\\s*", "");
+        return petBase(item).replaceFirst("^\\[[^\\]]*\\]\\s*", "");
     }
 
     public static List<String> knownSlayerDropNames() {
@@ -720,6 +831,15 @@ public final class BossDrops {
     /** Your list's tier, or the one the server announced it at. */
 
     private static int tier(String item) {
+        if (PET_NAME.matcher(item).find()) {
+            Matcher pet = PET_RARITY.matcher(item);
+            if (pet.find()) return switch (pet.group(1)) {
+                case "Legendary" -> 3;
+                case "Epic" -> 2;
+                case "Rare" -> 1;
+                default -> 0;
+            };
+        }
         return Math.max(Drops.tierOf(item), seen.getOrDefault(item, 0));
     }
 
@@ -742,14 +862,18 @@ public final class BossDrops {
         };
     }
 
-    /** One boss's numbers into chat, the same order and colours as the readout. */
+    /**
+     * One boss's numbers into chat, the same order and colours as the readout. Always all
+     * time: it followed the readout's chip, so with the chip on session, /drops answered
+     * "how many have I ever got" with this session's handful.
+     */
     private static void say(String boss) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        Map<String, Count> m = view();
+        Map<String, Count> m = totals();
         Count c = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
         mc.player.sendSystemMessage(Component.literal("§d" + boss + " §7- §f" + c.kills + (c.kills == 1 ? " kill" : " kills")
-                + " §8(" + (TOTAL.equals(mode) ? "all time" : "this session") + ")"));
+                + " §8(all time)"));
         if (isSlayer(boss)) mc.player.sendSystemMessage(Component.literal("§7Spawn costs: §c" + costText(c)));
         if (DRAGON.equals(boss)) {
             StringBuilder kinds = new StringBuilder("§8  ");
@@ -775,6 +899,93 @@ public final class BossDrops {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("boss-drops.txt");
     }
 
+    private static int audit(boolean apply) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return 0;
+        if (!auditRunning.compareAndSet(false, true)) {
+            mc.player.sendSystemMessage(Component.literal("§eDrop audit is already running."));
+            return 1;
+        }
+        String player = mc.player.getName().getString();
+        Path config = file();
+        Path logs = FabricLoader.getInstance().getGameDir().resolve("logs");
+        mc.player.sendSystemMessage(Component.literal("§eAuditing local drop logs in the background..."));
+        Thread.ofVirtual().name("endsight-drop-audit").start(() -> {
+            try {
+                BossDropsAudit.Report report = BossDropsAudit.scan(logs, config, player);
+                Path output = config.resolveSibling("drop-audit.txt");
+                Files.createDirectories(output.getParent());
+                Files.writeString(output, report.text(), StandardCharsets.UTF_8);
+                mc.execute(() -> {
+                    if (mc.player == null) return;
+                    if (!apply) {
+                        mc.player.sendSystemMessage(Component.literal("§aDrop audit ready: §f" + output + " §7("
+                                + report.events() + " supported boss events). No counts changed. §f/drops audit apply"
+                                + " §7makes the " + report.fixes().size() + " corrections it lists."));
+                        return;
+                    }
+                    int done = applyAudit(report.fixes());
+                    mc.player.sendSystemMessage(Component.literal("§aDrop audit applied: §f" + done + " §7of "
+                            + report.fixes().size() + " corrections. The save from before is §fboss-drops-before-audit.txt§7."));
+                });
+            } catch (IOException | RuntimeException e) {
+                mc.execute(() -> {
+                    if (mc.player != null) mc.player.sendSystemMessage(Component.literal("§cDrop audit failed: " + e.getMessage()));
+                });
+            } finally {
+                auditRunning.set(false);
+            }
+        });
+        return 1;
+    }
+
+    /**
+     * The audit's corrections, made on the counts in memory and then saved. Editing the file
+     * instead would be undone by the next save, which rewrites it from these maps. A count
+     * that moved since the scan read the file is left alone. The file from before is kept.
+     */
+    static int applyAudit(List<BossDropsAudit.Fix> fixes) {
+        // Kills are a field of their own, not a drop row; the audit names them "#kills".
+        try {
+            if (!Files.exists(file())) return 0;
+            if (Files.getLastModifiedTime(file()).toMillis() != fileStamp) load();
+            Files.copy(file(), file().resolveSibling("boss-drops-before-audit.txt"), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            System.err.println("[Endsight] could not back up boss-drops.txt, audit not applied: " + e);
+            return 0;
+        }
+        int done = 0;
+        for (BossDropsAudit.Fix f : fixes) {
+            Count base = of(loaded, f.boss()), fresh = of(unsaved, f.boss());
+            if (f.item().equals(BossDropsAudit.KILLS)) {
+                if (base.kills != f.from()) continue;
+                base.kills = f.to();
+                lobbyTaken.merge(f.boss(), f.from() - f.to(), Integer::sum);
+                done++;
+                continue;
+            }
+            if (base.drops.getOrDefault(f.item(), 0) != f.from()) continue;
+            int now = f.from() + fresh.drops.getOrDefault(f.item(), 0);
+            if (f.to() == 0) {
+                base.drops.remove(f.item());
+                fresh.drops.remove(f.item());
+            } else if (f.to() > now) {
+                // Only the latest log can hold a drop not saved yet, and the fix counted it.
+                fresh.drops.remove(f.item());
+                base.drops.put(f.item(), f.to());
+            } else {
+                continue;
+            }
+            done++;
+        }
+        // A relabelled pet's tier line goes with its last row.
+        Map<String, Count> after = totals();
+        seen.keySet().removeIf(item -> PET_NAME.matcher(item).find() && !PET_RARITY.matcher(item).find()
+                && after.values().stream().noneMatch(c -> c.drops.containsKey(item)));
+        save();
+        return done;
+    }
+
     private static void save() {
         // Someone else wrote the file since we read it: take theirs as the base.
         try {
@@ -797,6 +1008,7 @@ public final class BossDrops {
 
     private static void load() {
         loaded.clear();
+        lobbyTaken.clear();
         if (!Files.exists(file())) return;
         try {
             readCounts(Files.readAllLines(file(), StandardCharsets.UTF_8));
@@ -816,6 +1028,7 @@ public final class BossDrops {
                     + "\t" + c.unknownCosts + "\t" + c.historicalCost);
         });
         seen.forEach((item, t) -> lines.add("tier\t" + item + "\t" + t));
+        lobbyTaken.forEach((boss, n) -> lines.add("lobby\t" + boss + "\t" + n));
         return lines;
     }
 
@@ -827,6 +1040,7 @@ public final class BossDrops {
             // Retain the existing loot rules; this migration never changes kill/drop counts.
             else if (p[0].equals("drop") && p.length == 4 && counted(p[1], p[2])) of(loaded, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
             else if (p[0].equals("tier") && p.length == 3) seen.put(p[1], Integer.parseInt(p[2]));
+            else if (p[0].equals("lobby") && p.length == 3) lobbyTaken.put(p[1], Integer.parseInt(p[2]));
             else if (p[0].equals("cost") && p.length == 6) {
                 Count c = of(loaded, p[1]);
                 c.starts = Integer.parseInt(p[2]);

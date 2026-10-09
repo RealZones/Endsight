@@ -78,6 +78,12 @@ tasks.register('bossDropsChecks', JavaExec) {
 	mainClass = 'com.endsight.dragons.BossDropsChecks'
 }
 
+tasks.register('bossDropsAuditChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dragons.BossDropsAuditChecks'
+}
+
 tasks.register('cooldownsChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -121,7 +127,7 @@ tasks.register('recipesChecks', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn 'bossDropsChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'revenantSpawnTilesChecks', 'recipesChecks'
+	dependsOn 'bossDropsChecks', 'bossDropsAuditChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'revenantSpawnTilesChecks', 'recipesChecks'
 }
 
 tasks.register('inventoryVisualChecks', JavaExec) {

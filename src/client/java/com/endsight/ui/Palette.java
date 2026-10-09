@@ -39,7 +39,7 @@ public record Palette(String name,
             new Palette("Sunset Horizon",
                     0x160E12, 0xFF7D41, 0xF5EEEB, 0x91827D, 0x695F5A, 0x50CD7D, 0xF05F5F, 0x69AFFF, false),
             new Palette("Arctic Frost",
-                    0xECF2F8, 0x0084FF, 0x1E2630, 0x788291, 0xA0A8B4, 0x23B46E, 0xDC4646, 0x0091FF, true));
+                    0x1C252A, 0x0084FF, 0xEDF7FA, 0xB0C4D0, 0x78909D, 0x37C795, 0xF4757D, 0x0091FF, false));
 
     // ── the surface ladder ────────────────────────────────────────────────────
 

@@ -122,16 +122,16 @@ public final class Drops {
         Matcher l = LOOT.matcher(raw);
         if (l.find()) {
             String item = Zealots.strip(l.group(2)).trim();
-            // A pet is the one drop this line must not answer for. Its tier is its own
-            // rarity, and nothing here carries it: the colour on a loot line is the loot
-            // table's, not the item's, and the tier list names the pet rather than the
-            // rarity - so "Ender Dragon" answered legendary whatever had dropped. Worse,
-            // the answer is remembered for a second and a half, so the announcement a
-            // tick later, which does carry the rarity as the colour of the name, arrived
-            // as a repeat of a drop already seen and was thrown away: an epic dragon pet
-            // rang the legendary call with no second chance to correct it. The
-            // announcement always follows, so a pet waits for it.
-            if (PET_LEVEL.matcher(item).find()) return null;
+            // The loot-table colour before [Lvl 1] says nothing about a pet's rarity,
+            // but some server lines also colour the name after the level. Use that
+            // colour when present: a personal debug line can be the only evidence if
+            // the player has not collected the pet and no obtained line arrives.
+            // Without a coloured name, wait for the announcement rather than guess
+            // from the family's tier in drops.txt.
+            if (PET_LEVEL.matcher(item).find()) {
+                int pet = petTier(raw);
+                return pet < 0 ? null : once(new Drop(item, pet));
+            }
             int tier = tierOf(item, -1);
             return tier < 0 ? null : once(new Drop(item, tier));
         }

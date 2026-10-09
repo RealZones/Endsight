@@ -84,6 +84,7 @@ public final class Recipes {
     private static final Pattern RECIPE = Pattern.compile("^(.+?) Recipe(?: \\(\\d+/\\d+\\))?$");
     private static final int[] GRID = {10, 11, 12, 19, 20, 21, 28, 29, 30};
     private static final int RESULT = 25;
+    private static final int CRAFTING_TABLE = 23;
     private static final int BACK = 45;
     private static final int NEXT = 53;
     /** The category column: the star (All) and the five under it. */
@@ -256,10 +257,15 @@ public final class Recipes {
             if (armed) walkList(screen, slots, Integer.parseInt(list.group(1)), Integer.parseInt(list.group(2)));
             return;
         }
-        Matcher recipe = RECIPE.matcher(title);
-        if (recipe.matches()) {
-            List<ItemStack> slots = containerSlots(screen);
-            if (slots.size() < 54 || slots.get(RESULT).isEmpty()) return;      // not arrived yet
+        // A recipe page is known by its layout, not its title. DragSim's 2026-10-08 rework
+        // retitled "<Item> Recipe" to just "<Item>" - cut short with "..." when long - and
+        // from then on no page was read: everything viewed that day went unrecorded. The
+        // grid, the crafting table at 23 and the result at 25 did not move, and the result
+        // slot has the whole name.
+        List<ItemStack> page = containerSlots(screen);
+        if (page.size() >= 54 && (RECIPE.matcher(title).matches() || name(page.get(CRAFTING_TABLE)).equals("Crafting Table"))) {
+            List<ItemStack> slots = page;
+            if (slots.get(RESULT).isEmpty()) return;      // not arrived yet
             capture(slots);
             if (armed) walkRecipe(screen);
             return;

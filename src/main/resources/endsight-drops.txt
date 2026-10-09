@@ -36,6 +36,7 @@ legendary	Dwarf Turtle Shelmet
 # ── epic ──────────────────────────────────────────────────────────────────────
 epic	Mythic Carrot
 epic	Mysterious Handle
+epic	Draconic Talisman
 epic	Midas Jewel
 epic	Golden Hot Potato Book
 epic	Dragon Horn
@@ -60,6 +61,11 @@ rare	Optical Lens
 rare	Pure Seeds
 rare	Tiger (pet)
 rare	Sheep (pet)
+# Berserk, Chaotic and Arcane dragons (2026-10-08): their 1/80 drops and the shared 1/50 scale
+rare	Berserk Fang
+rare	Chaotic Stinger
+rare	Arcane Heart
+rare	Ancestral Scale
 rare	Crown of Greed
 rare	Iron Claws
 rare	Hardened Scales

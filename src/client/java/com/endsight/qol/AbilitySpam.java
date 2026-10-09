@@ -14,7 +14,7 @@ import net.minecraft.network.chat.MutableComponent;
 import java.util.List;
 
 /**
- * "This ability is on cooldown for 4.8s", once instead of forty times.
+ * Repeated ability refusals, once instead of forty times.
  *
  * A held right-click on a one-second item is refused five times a second, and every
  * refusal is a red line, so a fight's chat is mostly this. Two ways out: stack them -
@@ -36,17 +36,19 @@ public final class AbilitySpam {
     private static final String STACK = "Stack";
     private static final String HIDE = "Hide";
     private static final String COOLDOWN = "This ability is on cooldown";
+    private static final String SALVATION_MISS = "Salvation found nothing in its path.";
 
     private static boolean enabled = true;
     private static String mode = STACK;
 
     /** The line currently standing in for the refusals, and how many it stands for. */
     private static Component stacked;
+    private static String stackedKind;
     private static int count;
 
     public static Module module() {
         return new Module("qol.abilityspam", "Ability Spam",
-                "Stack ability cooldown messages into one, or remove them.", "Chat",
+                "Stack repeated ability messages into one, or remove them.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",
@@ -57,8 +59,11 @@ public final class AbilitySpam {
     public static void init() {
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
             if (!enabled || overlay) return true;
-            if (!Zealots.strip(message.getString()).trim().startsWith(COOLDOWN)) return true;
-            if (!HIDE.equals(mode)) stack(message);
+            String line = Zealots.strip(message.getString()).trim();
+            String kind = line.startsWith(COOLDOWN) ? COOLDOWN
+                    : line.equals(SALVATION_MISS) ? SALVATION_MISS : null;
+            if (kind == null) return true;
+            if (!HIDE.equals(mode)) stack(message, kind);
             return false;
         });
     }
@@ -69,12 +74,14 @@ public final class AbilitySpam {
      * newest" is what keeps a refusal from being folded into one from before somebody
      * spoke, which would read as chat history being rewritten.
      */
-    private static void stack(Component message) {
+    private static void stack(Component message, String kind) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.gui == null) return;
         ChatComponent chat = mc.gui.getChat();
         List<GuiMessage> all = chat.allMessages;
-        if (stacked != null && !all.isEmpty() && all.get(0).content() == stacked) {
+        // A Terminator miss must not turn the cooldown line's count into its own.
+        if (stacked != null && kind.equals(stackedKind)
+                && !all.isEmpty() && all.get(0).content() == stacked) {
             all.remove(0);
             chat.refreshTrimmedMessages();
             count++;
@@ -84,6 +91,7 @@ public final class AbilitySpam {
         MutableComponent line = Component.empty().append(message);
         if (count > 1) line.append(Component.literal("  x" + count).withStyle(ChatFormatting.GRAY));
         stacked = line;
+        stackedKind = kind;
         chat.addServerSystemMessage(line);
     }
 }

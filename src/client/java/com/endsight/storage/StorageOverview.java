@@ -1,6 +1,7 @@
 package com.endsight.storage;
 
 import com.endsight.ui.Draw;
+import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
@@ -18,7 +19,9 @@ import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -28,11 +31,11 @@ public final class StorageOverview {
     private StorageOverview() {
     }
 
-    static final int CARD_W = 186;
-    static final int CARD_H = 128;
+    static final int CARD_W = 166;
+    static final int CARD_H = 112;
     static final int GAP = 10;
     private static final int CELL = 18;
-    private static final int GRID_TOP = 30;
+    private static final int GRID_LEFT = 2, GRID_TOP = 17;
     private static final int TOP = 52;
     private static final int BOTTOM = 28;
 
@@ -40,6 +43,14 @@ public final class StorageOverview {
     private static boolean vanilla;
     private static EditBox search;
     private static int scrollRow;
+    private static double backgroundOpacity = 90;
+    private static AbstractContainerScreen<?> pagesScreen;
+    private static List<Integer> pageCache = List.of();
+
+    public static Setting opacitySetting() {
+        return new Setting.Slider("Overview opacity", "Darkness behind the all-page storage view; zero is clear.",
+                0, 100, 5, () -> backgroundOpacity, value -> backgroundOpacity = value, "%");
+    }
 
     public static boolean active(Screen screen) {
         return screen == rootScreen && !vanilla && StoragePreview.overviewEnabled();
@@ -57,6 +68,7 @@ public final class StorageOverview {
             if (!root && !isPage(container)) return;
 
             if (root) {
+                pagesScreen = null;
                 rootScreen = screen;
                 vanilla = false;
                 scrollRow = 0;
@@ -69,6 +81,9 @@ public final class StorageOverview {
                 search.setHint(Component.literal("Search items..."));
                 search.setValue(StorageSearch.query());
                 search.setResponder(StorageSearch::setQuery);
+                // Server menu updates arrive on ticks. Page discovery parses every
+                // slot name and sorts it; rendering and hit testing share that work.
+                ScreenEvents.afterTick(screen).register(s -> pagesScreen = null);
             }
 
             ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> {
@@ -94,7 +109,10 @@ public final class StorageOverview {
                     search.keyPressed(event);
                     return false;
                 }
-                return true;
+                if (client.options.keyInventory.matches(event)) screen.onClose();
+                // The hidden server grid can retain its last hovered slot after a
+                // view switch. Number/drop hotkeys must never act on that stale slot.
+                return false;
             });
             ScreenKeyboardEvents.allowCharType(screen).register((s, event) -> {
                 if (!active(s) || search == null || !search.isFocused()) return true;
@@ -105,6 +123,8 @@ public final class StorageOverview {
                 if (rootScreen == s) {
                     rootScreen = null;
                     search = null;
+                    pagesScreen = null;
+                    pageCache = List.of();
                 }
             });
         });
@@ -119,8 +139,9 @@ public final class StorageOverview {
         return (StoragePreview.isStorageWindow(screen) && !isRoot(screen)) || StoragePreview.isEnderChest(screen);
     }
 
-    /** Every card, the ender chest first: it is the one storage everybody has. */
+    /** Every page, the ender chest first: it is the one storage everybody has. */
     private static List<Integer> pages(AbstractContainerScreen<?> screen) {
+        if (pagesScreen == screen) return pageCache;
         Set<Integer> found = new TreeSet<>();
         found.add(StoragePreview.ENDER_CHEST);
         Container playerInv = Minecraft.getInstance().player == null
@@ -136,11 +157,12 @@ public final class StorageOverview {
         }
         count = Math.min(count, 54);
         for (int p = 1; p <= count; p++) found.add(p);
-        return new ArrayList<>(found);
+        pagesScreen = screen;
+        return pageCache = List.copyOf(found);
     }
 
     static Layout layout(int width, int height, int pages) {
-        int cols = Math.max(1, Math.min(4, (width - 24 + GAP) / (CARD_W + GAP)));
+        int cols = Math.max(1, Math.min(3, (width - 20 + GAP) / (CARD_W + GAP)));
         int gridW = cols * CARD_W + (cols - 1) * GAP;
         int visibleRows = Math.max(1, (height - TOP - BOTTOM + GAP) / (CARD_H + GAP));
         int totalRows = (pages + cols - 1) / cols;
@@ -173,23 +195,25 @@ public final class StorageOverview {
         List<Integer> pages = pages(screen);
         Layout l = layout(screen.width, screen.height, pages.size());
         scrollRow = StoragePreview.clamp(scrollRow, 0, l.maxScroll());
-        int cached = 0;
-        for (int page : pages) if (page != StoragePreview.ENDER_CHEST && StoragePreview.hasSnapshot(page)) cached++;
-
-        Draw.rect(g, 0, 0, screen.width, screen.height, Theme.bg());
-        Draw.rect(g, 0, 0, screen.width, TOP - 7, Theme.surface());
-        Draw.rect(g, 0, TOP - 8, screen.width, 1, Theme.line());
-        Draw.text(g, font, "STORAGE", 12, 7, Theme.text());
-        String status = (pages.size() - 1) + " pages  /  " + cached + " scanned";
-        Draw.text(g, font, Draw.fit(font, status, Math.max(40, screen.width - 194)),
-                12, 25, Theme.dim());
+        // One backdrop controls the whole view. Card and slot fills used to pile
+        // different surfaces on top of it, so the opacity was impossible to predict.
+        if (backgroundOpacity > 0)
+            Draw.rect(g, 0, 0, screen.width, screen.height,
+                    Draw.alpha(Theme.bg(), (float) (backgroundOpacity / 100)));
+        Draw.rect(g, 12, TOP - 8, screen.width - 24, 1, Draw.alpha(Theme.text(), .13f));
+        Draw.text(g, font, "Storage", 12, 10, Theme.text());
         button(g, screen.width - 91, 6, 79, 15, "Vanilla view",
                 within(mx, my, screen.width - 91, 6, 79, 15));
 
         int searchX = screen.width - 174;
-        Draw.roundedOutline(g, searchX - 3, 23, 164, 18, 5,
-                search != null && search.isFocused() ? Theme.accent() : Theme.line(), Theme.input());
-        if (search != null) search.extractWidgetRenderState(g, mx, my, 0f);
+        boolean searching = !StorageSearch.query().isBlank();
+        Draw.roundedOutline(g, searchX - 5, 22, 168, 20, 4,
+                searching ? Theme.obs() : search != null && search.isFocused() ? Theme.accent() : Theme.line(),
+                Theme.input());
+        if (search != null) {
+            search.setTextColor(Theme.text());
+            search.extractWidgetRenderState(g, mx, my, 0f);
+        }
 
         if (pages.isEmpty()) {
             Draw.textCentered(g, font, "No storage pages found", screen.width / 2,
@@ -228,56 +252,81 @@ public final class StorageOverview {
 
     private static void drawPage(GuiGraphicsExtractor g, Font font, int page, PageSnapshot snap,
                                  String query, int x, int y, boolean hovered, int mx, int my) {
-        int border = hovered ? Theme.accent() : Theme.line();
-        Draw.roundedOutline(g, x, y, CARD_W, CARD_H, 6, border, Theme.surface());
-        if (hovered) Draw.rect(g, x + 1, y + 5, 2, CARD_H - 10, Theme.accent());
         boolean ec = page == StoragePreview.ENDER_CHEST;
-        Draw.text(g, font, ec ? "ENDER CHEST" : "PAGE " + String.format("%02d", page), x + 12, y + 6,
-                hovered ? Theme.accent() : Theme.text());
-
-        if (snap == null) {
-            Draw.textRight(g, font, "NOT SCANNED", x + CARD_W - 12, y + 6, Theme.muted());
-            Draw.text(g, font, "Open to scan", x + 12, y + 18, Theme.dim());
+        BitSet matchingSlots = StoragePreview.searchMatches(snap, query);
+        int matches = matchingSlots.cardinality();
+        Draw.text(g, font, ec ? "Ender Chest" : "PV " + page, x + GRID_LEFT, y + 3,
+                matches > 0 ? Theme.obs() : hovered ? Theme.accent() : Theme.text());
+        String status = snap == null ? "Not visited" : query.isEmpty() ? "" : matches + " found";
+        if (matches > 0) {
+            int badgeW = font.width(status) + 8;
+            Draw.roundedRect(g, x + CARD_W - GRID_LEFT - badgeW, y, badgeW, 13, 3, Theme.obs());
+            Draw.textRight(g, font, status, x + CARD_W - GRID_LEFT - 4, y + 3, Theme.bg());
         } else {
-            int filled = 0;
-            for (int i = PageSnapshot.COLS; i < snap.items().size(); i++) {
-                if (!snap.at(i).isEmpty()) filled++;
-            }
-            int capacity = Math.max(0, snap.items().size() - PageSnapshot.COLS);
-            Draw.textRight(g, font, filled + "/" + capacity,
-                    x + CARD_W - 12, y + 6, Theme.muted());
-            String age = snap.age(System.currentTimeMillis());
-            int matches = query.isEmpty() ? 0 : StoragePreview.matchesIn(page, query);
-            String detail = query.isEmpty() ? age : matches + (matches == 1 ? " match" : " matches") + "  /  " + age;
-            Draw.text(g, font, Draw.fit(font, detail, CARD_W - 24), x + 12, y + 18,
-                    matches > 0 ? Theme.accent() : Theme.dim());
+            Draw.textRight(g, font, status, x + CARD_W - GRID_LEFT, y + 3,
+                    Draw.lerp(Theme.muted(), Theme.text(), .4f));
         }
 
         // The ender chest is shorter than a page; it gets the rows it has, top-aligned
         // with the pages beside it, rather than empty cells that would read as free space.
         int rows = snap == null ? 5 : Math.min(5, Math.max(1, snap.rows() - 1));
+        int gx = x + GRID_LEFT, gy = y + GRID_TOP;
+        int gridColour = Draw.alpha(Theme.text(), .17f);
+        for (int col = 0; col <= PageSnapshot.COLS; col++)
+            Draw.rect(g, gx + col * CELL, gy, 1, rows * CELL + 1, gridColour);
+        for (int row = 0; row <= rows; row++)
+            Draw.rect(g, gx, gy + row * CELL, PageSnapshot.COLS * CELL + 1, 1, gridColour);
+        boolean itemTooltip = false;
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < 9; col++) {
-                int cx = x + 12 + col * CELL;
-                int cy = y + GRID_TOP + row * CELL;
-                Draw.rect(g, cx, cy, 16, 16, Theme.input());
+                int cx = gx + col * CELL + 1;
+                int cy = gy + row * CELL + 1;
                 if (snap == null) continue;
                 ItemStack stack = snap.at((row + 1) * 9 + col);
                 if (stack.isEmpty()) continue;
+                boolean match = matchingSlots.get((row + 1) * 9 + col);
+                if (match) Draw.rect(g, cx - 1, cy - 1, CELL, CELL, Draw.alpha(Theme.obs(), .3f));
                 g.item(stack, cx, cy);
                 g.itemDecorations(font, stack, cx, cy);
-                if (!query.isEmpty() && StorageSearch.matches(stack, query)) {
-                    Draw.roundedRing(g, cx - 1, cy - 1, 18, 18, 2, Theme.accent());
+                if (match) {
+                    matchOutline(g, cx - 1, cy - 1);
+                } else if (!query.isEmpty()) {
+                    // Keep the page's spatial layout while making its hits the first
+                    // thing the eye finds, even over bright enchanted item icons.
+                    Draw.rect(g, cx, cy, 16, 16, Draw.alpha(Theme.bg(), .72f));
                 }
                 if (within(mx, my, cx, cy, 16, 16)) {
-                    Draw.roundedRing(g, cx - 1, cy - 1, 18, 18, 2, Theme.line());
+                    if (!match) slotOutline(g, cx - 1, cy - 1, Draw.alpha(Theme.text(), .7f));
                     g.setTooltipForNextFrame(font, stack, mx, my);
+                    itemTooltip = true;
                 }
             }
         }
-        if (hovered && !within(mx, my, x + 12, y + GRID_TOP, 162, 90)) {
-            g.setTooltipForNextFrame(font, Component.literal(ec ? "Open Ender Chest" : "Open Storage Page " + page), mx, my);
+        if (hovered && !itemTooltip) {
+            List<Component> tip = new ArrayList<>();
+            tip.add(Component.literal(ec ? "Open Ender Chest" : "Open PV " + page));
+            tip.add(Component.literal(snap == null ? "Visit this page to remember its items"
+                    : "Last seen " + snap.age(System.currentTimeMillis())).withColor(Theme.muted() & 0xFFFFFF));
+            g.setTooltipForNextFrame(font, tip, Optional.empty(), mx, my);
         }
+    }
+
+    private static void slotOutline(GuiGraphicsExtractor g, int x, int y, int colour) {
+        Draw.rect(g, x, y, CELL + 1, 1, colour);
+        Draw.rect(g, x, y + CELL, CELL + 1, 1, colour);
+        Draw.rect(g, x, y, 1, CELL + 1, colour);
+        Draw.rect(g, x + CELL, y, 1, CELL + 1, colour);
+    }
+
+    private static void matchOutline(GuiGraphicsExtractor g, int x, int y) {
+        // Two contrasting edges survive both dark and bright icons. A one-pixel
+        // accent outline disappeared against the red glass and enchanted glint.
+        slotOutline(g, x, y, Theme.obs());
+        int edge = Draw.lerp(Theme.obs(), Theme.text(), .75f);
+        Draw.rect(g, x + 1, y + 1, CELL - 1, 1, edge);
+        Draw.rect(g, x + 1, y + CELL - 1, CELL - 1, 1, edge);
+        Draw.rect(g, x + 1, y + 1, 1, CELL - 1, edge);
+        Draw.rect(g, x + CELL - 1, y + 1, 1, CELL - 1, edge);
     }
 
     private static void drawBack(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
@@ -289,14 +338,12 @@ public final class StorageOverview {
 
     private static void button(GuiGraphicsExtractor g, int x, int y, int w, int h,
                                String label, boolean hovered) {
-        Draw.roundedOutline(g, x, y, w, h, 5,
-                hovered ? Theme.accent() : Theme.line(), hovered ? Theme.hover() : Theme.raised());
+        if (hovered) Draw.rect(g, x, y, w, h, Draw.alpha(Theme.hover(), .7f));
         Draw.textCentered(g, Minecraft.getInstance().font, label, x + w / 2,
-                y + (h - 8) / 2, Theme.text());
+                y + (h - 8) / 2, hovered ? Theme.accent() : Theme.text());
     }
 
     private static void iconButton(GuiGraphicsExtractor g, int x, int y, String icon, boolean enabled) {
-        Draw.roundedOutline(g, x, y, 20, 18, 5, enabled ? Theme.line() : Theme.hair(), Theme.raised());
         Draw.textCentered(g, Minecraft.getInstance().font, icon, x + 10, y + 4,
                 enabled ? Theme.text() : Theme.dim());
     }

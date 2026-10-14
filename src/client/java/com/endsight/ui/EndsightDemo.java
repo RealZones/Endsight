@@ -39,7 +39,7 @@ public final class EndsightDemo {
 
         // Trackers: the readouts, the ones you look at most first.
         r.add(Module.placeholder("dragon.bossdrops", "Boss Drops",
-                "Kills and drops from whichever boss you killed last, sorted by rarity.", "Trackers"));
+                "Track boss kills and drops; read them with /drops.", "Trackers"));
         r.add(Module.placeholder("slayer.timer", "Slayer Tracker",
                 "Kills, time spent and rate for the session.", "Trackers"));
         r.add(Module.placeholder("zealot.tracker", "Zealot Tracker",
@@ -104,6 +104,15 @@ public final class EndsightDemo {
                 "Keys that send a command for you.", "Quality of Life"));
         r.add(Module.placeholder("qol.eyeguard", "Protect Placed Eyes",
                 "Ignores right-clicks briefly after you place an eye.", "Quality of Life"));
+
+        // Dungeons. Only the first module needs a slot here: it fixes where the category
+        // sits, and the other solvers join it wherever they are registered.
+        r.add(Module.placeholder("dungeon.map", "Dungeon Map",
+                "The server's room map and player markers, visible while exploring.", "Dungeons"));
+
+        // Social last: one optional extra, not something you open the menu for.
+        r.add(Module.placeholder("social.discord", "Discord Presence",
+                "Share Dragsim activity through the local Discord app.", "Social"));
 
         return r;
     }

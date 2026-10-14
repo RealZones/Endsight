@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
 
 /**
  * Every module the UI knows about, grouped by category in the order registered.
@@ -14,9 +15,25 @@ import java.util.Map;
 public final class ModuleRegistry {
 
     private final List<Module> modules = new ArrayList<>();
+    private List<Module> snapshot;
+    private List<String> categorySnapshot;
+    private record Filter(String category, String query) { }
+    private final Map<Filter, Map<String, List<Module>>> filters = new LinkedHashMap<>();
+
+    private void changed() {
+        snapshot = null;
+        categorySnapshot = null;
+        invalidateSearch();
+    }
+
+    /** Live command lists and notes can change without registering a different module. */
+    public void invalidateSearch() {
+        filters.clear();
+    }
 
     public ModuleRegistry add(Module module) {
         modules.add(module);
+        changed();
         return this;
     }
 
@@ -30,6 +47,7 @@ public final class ModuleRegistry {
         for (int i = 0; i < modules.size(); i++) {
             if (modules.get(i).id().equals(module.id())) {
                 modules.set(i, module);
+                changed();
                 return this;
             }
         }
@@ -38,12 +56,13 @@ public final class ModuleRegistry {
 
     /** Take a module out by id. The browser rebuilds its categories from what is left. */
     public ModuleRegistry remove(String id) {
-        modules.removeIf(m -> m.id().equals(id));
+        if (modules.removeIf(m -> m.id().equals(id))) changed();
         return this;
     }
 
     public List<Module> all() {
-        return List.copyOf(modules);
+        if (snapshot == null) snapshot = List.copyOf(modules);
+        return snapshot;
     }
 
     public boolean isEmpty() {
@@ -52,11 +71,13 @@ public final class ModuleRegistry {
 
     /** Categories in the order they first appear, so the sidebar needs no config. */
     public List<String> categories() {
+        if (categorySnapshot != null) return categorySnapshot;
         List<String> out = new ArrayList<>();
         for (Module m : modules) {
             if (!out.contains(m.category())) out.add(m.category());
         }
-        return out;
+        categorySnapshot = List.copyOf(out);
+        return categorySnapshot;
     }
 
     /**
@@ -67,13 +88,22 @@ public final class ModuleRegistry {
      * it - so the filtering has to happen before the grouping, not during layout.
      */
     public Map<String, List<Module>> grouped(String category, String query) {
+        Filter key = new Filter(category, SettingsSearch.normalize(query));
+        Map<String, List<Module>> cached = filters.get(key);
+        if (cached != null) return cached;
         Map<String, List<Module>> out = new LinkedHashMap<>();
         for (Module m : modules) {
             if (category != null && !category.equals(m.category())) continue;
-            if (!m.matches(query)) continue;
+            if (!m.matches(key.query())) continue;
             out.computeIfAbsent(m.category(), k -> new ArrayList<>()).add(m);
         }
-        return out;
+        out.replaceAll((name, group) -> List.copyOf(group));
+        Map<String, List<Module>> result = Collections.unmodifiableMap(out);
+        // Search boxes produce many short-lived prefixes. Keep the cache bounded,
+        // while layout, hit testing and the result count share the same snapshot.
+        if (filters.size() >= 12) filters.remove(filters.keySet().iterator().next());
+        filters.put(key, result);
+        return result;
     }
 
     public int count(String category, String query) {

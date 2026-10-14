@@ -3,8 +3,8 @@ package com.endsight.storage;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.Readout;
-import com.endsight.ui.Draw;
+import com.endsight.hud.HudCard;
+import com.endsight.hud.TrackerHud;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
@@ -60,6 +60,11 @@ public final class MiningSession {
     private static boolean showWhenPaused = true;
     private static boolean profitEstimate = true;
     private static boolean breakdown = true;
+    private static boolean compactList = true;
+    private static String hudPeriod = "Session";
+    private static final MiningTotals lifetime = new MiningTotals();
+    private static boolean lifetimeDirty;
+    private static long lifetimeSaved;
     private static String materialUnits = ENCH;
     private static long activeMs;
     private static long lastTick;
@@ -96,7 +101,18 @@ public final class MiningSession {
     private static void watchHud(Minecraft mc) {
         Area.Where area = Area.where();
         // A warp must not carry the old pocket's grace window into another activity.
-        if (mc.level != hudLevel || area != hudArea) lastToolHeld = 0;
+        if (mc.level != hudLevel || area != hudArea) {
+            lastToolHeld = 0;
+            lastValues.clear();
+            lastCraftedValues.clear();
+            gainLedger.clear();
+            inventoryBaseline = false;
+            lastTick = 0;
+            lastActive = 0;
+            mining = false;
+            pendingMaterial = "";
+            pendingSince = 0;
+        }
         hudLevel = mc.level;
         hudArea = area;
         if (mc.player == null || mc.level == null || !Area.end()) {
@@ -145,6 +161,9 @@ public final class MiningSession {
         }
     }
     private static final Map<String, Long> lastValues = new LinkedHashMap<>();
+    private static final Map<String, Long> lastCraftedValues = new LinkedHashMap<>();
+    private static final MiningGainLedger gainLedger = new MiningGainLedger();
+    private static boolean inventoryBaseline;
     private static final Map<String, Long> totals = new LinkedHashMap<>();
     private static final Map<String, Long> activeByMaterial = new LinkedHashMap<>();
     private static long soldCoins;
@@ -155,15 +174,19 @@ public final class MiningSession {
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Section("Readout"),
+                        new Setting.Choice("Period", "Session is resettable; Total is saved across restarts.",
+                                List.of("Session", "Total"), () -> hudPeriod, v -> hudPeriod = v),
                         new Setting.Toggle("Show while paused", "Keep paused totals visible while a mining tool is held or was just put away.",
                                 () -> showWhenPaused, v -> showWhenPaused = v),
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
                                 List.of(RAW, ENCH, REF), () -> materialUnits, v -> materialUnits = v),
-                        new Setting.Toggle("Profit estimate", "Estimate NPC sell value from mined blocks.",
+                        new Setting.Toggle("Profit", "NPC sell value of mined materials and collected Void Fragments.",
                                 () -> profitEstimate, v -> profitEstimate = v),
-                        new Setting.Toggle("Breakdown", "A row per ore mined this session, richest first.",
+                        new Setting.Toggle("Breakdown", "Materials and mining drops, highest coin value first.",
                                 () -> breakdown, v -> breakdown = v),
+                        new Setting.Toggle("Top five items", "Keep the five most valuable rows; profit still includes every item.",
+                                () -> compactList, v -> compactList = v),
 
                         new Setting.Section("Extra lines"),
                         new Setting.Toggle("Drill CD", "Drill CD line: Ready, or the countdown.",
@@ -187,6 +210,24 @@ public final class MiningSession {
     }
 
     public static void init() {
+        loadLifetime();
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> saveLifetime());
+        net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register((mc, screen, w, h) -> {
+            if (!HudLayout.interactiveScreen(screen)) return;
+            net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
+                if (click.button() != 0 || !readoutVisible()) return true;
+                int[] bounds = HudLayout.bounds(ID);
+                if (bounds == null) return true;
+                float scale = HudLayout.scale(ID);
+                int labelW = mc.font.width("[" + hudPeriod + "]");
+                double right = bounds[0] + bounds[2] - TrackerHud.PAD * scale;
+                if (click.x() < right - (labelW + 2) * scale || click.x() >= right + 2 * scale
+                        || click.y() < bounds[1] || click.y() >= bounds[1] + TrackerHud.HEADER_H * scale) return true;
+                hudPeriod = hudPeriod.equals("Session") ? "Total" : "Session";
+                com.endsight.Config.save(com.endsight.EndsightClient.registry());
+                return false;
+            });
+        });
         // Stashed drops ("You have N materials stashed away") are not counted. The stash
         // does not say which tier went in, so any count of it is a guess, and with a
         // Personal Compactor - which everyone mining has - the bag does not fill.
@@ -237,6 +278,9 @@ public final class MiningSession {
         mining = false;
         currentMaterial = "Material";
         lastValues.clear();
+        lastCraftedValues.clear();
+        gainLedger.clear();
+        inventoryBaseline = false;
         totals.clear();
         activeByMaterial.clear();
         soldCoins = 0;
@@ -262,6 +306,8 @@ public final class MiningSession {
         if (counting && lastTick != 0) {
             long dt = Math.min(now - lastTick, 1_000);
             activeMs += dt;
+            lifetime.activeMs += dt;
+            lifetimeDirty = true;
             // Credited to the ore under the cursor, not the one on screen. The display
             // lags on purpose (see focus); the per-ore clocks must not, or a rate would
             // be divided by someone else's seconds.
@@ -272,6 +318,7 @@ public final class MiningSession {
         // after a swing is not mined. 21 Fine "mined" in four minutes were 21 Fine pulled.
         countInventoryGain(mc, counting && mc.screen == null);
         if (System.currentTimeMillis() - auditFlushed > 5_000) flushAudit();
+        if (lifetimeDirty && now - lifetimeSaved > 5_000) saveLifetime();
         mining = counting;
         lastTick = now;
     }
@@ -281,8 +328,12 @@ public final class MiningSession {
         if (DragonTimer.isPlayerChat(line)) return;
         Matcher m = SOLD.matcher(line);
         if (!m.matches()) return;
-        soldCoins += parseLong(m.group(3));
         String material = materialName(m.group(2));
+        if (material == null && !m.group(2).equalsIgnoreCase("Void Fragment")
+                && !m.group(2).equalsIgnoreCase("Void Core")) return;
+        soldCoins += parseLong(m.group(3));
+        lifetime.sold += parseLong(m.group(3));
+        lifetimeDirty = true;
         if (material != null) currentMaterial = material;
     }
 
@@ -326,31 +377,50 @@ public final class MiningSession {
      * It used to count rises and ignore falls. The Personal Compactor makes that wrong:
      * it takes 80 Rough out and puts 1 Flawed in, the same 80 in raw units, and when
      * the two land in different ticks the fall was dropped and the rise kept - 80 Rough
-     * of amethyst that was never mined. Counted net, a compaction adds nothing however
-     * it is split. The session total for a material never goes below zero, so dropping
-     * something you brought with you cannot take the count negative.
+     * of amethyst that was never mined. Net counting handles tracked material; a short
+     * crafted-item carry also handles material brought into a session, whose removal
+     * hits the zero floor before its compacted form arrives in a later tick.
      *
      * Every change that is counted is written to mining.tsv, so a session can be
      * checked line by line against the blocks in powder.tsv.
      */
     private static void countInventoryGain(Minecraft mc, boolean count) {
         Map<String, Long> now = materialValues(mc);
-        if (!lastValues.isEmpty() && count) {
+        Map<String, Long> crafted = craftedValues(mc);
+        if (!count) gainLedger.clear();
+        if (inventoryBaseline && count) {
             java.util.Set<String> seen = new java.util.HashSet<>(now.keySet());
             seen.addAll(lastValues.keySet());
             for (String m : seen) {
                 long delta = now.getOrDefault(m, 0L) - lastValues.getOrDefault(m, 0L);
                 if (delta == 0) continue;
                 long before = totals.getOrDefault(m, 0L);
-                long after = Math.max(0, before + delta);
+                long craftedIncrease = Math.max(0, crafted.getOrDefault(m, 0L) - lastCraftedValues.getOrDefault(m, 0L));
+                long after = before + gainLedger.delta(m, before, delta, craftedIncrease, System.currentTimeMillis());
                 if (after == before) continue;
                 totals.put(m, after);
+                lifetime.material(m, after - before);
+                lifetimeDirty = true;
                 if (delta > 0) focus(m, System.currentTimeMillis());
                 audit(m, after - before, after, "bag");
             }
         }
         lastValues.clear();
         lastValues.putAll(now);
+        lastCraftedValues.clear();
+        lastCraftedValues.putAll(crafted);
+        inventoryBaseline = true;
+    }
+
+    private static Map<String, Long> craftedValues(Minecraft mc) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        if (mc.player == null) return out;
+        for (ItemStack stack : mc.player.getInventory().getNonEquipmentItems()) {
+            MaterialValue material = materialValue(stack);
+            if (material != null && material.units() / stack.getCount() > 1)
+                out.merge(material.name(), material.units(), Long::sum);
+        }
+        return out;
     }
 
     // ── the audit trail ──────────────────────────────────────────────────────
@@ -459,88 +529,146 @@ public final class MiningSession {
     }
 
     private static void draw(GuiGraphicsExtractor g) {
+        if (!readoutVisible()) return;
         Minecraft mc = Minecraft.getInstance();
-        if (!enabled || mc.player == null || mc.options.hideGui || !hudVisible()) return;
-        if (!mining && (!showWhenPaused || activeMs <= 0)) return;
-        if (com.endsight.zealots.ZealotTracker.lastActivity() > lastActive) return;
         HudLayout.draw(ID, g, mc.font, false);
     }
 
+    private static boolean readoutVisible() {
+        Minecraft mc = Minecraft.getInstance();
+        return enabled && mc.player != null && !mc.options.hideGui && hudVisible()
+                && (mining || showWhenPaused && activeMs > 0)
+                && com.endsight.zealots.ZealotTracker.lastActivity() <= lastActive;
+    }
+
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        boolean hot = sample || mining;
-        long shownMs = sample ? 754_000L : activeMs;
-        String material = sample ? "Obsidian" : currentMaterial;
-        long materialAmount = sample ? 318 : totals.getOrDefault(material, 0L);
-        long materialMs = sample ? 754_000L : activeByMaterial.getOrDefault(material, 0L);
-        long coins = sample ? 1_237_500L : soldCoins;
-        long totalEst = sample ? 2_420_000L : totalValue();
-        String title = hot ? "Active" : "Paused";
-        String rate = materialRate(material, materialAmount, materialMs);
-        // The material is the hero; the one sentence this answers is "what am I farming
-        // and how much money". Unsold value is not coins, so it is not a row.
-        String amount = formatMaterialCount(material, materialAmount);
-        // Profit is for the block you are on: its value over the time spent on it, not the
-        // whole session blended - ten minutes of end stone was dragging the obsidian rate
-        // down for an hour after switching. Sold coins stay session-wide; they are real.
-        // Profit is the whole session: every ore's worth over the session clock. Scoped to
-        // one ore it counted that ore's coins over that ore's seconds, so switching ore
-        // swung it six-fold - 39.0m/h against 6.2m/h for the same fifteen minutes. Rate
-        // stays per-ore, because units an hour across two different ores means nothing.
-        String profit = profitEstimate && (sample || totalEst > 0) ? rate(totalEst, shownMs)
-                : coins > 0 || sample ? rate(coins, shownMs) : "";
-        List<String[]> rows = new ArrayList<>();
-        // Time leads: it is the one row every other number is read against.
-        rows.add(new String[]{"Time", time(shownMs)});
-        if (!breakdown) rows.add(new String[]{shortMaterial(material), amount});
-        rows.add(new String[]{"Rate", rate});
-        if (!profit.isEmpty()) rows.add(new String[]{"Profit", profit});
+        return TrackerHud.draw(g, font, x, y, "Mining Profit", "[" + hudPeriod + "]", Theme.muted(), hudRows(sample), -1);
+    }
+
+    private record MiningHudState(boolean sample, String period, String units, boolean breakdown, boolean compact,
+                                   boolean profit, boolean fragmentsShown, long fragments, long sold,
+                                   long elapsedQuarter, Map<String, Long> materials, Object palette) { }
+    private static final Map<String, Long> SAMPLE_MATERIALS = Map.of("Amethyst", 3_008_000L);
+    private static MiningHudState shownState;
+    private static List<HudCard.Row> shownRows;
+
+    private static List<HudCard.Row> hudRows(boolean sample) {
+        boolean allTime = hudPeriod.equals("Total");
+        long shownMs = sample ? 754_000L : allTime ? lifetime.activeMs : activeMs;
+        Map<String, Long> materials = sample ? SAMPLE_MATERIALS
+                : allTime ? lifetime.materials : totals;
+        long fragments = sample ? 3 : allTime ? lifetime.fragments : VoidFragments.found();
+        long coins = sample ? 1_237_500L : allTime ? lifetime.sold : soldCoins;
+        MiningHudState state = new MiningHudState(sample, hudPeriod, materialUnits, breakdown, compactList,
+                profitEstimate, VoidFragments.show, fragments, coins, shownMs / 250, materials, Theme.palette());
+        if (state.equals(shownState)) return shownRows;
+        // Comparing against a snapshot catches inventory/reset/load changes without
+        // sorting and formatting the complete material list in every render pass.
+        shownRows = List.copyOf(buildHudRows(materials, fragments, coins, shownMs));
+        shownState = new MiningHudState(sample, hudPeriod, materialUnits, breakdown, compactList,
+                profitEstimate, VoidFragments.show, fragments, coins, shownMs / 250, Map.copyOf(materials), Theme.palette());
+        return shownRows;
+    }
+
+    private static List<HudCard.Row> buildHudRows(Map<String, Long> materials, long fragments, long coins, long shownMs) {
+        long profit = profitValue(materials, fragments);
+        List<HudCard.Row> rows = new ArrayList<>();
         if (breakdown) {
-            // One row per ore actually mined, richest first: the same detail a per-ore
-            // filter would have given, filled in from what happened rather than from a
-            // box that can be left unticked.
-            List<Map.Entry<String, Long>> mined = sample
-                    ? List.of(Map.entry("Crying Obsidian", 9L), Map.entry("Obsidian", 14L))
-                    : new ArrayList<>(totals.entrySet());
-            mined = mined.stream().filter(e -> e.getValue() > 0)
-                    .sorted((a, b) -> Long.compare(value(b.getKey(), b.getValue()), value(a.getKey(), a.getValue())))
-                    .limit(5).toList();
-            for (Map.Entry<String, Long> e : mined) {
-                long worth = value(e.getKey(), e.getValue());
-                rows.add(new String[]{shortMaterial(e.getKey()),
-                        formatMaterialCount(e.getKey(), e.getValue()) + (worth > 0 ? "  " + compact(worth) : "")});
+            List<MiningItem> mined = new ArrayList<>();
+            materials.forEach((name, count) -> {
+                if (count > 0) mined.add(new MiningItem(name, formatMaterialCount(name, count), value(name, count)));
+            });
+            if (VoidFragments.show && fragments > 0)
+                mined.add(new MiningItem("Void Fragment", compact(fragments), fragments * VoidFragments.NPC_PRICE));
+            mined.sort(java.util.Comparator.comparingLong(MiningItem::coins).reversed().thenComparing(MiningItem::name));
+            for (MiningItem item : mined.stream().limit(compactList ? 5 : Long.MAX_VALUE).toList()) {
+                String label = item.name().equals("Void Fragment") ? "§5◇ Void Fragment"
+                        : item.name().equals("Amethyst") ? "§d◇ Amethyst" : "§f◇ " + shortMaterial(item.name());
+                rows.add(new HudCard.Row(label, item.amount() + " §8· §7" + coinAmount(item.coins()), Theme.text()));
             }
         }
-        if (VoidFragments.show && (sample || "Amethyst".equals(material))) {
-            String frag = VoidFragments.row(sample, sample ? 754_000L : activeByMaterial.getOrDefault("Amethyst", 0L));
-            if (!frag.isEmpty()) rows.add(new String[]{"Void Frag", frag});
+        if (rows.isEmpty() && breakdown) rows.add(new HudCard.Row("No materials yet", "", Theme.muted()));
+        if (profitEstimate) {
+            // Use every mined material and fragment, even when the visible list is
+            // compact or a row is disabled. Sold items are already part of this value.
+            rows.add(new HudCard.Row("§6Profit", coinAmount(profit) + " coins", Theme.pos()));
+            rows.add(new HudCard.Row("§6Profit/h", rate(profit, shownMs), Theme.pos()));
+        } else if (coins > 0) {
+            rows.add(new HudCard.Row("Sold", coinAmount(coins) + " coins", Theme.pos()));
+            rows.add(new HudCard.Row("Sold/h", rate(coins, shownMs), Theme.pos()));
         }
-        int w = Readout.width(font, "MINING", title);
-        for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
-        int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);
-        if (g == null) return new int[]{w, h};
+        rows.add(new HudCard.Row("Time mined", time(shownMs)));
+        return rows;
+    }
 
-        Readout.tick(g, x, y, w, hot ? Theme.accent() : Theme.line());
-        Draw.text(g, font, "MINING", Readout.left(x), y, Theme.muted());
-        Draw.textRight(g, font, title, Readout.right(x, w), y, hot ? Theme.accent() : Theme.text());
-        int ry = y + Readout.ROW_H + 3;
-        for (String[] row : rows) {
-            Draw.text(g, font, row[0], Readout.left(x), ry, Theme.dim());
-            Draw.textRight(g, font, row[1], Readout.right(x, w), ry, Theme.text());
-            ry += Readout.ROW_H + 2;
+    private record MiningItem(String name, String amount, long coins) { }
+
+    static long profitValue(Map<String, Long> materials, long fragments) {
+        long out = Math.max(0, fragments) * VoidFragments.NPC_PRICE;
+        for (Map.Entry<String, Long> entry : materials.entrySet()) out += value(entry.getKey(), Math.max(0, entry.getValue()));
+        return out;
+    }
+
+    public static boolean acceptsMiningDrop() {
+        return enabled && lastActive > 0 && System.currentTimeMillis() - lastActive <= 60_000 && hudVisible();
+    }
+
+    static void recordFragments(long count) {
+        if (count > 0) { lifetime.fragments += count; lifetimeDirty = true; }
+    }
+
+    private static java.nio.file.Path lifetimeFile() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("endsight/mining-totals.properties");
+    }
+
+    private static void loadLifetime() {
+        java.nio.file.Path path = lifetimeFile();
+        if (!java.nio.file.Files.exists(path)) return;
+        try (var input = java.nio.file.Files.newInputStream(path)) {
+            java.util.Properties data = new java.util.Properties();
+            data.load(input);
+            lifetime.load(data);
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            System.err.println("[Endsight] Could not read mining totals: " + e.getMessage());
         }
-        return new int[]{w, h};
+    }
+
+    private static void saveLifetime() {
+        if (!lifetimeDirty) return;
+        java.nio.file.Path path = lifetimeFile(), temporary = path.resolveSibling(path.getFileName() + ".tmp");
+        try {
+            java.nio.file.Files.createDirectories(path.getParent());
+            try (var output = java.nio.file.Files.newOutputStream(temporary)) {
+                lifetime.properties().store(output, "Endsight mining totals");
+            }
+            try { java.nio.file.Files.move(temporary, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE); }
+            catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                java.nio.file.Files.move(temporary, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            lifetimeDirty = false;
+            lifetimeSaved = System.currentTimeMillis();
+        } catch (java.io.IOException e) {
+            System.err.println("[Endsight] Could not save mining totals: " + e.getMessage());
+        }
     }
 
     private static String rate(long n, long ms) {
-        if (n <= 0 || ms < 5_000) return "-/h";
+        if (n <= 0 || ms < 5_000) return "—";
         long perHour = Math.round(n * 3_600_000.0 / ms);
-        return compact(perHour) + "/h";
+        return coinAmount(perHour);
     }
 
     private static String materialRate(String material, long raw, long ms) {
-        if (raw <= 0 || ms < 5_000) return "-/h";
+        if (raw <= 0 || ms < 5_000) return "—";
         long perHour = Math.round(raw * 3_600_000.0 / ms);
-        return formatMaterialCount(material, perHour) + "/h";
+        return formatMaterialCount(material, perHour);
+    }
+
+    private static String coinAmount(long n) {
+        if (n >= 1_000_000_000L) return String.format(Locale.ROOT, "%.1fB", n / 1_000_000_000.0).replace(".0B", "B");
+        if (n >= 1_000_000L) return String.format(Locale.ROOT, "%.1fM", n / 1_000_000.0).replace(".0M", "M");
+        return compact(n);
     }
 
     private static long totalValue() {

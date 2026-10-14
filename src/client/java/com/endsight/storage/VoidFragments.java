@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 
 /** Counts announced Void Fragments in the current mining session. */
 public final class VoidFragments {
+    public static final long NPC_PRICE = 80_000_000L;
     private static final Pattern DROP = Pattern.compile(
             "^[A-Z][A-Z ]*DROP!\\s*\\(?Void Fragment\\)?(?:\\s+x([\\d,]+))?(?=\\s|\\(|$)");
     private static final Pattern PET = Pattern.compile("Pet:\\s*(?:§.)*\\[Lvl \\d+\\]\\s*(§.)?(.+)");
@@ -26,7 +27,11 @@ public final class VoidFragments {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             String line = Zealots.strip(message.getString()).trim();
-            if (!DragonTimer.isPlayerChat(line)) found += announced(line);
+            if (!DragonTimer.isPlayerChat(line) && MiningSession.acceptsMiningDrop()) {
+                long count = announced(line);
+                found += count;
+                MiningSession.recordFragments(count);
+            }
         });
     }
 
@@ -45,10 +50,12 @@ public final class VoidFragments {
         found = 0;
     }
 
+    public static long found() { return found; }
+
     public static String row(boolean sample, long amethystMs) {
         long count = sample ? 3 : found;
-        if (amethystMs < 5_000) return count + "  -/h";
-        return count + "  " + String.format(Locale.ROOT, "%.1f/h", count * 3_600_000.0 / amethystMs);
+        if (amethystMs < 5_000) return count + " · —/h";
+        return count + " · " + String.format(Locale.ROOT, "%.1f/h", count * 3_600_000.0 / amethystMs);
     }
 
     /** Powder's pet bonus still needs the selected pet even when no meter is being read. */

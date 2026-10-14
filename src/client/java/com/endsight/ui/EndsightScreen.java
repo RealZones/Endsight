@@ -14,1359 +14,441 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-/**
- * The module browser: sidebar, categories, search, scrolling card grid.
- *
- * Knows about Module and ModuleRegistry and nothing else. No feature manager, no
- * config, no mod id - hand it a registry and it draws whatever is in there, which
- * is what lets the same screen serve any mod that hands it modules.
- *
- * Hit testing is done against rectangles computed by layout() rather than by
- * vanilla Buttons. Buttons would have to be repositioned every time the list
- * scrolls or the filter changes, and keeping widget bounds in sync with a scrolling
- * grid is a bug factory - these rectangles are recomputed from scratch each frame,
- * so they cannot drift out of step with what is actually on screen.
- */
+/** A compact module list. One open module shares the settings page's real controls. */
 public class EndsightScreen extends Screen {
-
     private final ModuleRegistry registry;
     private final String brand;
-
-    private static String category;
+    private static String category, expandedId;
     private static String query = "";
     private static int scroll;
-    private record ViewState(String category, String query, int scroll) {
-    }
+    private record ViewState(String category, String query, int scroll, String expanded) { }
     private static final Map<ModuleRegistry, ViewState> views = new WeakHashMap<>();
     private static ModuleRegistry activeRegistry;
-    /** The module id waiting for a key, or null. Not static: a half-armed chip should not outlive the screen. */
+
     private String binding;
-
-    private int contentHeight;
-
-    private final Map<String, Anim> hoverAnims = new HashMap<>();
-    private final Map<String, Anim> toggleAnims = new HashMap<>();
-    private final Anim entrance = new Anim(0f);
-
-    private final List<Placed> cards = new ArrayList<>();
-    private final List<Nav> navItems = new ArrayList<>();
+    private boolean searchFocused = true;
+    private int contentHeight, navScroll, refreshTicks, resultCount;
+    private SettingsScreen editor;
+    private Module editingModule;
+    private Map<String, List<Module>> groups;
+    private final Map<String, String> matchSummaries = new HashMap<>();
+    private final Map<String, Anim> anims = new HashMap<>();
     private final ThemeRow themeRow = new ThemeRow();
-
-    private record Placed(Module module, int x, int y, int w, int h,
-                           int gearX, int gearW) {
-    }
-
-    private record Nav(String label, String category, int x, int y, int w, int h) {
-    }
+    private final List<Placed> rows = new ArrayList<>();
+    private final List<Heading> headings = new ArrayList<>();
+    private final List<Nav> nav = new ArrayList<>();
+    private record Placed(Module module, ModuleRowLayout geometry, int bodyY, int bodyH) { }
+    private record Heading(String title, int count, int y) { }
+    private record Nav(String title, String category, int y) { }
+    private static final int HEADER = 66, INSET = 12, NAV_PITCH = 26;
 
     public EndsightScreen(String brand, ModuleRegistry registry) {
         super(Component.literal(brand));
         this.brand = brand;
         this.registry = registry;
-        // A browser reused with another registry must not inherit an unavailable
-        // category or a search that hides all of its modules.
         if (activeRegistry != registry) {
-            if (activeRegistry != null) views.put(activeRegistry, new ViewState(category, query, scroll));
+            if (activeRegistry != null) views.put(activeRegistry, new ViewState(category, query, scroll, expandedId));
             ViewState view = views.get(registry);
             category = view == null ? null : view.category();
             query = view == null ? "" : view.query();
             scroll = view == null ? 0 : view.scroll();
+            expandedId = view == null ? null : view.expanded();
             activeRegistry = registry;
         }
     }
 
-    // -- geometry -------------------------------------------------------------
-
-    private int panelX() {
-        return Theme.panelX(width);
+    @Override
+    protected void init() {
+        if (editor != null) editor.init(width, height);
     }
 
-    private int panelY() {
-        return Theme.panelY(height);
+    @Override
+    public void tick() {
+        super.tick();
+        // Most settings are immutable descriptors. Only live notes/command text need
+        // a bounded refresh while searching; a frame must not refilter fifty modules.
+        if (++refreshTicks >= 10) {
+            refreshTicks = 0;
+            if (!query.isBlank() && (editor == null || !editor.capturesKeyboard())) registry.invalidateSearch();
+        }
     }
 
-    private int panelW() {
-        return Theme.panelW(width);
+    @Override
+    public void removed() {
+        views.put(registry, new ViewState(category, query, scroll, expandedId));
+        if (editor != null) editor.cancelInteractions();
+        super.removed();
     }
 
-    private int panelH() {
-        return Theme.panelH(height);
+    private int panelX() { return Theme.panelX(width); }
+    private int panelY() { return Theme.panelY(height); }
+    private int panelW() { return Theme.panelW(width); }
+    private int panelH() { return Theme.panelH(height); }
+    private int sidebarW() { return Math.min(Theme.SIDEBAR_W, Math.max(144, panelW() / 3)); }
+    private int contentX() { return panelX() + sidebarW(); }
+    private int contentW() { return panelW() - sidebarW(); }
+    private int contentTop() { return panelY() + HEADER; }
+    private int contentBottom() { return panelY() + panelH() - 10; }
+    private int navTop() { return contentTop() + 20; }
+    private int navBottom() { return Math.max(navTop() + 20, moveButtonY() - 8); }
+    private int moveButtonY() {
+        int paletteRows = (Theme.palettes().size() + 4) / 5;
+        return panelY() + panelH() - (paletteRows * 25 - 7) - 52;
+    }
+    private int searchX() { return contentX() + INSET; }
+    private int searchY() { return panelY() + 31; }
+    private int searchW() { return Math.max(40, contentW() - INSET * 2); }
+    private int maxScroll() { return Math.max(0, contentHeight - (contentBottom() - contentTop())); }
+    private int maxNavScroll() { return Math.max(0, (registry.categories().size() + 1) * NAV_PITCH - (navBottom() - navTop())); }
+
+    private Anim anim(String key) { return anims.computeIfAbsent(key, ignored -> new Anim(0)); }
+
+    private void results() {
+        Map<String, List<Module>> next = registry.grouped(category, query);
+        if (groups == next) return;
+        groups = next;
+        resultCount = 0;
+        matchSummaries.clear();
+        for (List<Module> group : groups.values()) for (Module module : group) {
+            resultCount++;
+            List<String> labels = SettingsSearch.matchingLabels(module, query);
+            if (!labels.isEmpty()) {
+                String text = String.join(", ", labels.subList(0, Math.min(2, labels.size())));
+                matchSummaries.put(module.id(), "Matches: " + text + (labels.size() > 2 ? " +" + (labels.size() - 2) : ""));
+            }
+        }
     }
 
-    private int contentX() {
-        return panelX() + Theme.SIDEBAR_W;
+    private Module visibleModule(String id) {
+        if (id == null) return null;
+        for (List<Module> group : groups.values()) for (Module module : group)
+            if (id.equals(module.id())) return module;
+        return null;
     }
 
-    private int contentW() {
-        return panelW() - Theme.SIDEBAR_W;
-    }
-
-    private int contentTop() {
-        return panelY() + Theme.HEADER_H;
-    }
-
-    private int contentBottom() {
-        return panelY() + panelH() - Theme.PAD;
+    private void ensureEditor(Module module) {
+        if (editingModule == module && editor != null) return;
+        if (editor != null) editor.cancelInteractions();
+        editingModule = module;
+        editor = module == null || !module.hasSettings() ? null : SettingsScreen.embedded(this, brand, module);
+        if (editor != null) editor.init(width, height);
     }
 
     private void layout() {
-        cards.clear();
-        navItems.clear();
-
-        int navY = panelY() + Theme.HEADER_H + 22;
-        int navX = panelX() + 10;
-        int navW = Theme.SIDEBAR_W - 20;
-
-        // Rows shrink to fit above the footer. The sidebar builds itself from whatever
-        // categories exist, and at nine of them the fixed pitch ran the last one
-        // under the Move readouts button on a 455-tall panel. Squeezed rows beat a
-        // category nobody can click.
-        int count = 1 + registry.categories().size();
-        int room = moveButton()[1] - 6 - navY;
-        int pitch = Math.max(20, Math.min(Theme.NAV_H + Theme.NAV_GAP, room / Math.max(1, count)));
-        int navH = pitch - Theme.NAV_GAP;
-
-        navItems.add(
-                new Nav(
-                        "All Modules",
-                        null,
-                        navX,
-                        navY,
-                        navW,
-                        navH
-                )
-        );
-
-        navY += pitch;
-
-        for (String c : registry.categories()) {
-            navItems.add(
-                    new Nav(
-                            c,
-                            c,
-                            navX,
-                            navY,
-                            navW,
-                            navH
-                    )
-            );
-
-            navY += pitch;
+        results();
+        if (category != null && !registry.categories().contains(category)) {
+            category = null;
+            results();
         }
-
+        ensureEditor(visibleModule(expandedId));
+        navScroll = Math.max(0, Math.min(navScroll, maxNavScroll()));
+        nav.clear();
+        int ny = navTop() - navScroll;
+        nav.add(new Nav("All modules", null, ny));
+        for (String name : registry.categories()) {
+            ny += NAV_PITCH;
+            nav.add(new Nav(name, name, ny));
+        }
         themeRow.layout(panelX(), panelY(), panelH());
+        placeRows();
+        int clamped = Math.max(0, Math.min(scroll, maxScroll()));
+        if (clamped != scroll) { scroll = clamped; placeRows(); }
+    }
 
-        int x0 = contentX() + Theme.PAD;
-        int avail = contentW() - Theme.PAD * 2;
-
-        int columns = Math.max(
-                1,
-                (avail + Theme.GAP)
-                        / (Theme.CARD_MIN_W + Theme.GAP)
-        );
-
-        int cardW = (
-                avail - Theme.GAP * (columns - 1)
-        ) / columns;
-
-        int y = contentTop() + Theme.PAD - scroll;
-
-        Map<String, List<Module>> groups =
-                registry.grouped(category, query);
-
+    private void placeRows() {
+        rows.clear(); headings.clear();
+        int x = contentX() + INSET, w = Math.max(80, contentW() - INSET * 2);
+        int y = contentTop() + 8 - scroll;
         for (Map.Entry<String, List<Module>> group : groups.entrySet()) {
-            y += Theme.SECTION_H;
-
-            int col = 0;
-
-            for (Module m : group.getValue()) {
-                int cx =
-                        x0 + col * (cardW + Theme.GAP);
-
-                int gearW =
-                        m.hasSettings() ? 22 : 0;
-
-                cards.add(
-                        new Placed(
-                                m,
-                                cx,
-                                y,
-                                cardW,
-                                Theme.CARD_H,
-                                cx + cardW - 16 - gearW,
-                                gearW
-                        )
-                );
-
-                col++;
-
-                if (col == columns) {
-                    col = 0;
-                    y += Theme.CARD_H + Theme.GAP;
-                }
+            if (category == null) {
+                headings.add(new Heading(group.getKey(), group.getValue().size(), y));
+                y += 24;
             }
-
-            if (col != 0) {
-                y += Theme.CARD_H + Theme.GAP;
+            for (Module module : group.getValue()) {
+                ModuleRowLayout geometry = ModuleRowLayout.of(x, y, w, module.implemented(), module.hasSettings());
+                int bodyY = y + geometry.row().h();
+                int bodyH = module == editingModule && editor != null ? editor.embeddedHeight(w - 8, query) : 0;
+                rows.add(new Placed(module, geometry, bodyY, bodyH));
+                if (bodyH > 0) editor.embeddedBounds(x + 4, bodyY + 3, w - 8, contentTop(), contentBottom(), query);
+                y = bodyY + bodyH + (bodyH > 0 ? 10 : 4);
             }
-
-            y += 6;
+            y += 5;
         }
-
-        contentHeight =
-                (y + scroll)
-                        - (contentTop() + Theme.PAD)
-                        + Theme.PAD;
+        contentHeight = y + scroll - contentTop() + 8;
     }
-
-    private int maxScroll() {
-        return Math.max(
-                0,
-                contentHeight
-                        - (contentBottom() - contentTop())
-        );
-    }
-
-    private Anim anim(
-            Map<String, Anim> map,
-            String key,
-            float initial
-    ) {
-        return map.computeIfAbsent(
-                key,
-                k -> new Anim(initial)
-        );
-    }
-
-    // -- render ---------------------------------------------------------------
 
     @Override
-    public void extractRenderState(
-            GuiGraphicsExtractor g,
-            int mouseX,
-            int mouseY,
-            float partialTick
-    ) {
-        super.extractRenderState(
-                g,
-                mouseX,
-                mouseY,
-                partialTick
-        );
-
-        scroll = Math.max(
-                0,
-                Math.min(scroll, maxScroll())
-        );
-
+    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(g, mouseX, mouseY, partialTick);
         layout();
-
-        Font font = this.font;
-
-        float in =
-                entrance.to(
-                        1f,
-                        Theme.EASE_SLOW
-                );
-
-        g.fill(
-                0,
-                0,
-                width,
-                height,
-                Draw.alpha(
-                        Theme.scrim(),
-                        0.70f * in
-                )
-        );
-
-        int px = panelX();
-        int py = panelY();
-        int pw = panelW();
-        int ph = panelH();
-
-        Draw.roundedOutline(
-                g,
-                px - 1,
-                py - 1,
-                pw + 2,
-                ph + 2,
-                Theme.RADIUS_LG + 1,
-                Theme.line(),
-                Theme.bg()
-        );
-
-        drawSidebar(
-                g,
-                font,
-                mouseX,
-                mouseY
-        );
-
-        drawContent(
-                g,
-                font,
-                mouseX,
-                mouseY
-        );
-
-        drawHeader(
-                g,
-                font,
-                mouseX,
-                mouseY
-        );
+        g.fill(0, 0, width, height, Draw.alpha(Theme.scrim(), .78f));
+        Draw.roundedOutline(g, panelX() - 1, panelY() - 1, panelW() + 2, panelH() + 2,
+                Theme.RADIUS_LG + 1, Theme.line(), Theme.bg());
+        drawSidebar(g, mouseX, mouseY);
+        drawContent(g, mouseX, mouseY);
+        drawHeader(g);
+        if (editor != null) editor.renderEmbeddedOverlay(g, mouseX, mouseY);
     }
 
-    private void drawSidebar(
-            GuiGraphicsExtractor g,
-            Font font,
-            int mouseX,
-            int mouseY
-    ) {
-        int px = panelX();
-        int py = panelY();
-
-        Draw.roundedRect(
-                g,
-                px,
-                py,
-                Theme.SIDEBAR_W,
-                panelH(),
-                Theme.RADIUS_LG,
-                Theme.surface(),
-                true,
-                false,
-                true,
-                false
-        );
-
-        Draw.rect(
-                g,
-                px + Theme.SIDEBAR_W - 1,
-                py + Theme.RADIUS_LG,
-                1,
-                panelH() - Theme.RADIUS_LG * 2,
-                Theme.line()
-        );
-
-        int by =
-                py + Theme.HEADER_H / 2 - 4;
-
-        Draw.roundedRect(
-                g,
-                px + 16,
-                by + 1,
-                5,
-                5,
-                2,
-                Theme.accent()
-        );
-
-        Draw.text(
-                g,
-                font,
-                brand,
-                px + 27,
-                by,
-                Theme.text()
-        );
-
-        Draw.rect(
-                g,
-                px,
-                py + Theme.HEADER_H - 1,
-                Theme.SIDEBAR_W,
-                1,
-                Theme.line()
-        );
-
-        Draw.text(
-                g,
-                font,
-                "MODULES",
-                px + 16,
-                py + Theme.HEADER_H + 8,
-                Theme.dim()
-        );
-
-        for (Nav n : navItems) {
-            boolean selected =
-                    (n.category == null && category == null)
-                            || (n.category != null
-                            && n.category.equals(category));
-
-            boolean hovered =
-                    contains(
-                            n.x,
-                            n.y,
-                            n.w,
-                            n.h,
-                            mouseX,
-                            mouseY
-                    );
-
-            float h =
-                    anim(
-                            hoverAnims,
-                            "nav:" + n.label,
-                            0f
-                    ).to(
-                            selected
-                                    ? 1f
-                                    : (hovered ? 0.55f : 0f),
-                            Theme.EASE_FAST
-                    );
-
-            if (h > 0.01f) {
-                Draw.roundedRect(
-                        g,
-                        n.x,
-                        n.y,
-                        n.w,
-                        n.h,
-                        Theme.RADIUS,
-                        Draw.alpha(
-                                Theme.accent(),
-                                0.16f * h
-                        )
-                );
+    private void drawSidebar(GuiGraphicsExtractor g, int mx, int my) {
+        int x = panelX(), y = panelY(), w = sidebarW();
+        Draw.roundedRect(g, x, y, w, panelH(), Theme.RADIUS_LG, Theme.surface(), true, false, true, false);
+        Draw.rect(g, x + w - 1, y + 8, 1, panelH() - 16, Theme.line());
+        Draw.roundedRect(g, x + 15, y + 18, 5, 5, 2, Theme.accent());
+        Draw.text(g, font, Draw.fit(font, brand, w - 42), x + 27, y + 16, Theme.text());
+        Draw.text(g, font, "MODULES", x + 15, contentTop() + 5, Theme.dim());
+        g.enableScissor(x + 1, navTop(), x + w - 1, navBottom());
+        try {
+            for (Nav item : nav) {
+                if (item.y() + 24 <= navTop() || item.y() >= navBottom()) continue;
+                boolean selected = java.util.Objects.equals(category, item.category());
+                boolean hot = contains(x + 8, item.y(), w - 16, 23, mx, my) && my >= navTop() && my < navBottom();
+                float a = anim("nav:" + item.title()).to(selected ? 1 : hot ? .55f : 0, Theme.EASE_FAST);
+                if (a > .01f) Draw.roundedRect(g, x + 8, item.y(), w - 16, 23, 5, Draw.alpha(Theme.accent(), .14f * a));
+                if (selected) Draw.rect(g, x + 8, item.y() + 6, 2, 11, Theme.accent());
+                Draw.text(g, font, Draw.fit(font, item.title(), w - 40), x + 20, item.y() + 7,
+                        selected ? Theme.accent() : Draw.lerp(Theme.muted(), Theme.text(), a));
             }
+        } finally { g.disableScissor(); }
+        if (maxNavScroll() > 0) {
+            if (navScroll > 0) Draw.text(g, font, "^", x + w - 14, navTop(), Theme.dim());
+            if (navScroll < maxNavScroll()) Draw.text(g, font, "v", x + w - 14, navBottom() - 10, Theme.dim());
+        }
+        int moveY = moveButtonY();
+        boolean moveHot = contains(x + 10, moveY, w - 20, 18, mx, my);
+        Draw.roundedRect(g, x + 10, moveY, w - 20, 18, 5, moveHot ? Theme.hover() : Theme.raised());
+        Draw.textCentered(g, font, "Move readouts", x + w / 2, moveY + 5, moveHot ? Theme.text() : Theme.muted());
+        // The shared palette row uses the desktop sidebar width. Clip its separator
+        // when a small window narrows this sidebar; the five swatches still fit.
+        g.enableScissor(x, y, x + w, y + panelH());
+        try { themeRow.draw(g, font, x, mx, my); }
+        finally { g.disableScissor(); }
+    }
 
-            if (selected) {
-                Draw.roundedRect(
-                        g,
-                        n.x,
-                        n.y + 7,
-                        2,
-                        n.h - 14,
-                        1,
-                        Theme.accent()
-                );
+    private void drawHeader(GuiGraphicsExtractor g) {
+        Draw.roundedRect(g, contentX(), panelY(), contentW(), HEADER, Theme.RADIUS_LG,
+                Theme.bg(), false, true, false, false);
+        String title = category == null ? "All modules" : category;
+        Draw.text(g, font, Draw.fit(font, title, Math.max(30, contentW() - 94)), contentX() + INSET, panelY() + 12, Theme.text());
+        Draw.textRight(g, font, resultCount + (resultCount == 1 ? " module" : " modules"),
+                panelX() + panelW() - INSET, panelY() + 12, Theme.dim());
+        Draw.roundedOutline(g, searchX(), searchY(), searchW(), 23, 5,
+                searchFocused || !query.isEmpty() ? Theme.accent() : Theme.line(), Theme.input());
+        String shown = query.isEmpty() ? "Search modules and settings..." : query;
+        Draw.text(g, font, Draw.fit(font, shown, searchW() - 32), searchX() + 8, searchY() + 7,
+                query.isEmpty() ? Theme.dim() : Theme.text());
+        if (!query.isEmpty()) Draw.text(g, font, "x", searchX() + searchW() - 14, searchY() + 7, Theme.muted());
+        Draw.rect(g, contentX(), contentTop() - 1, contentW(), 1, Theme.line());
+    }
+
+    private void drawContent(GuiGraphicsExtractor g, int mx, int my) {
+        g.enableScissor(contentX(), contentTop(), contentX() + contentW(), contentBottom());
+        try {
+            for (Heading heading : headings) {
+                if (heading.y() + 24 <= contentTop() || heading.y() >= contentBottom()) continue;
+                Draw.text(g, font, heading.title(), contentX() + INSET + 2, heading.y() + 8, Theme.muted());
+                Draw.textRight(g, font, Integer.toString(heading.count()), panelX() + panelW() - INSET - 7,
+                        heading.y() + 8, Theme.dim());
             }
-
-            int label =
-                    Draw.lerp(
-                            Theme.muted(),
-                            Theme.text(),
-                            h
-                    );
-
-            Draw.text(
-                    g,
-                    font,
-                    n.label,
-                    n.x + 14,
-                    n.y + (n.h - 8) / 2,
-                    selected
-                            ? Theme.accent()
-                            : label
-            );
-        }
-
-        themeRow.draw(
-                g,
-                font,
-                panelX(),
-                mouseX,
-                mouseY
-        );
-
-        // One Move button for every readout, here rather than a row on each module's
-        // page: placing is done with all of them on screen at once, so it belongs to
-        // the whole mod, not to whichever module you happened to open.
-        int[] m = moveButton();
-        boolean hot = contains(m[0], m[1], m[2], m[3], mouseX, mouseY);
-        Draw.roundedRect(g, m[0], m[1], m[2], m[3], Theme.RADIUS - 2, hot ? Theme.hover() : Theme.raised());
-        Draw.textCentered(g, font, "Move readouts", m[0] + m[2] / 2, m[1] + 5, hot ? Theme.text() : Theme.muted());
-    }
-
-    /** Just above the palette row, the width of the sidebar's inset. */
-    private int[] moveButton() {
-        int rows = (Theme.palettes().size() + 4) / 5;
-        int top = panelY() + panelH() - (rows * 25 - 7) - 26;
-        return new int[]{panelX() + 10, top - 26, Theme.SIDEBAR_W - 20, 18};
-    }
-
-    private void drawHeader(
-            GuiGraphicsExtractor g,
-            Font font,
-            int mouseX,
-            int mouseY
-    ) {
-        int px = panelX();
-        int py = panelY();
-
-        Draw.roundedRect(
-                g,
-                contentX(),
-                py,
-                contentW(),
-                Theme.HEADER_H,
-                Theme.RADIUS_LG,
-                Theme.bg(),
-                false,
-                true,
-                false,
-                false
-        );
-
-        Draw.rect(
-                g,
-                contentX(),
-                py + Theme.HEADER_H - 1,
-                contentW(),
-                1,
-                Theme.line()
-        );
-
-        String title =
-                category == null
-                        ? "All Modules"
-                        : category;
-
-        Draw.text(
-                g,
-                font,
-                title,
-                contentX() + Theme.PAD,
-                py + 20,
-                Theme.text()
-        );
-
-        int n =
-                registry.count(
-                        category,
-                        query
-                );
-
-        int titleW =
-                font.width(title);
-
-        Draw.text(
-                g,
-                font,
-                n + (n == 1
-                        ? " module"
-                        : " modules"),
-                contentX()
-                        + Theme.PAD
-                        + titleW
-                        + 10,
-                py + 20,
-                Theme.dim()
-        );
-
-        drawSearch(
-                g,
-                font,
-                mouseX,
-                mouseY
-        );
-    }
-
-    private void drawSearch(
-            GuiGraphicsExtractor g,
-            Font font,
-            int mouseX,
-            int mouseY
-    ) {
-        int w = 190;
-        int h = 22;
-
-        int x =
-                panelX()
-                        + panelW()
-                        - Theme.PAD
-                        - w;
-
-        int y =
-                panelY()
-                        + (Theme.HEADER_H - h) / 2;
-
-        boolean hovered =
-                contains(
-                        x,
-                        y,
-                        w,
-                        h,
-                        mouseX,
-                        mouseY
-                );
-
-        float f =
-                anim(
-                        hoverAnims,
-                        "search",
-                        0f
-                ).to(
-                        !query.isEmpty()
-                                ? 1f
-                                : (hovered ? 0.5f : 0f),
-                        Theme.EASE_FAST
-                );
-
-        Draw.roundedOutline(
-                g,
-                x,
-                y,
-                w,
-                h,
-                Theme.RADIUS,
-                Draw.lerp(
-                        Theme.line(),
-                        Theme.accent(),
-                        f * 0.8f
-                ),
-                Theme.input()
-        );
-
-        if (query.isEmpty()) {
-            Draw.text(
-                    g,
-                    font,
-                    "Search modules...",
-                    x + 10,
-                    y + 7,
-                    Theme.dim()
-            );
-        } else {
-            Draw.text(
-                    g,
-                    font,
-                    Draw.fit(
-                            font,
-                            query,
-                            w - 20
-                    ),
-                    x + 10,
-                    y + 7,
-                    Theme.text()
-            );
-        }
-    }
-
-    private void drawContent(
-            GuiGraphicsExtractor g,
-            Font font,
-            int mouseX,
-            int mouseY
-    ) {
-        int top = contentTop();
-        int bottom = contentBottom();
-
-        Draw.roundedRect(
-                g,
-                contentX(),
-                top,
-                contentW(),
-                bottom - top,
-                Theme.RADIUS_LG,
-                Theme.bg(),
-                false,
-                false,
-                false,
-                true
-        );
-
-        if (cards.isEmpty()) {
-            String msg =
-                    query.isBlank()
-                            ? "Nothing registered here yet."
-                            : "No modules match that search.";
-
-            Draw.textCentered(
-                    g,
-                    font,
-                    msg,
-                    contentX()
-                            + contentW() / 2,
-                    top + 60,
-                    Theme.dim()
-            );
-
-            return;
-        }
-
-        String lastCategory = null;
-
-        for (Placed p : cards) {
-            if (!p.module.category().equals(lastCategory)) {
-                lastCategory =
-                        p.module.category();
-
-                int hy =
-                        p.y - Theme.SECTION_H + 8;
-
-                if (hy >= top && hy + 8 < bottom) {
-                    String label =
-                            lastCategory;
-
-                    Draw.text(
-                            g,
-                            font,
-                            label,
-                            p.x,
-                            hy,
-                            Theme.muted()
-                    );
-
-                    int lineX =
-                            p.x
-                                    + font.width(label)
-                                    + 12;
-
-                    Draw.rect(
-                            g,
-                            lineX,
-                            hy + 3,
-                            contentX()
-                                    + contentW()
-                                    - Theme.PAD
-                                    - lineX,
-                            1,
-                            Theme.hair()
-                    );
+            for (Placed placed : rows) {
+                ModuleRowLayout.Rect row = placed.geometry().row();
+                if (row.y() + row.h() + placed.bodyH() <= contentTop() || row.y() >= contentBottom()) continue;
+                drawModule(g, placed, mx, my);
+                if (placed.bodyH() > 0 && editor != null) {
+                    Draw.roundedRect(g, row.x(), placed.bodyY(), row.w(), placed.bodyH() + 3, 5, Theme.surface());
+                    Draw.rect(g, row.x(), placed.bodyY(), 2, placed.bodyH(), Draw.alpha(Theme.accent(), .45f));
+                    editor.renderEmbedded(g, mx, my);
                 }
             }
-
-            if (p.y + p.h < top || p.y > bottom) {
-                continue;
+            if (resultCount == 0) {
+                Draw.textCentered(g, font, "No matching modules or settings", contentX() + contentW() / 2, contentTop() + 42, Theme.muted());
+                Draw.textCentered(g, font, "Clear the search or choose another category", contentX() + contentW() / 2, contentTop() + 57, Theme.dim());
             }
-
-            drawCard(
-                    g,
-                    font,
-                    p,
-                    mouseX,
-                    mouseY,
-                    top,
-                    bottom
-            );
-        }
-
-        Draw.roundedRect(
-                g,
-                contentX(),
-                bottom,
-                contentW(),
-                panelY()
-                        + panelH()
-                        - bottom,
-                Theme.RADIUS_LG,
-                Theme.bg(),
-                false,
-                false,
-                false,
-                true
-        );
-
+        } finally { g.disableScissor(); }
         drawScrollbar(g);
     }
 
-    /** The key chip sits at the card's bottom right, centred on the switch's row. */
-    private static int chipX(Placed p) {
-        return p.x + p.w - 16 - Keybinds.CHIP_W;
-    }
-
-    private static int chipY(Placed p) {
-        return p.y + p.h - 17 - Keybinds.CHIP_H / 2;
-    }
-
-    private static boolean overChip(Placed p, int mx, int my) {
-        return p.module.implemented()
-                && contains(chipX(p), chipY(p), Keybinds.CHIP_W, Keybinds.CHIP_H, mx, my);
-    }
-
-    private void drawCard(
-            GuiGraphicsExtractor g,
-            Font font,
-            Placed p,
-            int mouseX,
-            int mouseY,
-            int clipTop,
-            int clip
-    ) {
-        Module m = p.module();
-
-        boolean on =
-                m.isEnabled();
-
-        boolean overGear =
-                p.gearW > 0
-                        && contains(
-                        p.gearX - 5,
-                        p.y + 7,
-                        p.gearW + 10,
-                        p.gearW + 10,
-                        mouseX,
-                        mouseY
-                );
-
-        boolean hovered =
-                contains(
-                        p.x,
-                        p.y,
-                        p.w,
-                        p.h,
-                        mouseX,
-                        mouseY
-                ) && !overGear;
-
-        float h =
-                anim(
-                        hoverAnims,
-                        m.id(),
-                        0f
-                ).to(
-                        hovered ? 1f : 0f,
-                        Theme.EASE_FAST
-                );
-
-        float t =
-                anim(
-                        toggleAnims,
-                        m.id(),
-                        on ? 1f : 0f
-                ).to(
-                        on ? 1f : 0f,
-                        Theme.EASE_FAST
-                );
-
-        int cardTop =
-                Math.max(
-                        p.y,
-                        clipTop
-                );
-
-        int cardBottom =
-                Math.min(
-                        p.y + p.h,
-                        clip
-                );
-
-        int visible =
-                cardBottom - cardTop;
-
-        if (visible <= 0) {
-            return;
+    private void drawModule(GuiGraphicsExtractor g, Placed placed, int mx, int my) {
+        Module module = placed.module();
+        ModuleRowLayout geometry = placed.geometry();
+        ModuleRowLayout.Rect row = geometry.row(), label = geometry.label();
+        boolean open = module == editingModule && editor != null;
+        boolean hot = row.contains(mx, my) && my >= contentTop() && my < contentBottom();
+        float a = anim("row:" + module.id()).to(hot ? 1 : 0, Theme.EASE_FAST);
+        Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5,
+                open ? Theme.surface() : Draw.lerp(Theme.bg(), Theme.hover(), a));
+        Draw.text(g, font, Draw.fit(font, module.title(), label.w()), label.x(), label.y(),
+                module.implemented() ? Theme.text() : Theme.dim());
+        String description = matchSummaries.getOrDefault(module.id(), module.description());
+        Draw.text(g, font, Draw.fit(font, description, label.w()), label.x(), label.y() + 13,
+                matchSummaries.containsKey(module.id()) ? Theme.accent() : Theme.dim());
+        if (!open) Draw.rect(g, row.x() + 8, row.y() + row.h() - 1, row.w() - 16, 1, Theme.hair());
+        if (module.implemented()) {
+            ModuleRowLayout.Rect key = geometry.key(), toggle = geometry.toggle();
+            boolean keyHot = key.contains(mx, my) && my >= contentTop() && my < contentBottom();
+            boolean listening = Keybinds.moduleId(module).equals(binding);
+            Keybinds.chip(g, font, Keybinds.moduleId(module), key.x(), key.y(), keyHot || listening ? 1 : 0, listening);
+            float on = anim("toggle:" + module.id()).to(module.isEnabled() ? 1 : 0, Theme.EASE_FAST);
+            int tx = toggle.x() + 5, ty = toggle.y() + 5;
+            Draw.roundedRect(g, tx, ty, 20, 10, 5, Draw.lerp(Theme.line(), Theme.pos(), on));
+            Draw.roundedRect(g, tx + 1 + Math.round(10 * on), ty + 1, 8, 8, 4, Theme.text());
         }
-
-        boolean topWhole =
-                cardTop == p.y;
-
-        boolean botWhole =
-                cardBottom == p.y + p.h;
-
-        int body =
-                Draw.lerp(
-                        Theme.surface(),
-                        Theme.hover(),
-                        h
-                );
-
-        int border =
-                Draw.lerp(
-                        Theme.line(),
-                        Draw.alpha(
-                                Theme.accent(),
-                                0.55f
-                        ),
-                        t * 0.8f
-                );
-
-        Draw.roundedRect(
-                g,
-                p.x,
-                cardTop,
-                p.w,
-                visible,
-                Theme.RADIUS,
-                border,
-                topWhole,
-                topWhole,
-                botWhole,
-                botWhole
-        );
-
-        Draw.roundedRect(
-                g,
-                p.x + 1,
-                cardTop + (topWhole ? 1 : 0),
-                p.w - 2,
-                visible
-                        - (topWhole ? 1 : 0)
-                        - (botWhole ? 1 : 0),
-                Theme.RADIUS - 1,
-                body,
-                topWhole,
-                topWhole,
-                botWhole,
-                botWhole
-        );
-
-        if (p.y + 15 >= clipTop
-                && p.y + 23 < clip) {
-
-            Draw.text(
-                    g,
-                    font,
-                    Draw.fit(
-                            font,
-                            m.title(),
-                            p.w - 40 - p.gearW
-                    ),
-                    p.x + 16,
-                    p.y + 15,
-                    Draw.lerp(
-                            Theme.muted(),
-                            Theme.text(),
-                            Math.max(h, t)
-                    )
-            );
-        }
-
-        int dy =
-                p.y + 31;
-
-        for (String line :
-                Draw.wrap(
-                        font,
-                        m.description(),
-                        p.w - 32,
-                        2
-                )) {
-
-            if (dy + 8 >= clip) {
-                break;
-            }
-
-            if (dy >= clipTop) {
-                Draw.text(
-                        g,
-                        font,
-                        line,
-                        p.x + 16,
-                        dy,
-                        Theme.dim()
-                );
-            }
-
-            dy += 11;
-        }
-
-        if (p.y + p.h - 22 >= clipTop
-                && p.y + p.h - 12 < clip) {
-
-            /*
-             * A module with nothing behind it gets a label instead of a switch.
-             *
-             * Drawing a toggle that does nothing is the worse option: it invites a
-             * click, accepts it, and leaves you wondering which of the two of you is
-             * broken. Saying so costs one line of text.
-             */
-            if (!m.implemented()) {
-                Draw.text(
-                        g,
-                        font,
-                        "Not implemented",
-                        p.x + 16,
-                        p.y + p.h - 22,
-                        Theme.dim()
-                );
-            } else {
-                drawToggle(
-                        g,
-                        p.x + 16,
-                        p.y + p.h - 22,
-                        t
-                );
-
-                /*
-                 * The module's key, on the switch's row at the other end of the card.
-                 *
-                 * Here and not only on the settings page, because a module with no
-                 * settings has no gear, so no settings page, so - until this - no way
-                 * to give it a key. Several modules are exactly that shape.
-                 */
-                float bh =
-                        anim(
-                                hoverAnims,
-                                m.id() + ":bind",
-                                0f
-                        ).to(
-                                overChip(p, mouseX, mouseY) || Keybinds.moduleId(m).equals(binding)
-                                        ? 1f : 0f,
-                                Theme.EASE_FAST
-                        );
-
-                Keybinds.chip(
-                        g,
-                        font,
-                        Keybinds.moduleId(m),
-                        chipX(p),
-                        chipY(p),
-                        bh,
-                        Keybinds.moduleId(m).equals(binding)
-                );
-            }
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * SETTINGS GEAR
-         * ---------------------------------------------------------
-         *
-         * No background box.
-         * No colour inside the gear.
-         * No second colour passed into the icon.
-         *
-         * Hover only changes muted -> text.
-         */
-        if (p.gearW > 0
-                && p.y + 12 >= clipTop
-                && p.y + 12 + p.gearW < clip) {
-
-            float gh =
-                    anim(
-                            hoverAnims,
-                            m.id() + ":gear",
-                            0f
-                    ).to(
-                            overGear ? 1f : 0f,
-                            Theme.EASE_FAST
-                    );
-
-            Draw.gearIcon(
-                    g,
-                    font,
-                    p.gearX + p.gearW / 2,
-                    p.y + 12 + p.gearW / 2,
-                    Draw.lerp(
-                            Theme.muted(),
-                            Theme.text(),
-                            gh
-                    )
-            );
-            if (overGear) g.setTooltipForNextFrame(font, Component.literal("Settings"), mouseX, mouseY);
+        if (module.hasSettings()) {
+            ModuleRowLayout.Rect expand = geometry.expand();
+            if (expand.contains(mx, my)) Draw.roundedRect(g, expand.x(), expand.y(), expand.w(), expand.h(), 4, Theme.hover());
+            Draw.textCentered(g, font, open ? "v" : ">", expand.x() + expand.w() / 2, expand.y() + 6,
+                    open ? Theme.accent() : Theme.muted());
         }
     }
 
-    /** Track plus a knob that slides. */
-    private void drawToggle(
-            GuiGraphicsExtractor g,
-            int x,
-            int y,
-            float t
-    ) {
-        int w = 20;
-        int h = 10;
-
-        Draw.roundedRect(
-                g,
-                x,
-                y,
-                w,
-                h,
-                h / 2,
-                Draw.lerp(
-                        Theme.line(),
-                        Theme.pos(),
-                        t
-                )
-        );
-
-        int knobX =
-                x + 1
-                        + (int) (
-                        (w - h) * t
-                );
-
-        Draw.roundedRect(
-                g,
-                knobX,
-                y + 1,
-                h - 2,
-                h - 2,
-                (h - 2) / 2,
-                Draw.lerp(
-                        Theme.dim(),
-                        Theme.text(),
-                        t
-                )
-        );
-    }
-
-    private void drawScrollbar(
-            GuiGraphicsExtractor g
-    ) {
+    private void drawScrollbar(GuiGraphicsExtractor g) {
         int max = maxScroll();
-
-        if (max <= 0) {
-            return;
-        }
-
-        int trackTop =
-                contentTop() + 4;
-
-        int trackH =
-                contentBottom()
-                        - contentTop()
-                        - 8;
-
-        int x =
-                panelX()
-                        + panelW()
-                        - 5;
-
-        int thumbH =
-                Math.max(
-                        24,
-                        (int) (
-                                trackH
-                                        * (float) trackH
-                                        / (trackH + max)
-                        )
-                );
-
-        int thumbY =
-                trackTop
-                        + (int) (
-                        (trackH - thumbH)
-                                * (scroll / (float) max)
-                );
-
-        Draw.roundedRect(
-                g,
-                x,
-                trackTop,
-                3,
-                trackH,
-                1,
-                Theme.hair()
-        );
-
-        Draw.roundedRect(
-                g,
-                x,
-                thumbY,
-                3,
-                thumbH,
-                1,
-                Theme.line()
-        );
+        if (max <= 0) return;
+        int track = Math.max(1, contentBottom() - contentTop() - 8);
+        int thumb = Math.min(track, Math.max(20, track * track / (track + max)));
+        int y = contentTop() + 4 + Math.round((track - thumb) * (scroll / (float) max));
+        Draw.roundedRect(g, panelX() + panelW() - 5, contentTop() + 4, 3, track, 1, Theme.hair());
+        Draw.roundedRect(g, panelX() + panelW() - 5, y, 3, thumb, 1, Theme.line());
     }
 
-    // -- input ----------------------------------------------------------------
-
-    @Override
-    public boolean mouseClicked(
-            MouseButtonEvent event,
-            boolean doubleClick
-    ) {
-        // A chip waiting for a key takes a mouse button too - anything but left and
-        // right, which are clicking and clearing. Side buttons are the usual ask.
-        if (binding != null && event.button() >= 2) {
-            Keybinds.set(binding, Keybinds.mouse(event.button()));
-            binding = null;
-            return true;
-        }
-        int mx = (int) event.x();
-        int my = (int) event.y();
-
+    private void expand(Module module) {
+        int anchor = contentTop() + 8;
+        for (Placed placed : rows) if (placed.module() == module) anchor = placed.geometry().row().y();
+        binding = null;
+        expandedId = module.id().equals(expandedId) ? null : module.id();
+        ensureEditor(visibleModule(expandedId));
         layout();
-
-        if (themeRow.click(mx, my)) {
-            return true;
+        for (Placed placed : rows) if (placed.module() == module) {
+            scroll += placed.geometry().row().y() - anchor;
+            break;
         }
-        int[] m = moveButton();
-        if (contains(m[0], m[1], m[2], m[3], mx, my)) {
-            com.endsight.hud.HudPlacementScreen.open();
-            return true;
+        layout();
+        if (editor != null) for (Placed placed : rows) if (placed.module() == editingModule) {
+            int need = placed.bodyY() + Math.min(75, placed.bodyH()) - contentBottom();
+            if (need > 0) { scroll += need; layout(); }
+            break;
         }
+    }
 
-        for (Nav n : navItems) {
-            if (contains(
-                    n.x,
-                    n.y,
-                    n.w,
-                    n.h,
-                    mx,
-                    my
-            )) {
-                category = n.category;
-                scroll = 0;
-                return true;
-            }
+    private void search(String value) {
+        query = value; scroll = 0; searchFocused = true;
+        if (editor != null) editor.cancelInteractions();
+        results();
+        if (resultCount == 1) {
+            Module only = groups.values().iterator().next().getFirst();
+            if (only.hasSettings() && !SettingsSearch.matchingLabels(only, query).isEmpty()) expandedId = only.id();
         }
-
-        for (Placed p : cards) {
-            if (p.y + p.h < contentTop()
-                    || p.y > contentBottom()) {
-                continue;
-            }
-
-            if (p.gearW > 0
-                    && contains(
-                    p.gearX - 5,
-                    p.y + 7,
-                    p.gearW + 10,
-                    p.gearW + 10,
-                    mx,
-                    my
-            )) {
-                minecraft.setScreen(
-                        new SettingsScreen(
-                                this,
-                                brand,
-                                p.module
-                        )
-                );
-
-                return true;
-            }
-
-            if (overChip(p, mx, my)) {
-                // Left arms the chip for the next key; right clears it. Same as the
-                // settings page, so a chip means one thing wherever it is.
-                String id = Keybinds.moduleId(p.module);
-                if (event.button() == 1) {
-                    Keybinds.clear(id);
-                    binding = null;
-                } else {
-                    binding = id.equals(binding) ? null : id;
-                }
-                return true;
-            }
-
-            if (contains(
-                    p.x,
-                    p.y,
-                    p.w,
-                    p.h,
-                    mx,
-                    my
-            )) {
-                // Swallowed rather than passed on: the card is still a card, it just has
-                // nothing to switch.
-                if (p.module.implemented()) {
-                    p.module.toggle();
-                }
-                return true;
-            }
-        }
-
-        return super.mouseClicked(
-                event,
-                doubleClick
-        );
+        layout();
     }
 
     @Override
-    public boolean charTyped(
-            CharacterEvent event
-    ) {
-        // A key being bound must not also land in the search box.
-        if (binding != null) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (binding != null && event.button() >= 2) {
+            Keybinds.set(binding, Keybinds.mouse(event.button())); binding = null; return true;
+        }
+        layout();
+        int mx = (int) event.x(), my = (int) event.y();
+        if (editor != null && editor.mouseClicked(event, doubleClick)) {
+            binding = null;
+            registry.invalidateSearch();
             return true;
         }
-
-        if (event.isAllowedChatCharacter()) {
-            query +=
-                    event.codepointAsString();
-
-            scroll = 0;
-
+        if (contains(searchX(), searchY(), searchW(), 23, mx, my)) {
+            binding = null; searchFocused = true;
+            if (mx >= searchX() + searchW() - 22) search("");
             return true;
         }
+        searchFocused = false;
+        if (themeRow.click(mx, my)) return true;
+        if (contains(panelX() + 10, moveButtonY(), sidebarW() - 20, 18, mx, my)) {
+            com.endsight.hud.HudPlacementScreen.open(); return true;
+        }
+        if (contains(panelX(), navTop(), sidebarW(), navBottom() - navTop(), mx, my)) for (Nav item : nav) {
+            if (!contains(panelX() + 8, item.y(), sidebarW() - 16, 23, mx, my)) continue;
+            category = item.category(); scroll = 0; binding = null;
+            if (editor != null) editor.cancelInteractions();
+            layout(); return true;
+        }
+        if (!contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my))
+            return super.mouseClicked(event, doubleClick);
+        for (Placed placed : rows) {
+            ModuleRowLayout.Target target = placed.geometry().target(mx, my);
+            if (target == ModuleRowLayout.Target.NONE) continue;
+            Module module = placed.module();
+            if (editor != null) editor.cancelInteractions();
+            switch (target) {
+                case KEY -> {
+                    String id = Keybinds.moduleId(module);
+                    if (event.button() == 1) { Keybinds.clear(id); binding = null; }
+                    else binding = id.equals(binding) ? null : id;
+                }
+                case TOGGLE -> { binding = null; module.toggle(); }
+                case EXPAND, ROW -> { if (module.hasSettings()) expand(module); }
+                default -> { }
+            }
+            return true;
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
 
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        if (binding != null) return true;
+        if (editor != null && editor.capturesKeyboard() && editor.charTyped(event)) return true;
+        if (event.isAllowedChatCharacter() && query.length() < 120) { search(query + event.codepointAsString()); return true; }
         return super.charTyped(event);
     }
 
     @Override
-    public boolean keyPressed(
-            KeyEvent event
-    ) {
+    public boolean keyPressed(KeyEvent event) {
         if (binding != null) {
-            // Escape clears the binding; anything else binds, modifiers included. It used
-            // to merely cancel, which left no way to unbind at all - so a key set by
-            // accident, the Windows key in one case, was permanent.
-            if (event.key() == 256) {
-                Keybinds.clear(binding);
-            } else {
-                Keybinds.set(binding, event.key());
-            }
-            binding = null;
+            if (event.key() == 256) Keybinds.clear(binding); else Keybinds.set(binding, event.key());
+            binding = null; return true;
+        }
+        if (editor != null && editor.keyPressed(event)) { registry.invalidateSearch(); return true; }
+        if (event.key() == 259 && !query.isEmpty()) {
+            search(query.substring(0, query.offsetByCodePoints(query.length(), -1))); return true;
+        }
+        if (event.key() == 256) {
+            if (!query.isEmpty()) { search(""); return true; }
+            if (editor != null) { expandedId = null; ensureEditor(null); layout(); return true; }
+        }
+        if (event.key() == 258) { searchFocused = true; return true; }
+        if ((event.key() == 257 || event.key() == 335) && resultCount > 0 && !query.isEmpty()) {
+            Module first = groups.values().iterator().next().getFirst();
+            if (first.hasSettings()) expand(first);
             return true;
         }
-
-        if (event.key() == 259
-                && !query.isEmpty()) {
-
-            query =
-                    query.substring(
-                            0,
-                            query.length() - 1
-                    );
-
-            scroll = 0;
-
-            return true;
-        }
-
-        if (event.key() == 256
-                && !query.isEmpty()) {
-
-            query = "";
-            scroll = 0;
-
-            return true;
-        }
-
         return super.keyPressed(event);
     }
 
     @Override
-    public boolean mouseScrolled(
-            double mouseX,
-            double mouseY,
-            double scrollX,
-            double scrollY
-    ) {
-        scrollBy(
-                (int) (-scrollY * 26)
-        );
-
-        return true;
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        return editor != null && editor.mouseDragged(event, dx, dy) || super.mouseDragged(event, dx, dy);
     }
 
     @Override
-    public boolean isPauseScreen() {
-        return false;
+    public boolean mouseReleased(MouseButtonEvent event) {
+        return editor != null && editor.mouseReleased(event) || super.mouseReleased(event);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        layout();
+        if (contains(panelX(), navTop(), sidebarW(), navBottom() - navTop(), (int) mouseX, (int) mouseY)) {
+            navScroll = Math.max(0, Math.min(navScroll + (int) (-scrollY * NAV_PITCH), maxNavScroll()));
+        } else scrollBy((int) (-scrollY * 28));
+        return true;
     }
 
     public void scrollBy(int amount) {
-        scroll =
-                Math.max(
-                        0,
-                        Math.min(
-                                scroll + amount,
-                                maxScroll()
-                        )
-                );
+        scroll = Math.max(0, Math.min(scroll + amount, maxScroll()));
     }
 
-    private static boolean contains(
-            int x,
-            int y,
-            int w,
-            int h,
-            int px,
-            int py
-    ) {
-        return px >= x
-                && px < x + w
-                && py >= y
-                && py < y + h;
+    @Override
+    public boolean isPauseScreen() { return false; }
+
+    private static boolean contains(int x, int y, int w, int h, int px, int py) {
+        return px >= x && px < x + w && py >= y && py < y + h;
     }
 }

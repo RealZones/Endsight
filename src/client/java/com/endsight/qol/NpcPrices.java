@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,15 +53,37 @@ public final class NpcPrices {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, Long> BUILTIN = Map.of(
             "zombie talisman", 200_000L,
-            "revenant viscera", 500_000L);
+            "revenant viscera", 500_000L,
+            "enderman", 50_000_000L,
+            "spicy wart", 15_000_000L);
     private static final Map<String, String> BUILTIN_NAMES = Map.of(
             "zombie talisman", "Zombie Talisman",
-            "revenant viscera", "Revenant Viscera");
+            "revenant viscera", "Revenant Viscera",
+            "enderman", "Enderman",
+            "spicy wart", "Spicy Wart");
+    // Farming defaults are editable valuations, not claimed NPC sale evidence.
+    private static final Map<String, Long> FARMING_DEFAULTS = Map.of(
+            "golden eye", 50_000_000L, "rift pass", 50_000_000L);
+    public static final List<String> ZEALOT_ITEMS = List.of("Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst");
+    // The compact HUD keeps its four familiar rows; these extra drops still count
+    // toward profit and remain available in the price editor and breakdown.
+    public static final List<String> ZEALOT_PROFIT_ITEMS = List.of(
+            "Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst", "Enderman", "Spicy Wart");
+    private static final Set<String> FARMING_KEYS = ZEALOT_PROFIT_ITEMS.stream()
+            .map(name -> name.toLowerCase(Locale.ROOT)).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private record Normalized(String name, String key, boolean ambiguousPet) { }
+    // Drop names repeat for every HUD row. Cache only text normalization, never prices:
+    // sale evidence and custom values must take effect immediately.
+    private static final Map<String, Normalized> normalizedNames = new LinkedHashMap<>(256, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Normalized> eldest) { return size() > 2048; }
+    };
     private static final Map<String, Long> custom = new LinkedHashMap<>();
     private static final Map<String, String> customNames = new LinkedHashMap<>();
     private static final Map<String, Evidence> sales = new LinkedHashMap<>();
     private static boolean learning = true, salesDirty;
     private static long lastFlush;
+    private static long revision;
 
     private NpcPrices() {}
 
@@ -78,7 +101,12 @@ public final class NpcPrices {
     }
 
     public static boolean learning() { return learning; }
-    public static void learning(boolean value) { learning = value; }
+    public static void learning(boolean value) {
+        if (learning != value) { learning = value; revision++; }
+    }
+
+    /** Invalidates HUD row snapshots after a price source or value changes. */
+    public static long revision() { return revision; }
 
     public static Path customFile() {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight").resolve("drop-prices.json");
@@ -89,7 +117,30 @@ public final class NpcPrices {
     }
 
     private static String key(String item) {
-        return Zealots.strip(item).trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        // Curly apostrophes in a shared price file and the server's plain chat
+        // apostrophes identify the same item, rather than two conflicting prices.
+        return normalized(item).key();
+    }
+
+    private static String canonicalName(String item) {
+        return normalized(item).name();
+    }
+
+    private static Normalized normalized(String item) {
+        Normalized cached = normalizedNames.get(item);
+        if (cached != null) return cached;
+        String name = WHITESPACE.matcher(Zealots.strip(item).trim()).replaceAll(" ");
+        Matcher level = PET.matcher(name);
+        // Enderman has an explicit NPC value independent of the printed level.
+        // Other pets stay ambiguous rather than inheriting a species-wide price.
+        boolean pet = level.find();
+        boolean enderman = pet && name.substring(level.end()).equalsIgnoreCase("Enderman");
+        if (enderman) name = "Enderman";
+        String key = name.replace('\u2019', '\'').toLowerCase(Locale.ROOT);
+        if (key.equals("seraph plating")) key = "seraph's plating";
+        Normalized result = new Normalized(name, key, pet && !enderman);
+        if (item.length() <= 256) normalizedNames.put(item, result);
+        return result;
     }
 
     private static boolean validName(String item) {
@@ -100,10 +151,17 @@ public final class NpcPrices {
         return PET.matcher(Zealots.strip(item).trim()).find();
     }
 
-    public static boolean ambiguousPet(String item) { return pet(item); }
+    public static boolean ambiguousPet(String item) {
+        return item != null && normalized(item).ambiguousPet();
+    }
+
+    private static boolean priceable(String item) {
+        return item != null && (FARMING_KEYS.contains(key(item))
+                || BossDrops.isSlayerDropName(item));
+    }
 
     public static Price priceInfo(String item) {
-        if (item == null || pet(item) || !BossDrops.isSlayerDropName(item)) return null;
+        if (item == null || ambiguousPet(item) || !priceable(item)) return null;
         String k = key(item);
         Long own = custom.get(k);
         if (own != null) return new Price(own, "Custom", 0);
@@ -111,7 +169,9 @@ public final class NpcPrices {
         if (learning && learned != null && learned.confirmed > 0)
             return new Price(learned.confirmed, "Learned sale", learned.matches);
         Long builtIn = BUILTIN.get(k);
-        return builtIn == null ? null : new Price(builtIn, "Built-in NPC", 0);
+        if (builtIn != null) return new Price(builtIn, "Built-in NPC", 0);
+        Long farming = FARMING_DEFAULTS.get(k);
+        return farming == null ? null : new Price(farming, "Default", 0);
     }
 
     public static long price(String item) {
@@ -128,7 +188,7 @@ public final class NpcPrices {
     public static Long customPrice(String item) { return item == null ? null : custom.get(key(item)); }
 
     public static Price observedPrice(String item) {
-        if (item == null || pet(item) || !BossDrops.isSlayerDropName(item)) return null;
+        if (item == null || ambiguousPet(item) || !priceable(item)) return null;
         Evidence found = sales.get(key(item));
         if (found != null && found.confirmed > 0) return new Price(found.confirmed, "Learned sale", found.matches);
         Long builtIn = BUILTIN.get(key(item));
@@ -137,18 +197,19 @@ public final class NpcPrices {
 
     public static List<String> knownNames() {
         Map<String, String> names = new LinkedHashMap<>(BUILTIN_NAMES);
-        sales.forEach((k, v) -> { if (BossDrops.isSlayerDropName(v.name)) names.put(k, v.name); });
-        customNames.forEach((k, v) -> { if (BossDrops.isSlayerDropName(v)) names.put(k, v); });
+        ZEALOT_PROFIT_ITEMS.forEach(name -> names.put(key(name), name));
+        sales.forEach((k, v) -> { if (priceable(v.name)) names.put(k, v.name); });
+        customNames.forEach((k, v) -> { if (priceable(v)) names.put(k, v); });
         return names.values().stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
     }
 
     /** A custom value is per one item, never per stack. */
     public static boolean setCustom(String item, long coins) {
-        if (!validName(item) || pet(item) || !BossDrops.isSlayerDropName(item) || coins < 1 || coins > MAX_PRICE) return false;
+        if (!validName(item) || ambiguousPet(item) || !priceable(item) || coins < 1 || coins > MAX_PRICE) return false;
         String k = key(item);
         Long oldPrice = custom.put(k, coins);
-        String oldName = customNames.put(k, Zealots.strip(item).trim());
-        if (saveCustom()) return true;
+        String oldName = customNames.put(k, canonicalName(item));
+        if (saveCustom()) { revision++; return true; }
         if (oldPrice == null) custom.remove(k); else custom.put(k, oldPrice);
         if (oldName == null) customNames.remove(k); else customNames.put(k, oldName);
         return false;
@@ -159,7 +220,7 @@ public final class NpcPrices {
         String k = key(item);
         Long oldPrice = custom.remove(k);
         String oldName = customNames.remove(k);
-        if (saveCustom()) return true;
+        if (saveCustom()) { revision++; return true; }
         if (oldPrice != null) custom.put(k, oldPrice);
         if (oldName != null) customNames.put(k, oldName);
         return false;
@@ -186,7 +247,8 @@ public final class NpcPrices {
         Matcher m = SOLD.matcher(Zealots.strip(raw).trim());
         if (!m.matches()) return null;
         String item = m.group(2).trim();
-        if (!validName(item) || pet(item) || !BossDrops.isSlayerDropName(item)) return null;
+        if (!validName(item) || ambiguousPet(item) || !priceable(item)) return null;
+        item = canonicalName(item);
         try {
             int count = Integer.parseInt(m.group(1).replace(",", ""));
             long total = Long.parseLong(m.group(3).replace(",", ""));
@@ -207,6 +269,7 @@ public final class NpcPrices {
         boolean changed = e.confirmed != sale.unitPrice();
         e.confirmed = sale.unitPrice();
         salesDirty = true;
+        revision++;
         return changed;
     }
 
@@ -215,6 +278,7 @@ public final class NpcPrices {
         if (!Files.exists(path)) {
             custom.clear();
             customNames.clear();
+            revision++;
             return true;
         }
         try {
@@ -230,15 +294,16 @@ public final class NpcPrices {
                 long coins = entry.get("coins").getAsLong();
                 // A shared override can arrive before this client has seen the Slayer drop.
                 // It stays dormant until that name is actually recorded as Slayer loot.
-                if (!validName(name) || pet(name) || coins < 1 || coins > MAX_PRICE) return false;
+                if (!validName(name) || ambiguousPet(name) || coins < 1 || coins > MAX_PRICE) return false;
                 String k = key(name);
                 if (prices.putIfAbsent(k, coins) != null) return false;
-                names.put(k, name.trim());
+                names.put(k, canonicalName(name));
             }
             custom.clear();
             custom.putAll(prices);
             customNames.clear();
             customNames.putAll(names);
+            revision++;
             return true;
         } catch (IOException | RuntimeException e) {
             System.err.println("[Endsight] could not read drop-prices.json: " + e);
@@ -266,6 +331,7 @@ public final class NpcPrices {
 
     private static void loadSales() {
         sales.clear();
+        revision++;
         if (!Files.exists(salesFile())) return;
         try {
             JsonObject root = JsonParser.parseString(Files.readString(salesFile(), StandardCharsets.UTF_8)).getAsJsonObject();
@@ -280,7 +346,7 @@ public final class NpcPrices {
                 long candidate = entry.get("candidate").getAsLong();
                 int matches = entry.get("matches").getAsInt();
                 long confirmed = entry.get("confirmed").getAsLong();
-                if (!validName(name) || pet(name) || !BossDrops.isSlayerDropName(name)
+                if (!validName(name) || ambiguousPet(name) || !priceable(name)
                         || candidate < 1 || candidate > MAX_PRICE
                         || matches < 1 || matches > 2 || confirmed < 0 || confirmed > MAX_PRICE) return;
                 // Older files held the first sale, including a changed price, as a candidate.
@@ -288,7 +354,7 @@ public final class NpcPrices {
                     confirmed = candidate;
                     promoted = true;
                 }
-                if (parsed.putIfAbsent(key(name), new Evidence(name, candidate, matches, confirmed)) != null) return;
+                if (parsed.putIfAbsent(key(name), new Evidence(canonicalName(name), candidate, matches, confirmed)) != null) return;
             }
             sales.putAll(parsed);
             if (promoted) salesDirty = true;

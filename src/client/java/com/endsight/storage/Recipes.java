@@ -126,6 +126,7 @@ public final class Recipes {
     /** Height of the "Counting:" chip row under a recipe's title. */
     private static final int SCOPE_H = 18;
     private static final Map<String, Recipe> RECIPES = new LinkedHashMap<>();
+    private static long recipeRevision;
     /** Category name -> the recipe names the server lists under it, in its order. */
     private static final Map<String, LinkedHashSet<String>> CATEGORY = new LinkedHashMap<>();
     /**
@@ -276,12 +277,14 @@ public final class Recipes {
             for (ItemStack s : slots) if (!s.isEmpty()) any = true;
             // Blank for a frame or two after opening; a real empty chest stays whatever
             // it was, which costs nothing.
-            if (any) {
+            String key = chestKey(title);
+            if (any && !StoragePreview.sameItems(slots, CHESTS.get(key))) {
                 List<ItemStack> copy = new ArrayList<>();
                 for (ItemStack s : slots) copy.add(s.copy());
-                CHESTS.put(chestKey(title), copy);
+                CHESTS.put(key, copy);
                 iconsDirty = true;
                 mpDirty = true;
+                holdingsAt = 0;
             }
         }
     }
@@ -303,8 +306,27 @@ public final class Recipes {
         }
         remember(result);
         Recipe r = new Recipe(name, result.getCount(), grid);
-        Recipe old = RECIPES.put(name, r);
-        if (old == null || !Arrays.equals(old.grid(), r.grid())) save();
+        Recipe old = RECIPES.get(name);
+        // The same page is read each tick. Replacing an unchanged record also kept
+        // its old identity alive in NEEDS, growing that cache for as long as it stayed open.
+        if (old == null || old.count() != r.count() || !Arrays.equals(old.grid(), r.grid())) {
+            RECIPES.put(name, r);
+            recipesChanged();
+            save();
+        }
+    }
+
+    private static void recipesChanged() {
+        recipeRevision++;
+        Recipe.NEEDS.clear();
+        usesCache.clear();
+        fullCostCache.clear();
+        baseCache.clear();
+        storedHoldings.clear();
+        chestHoldings.clear();
+        holdingsAt = 0;
+        tipFor = null;
+        mpDirty = true;
     }
 
     private static void remember(ItemStack s) {
@@ -540,6 +562,7 @@ public final class Recipes {
         categoryAt = -1;
         category = null;
         CATEGORY.clear();
+        recipesChanged();
         skipped.clear();
         busyUntil = System.currentTimeMillis() + 60_000;     // a minute to open the menu
         Toast.changed("Recipes", "Open the recipe menu");
@@ -587,13 +610,15 @@ public final class Recipes {
 
         // Everything on this page belongs to the category, known grid or not.
         if (category != null) {
+            boolean changed = !CATEGORY.containsKey(category);
             LinkedHashSet<String> in = CATEGORY.computeIfAbsent(category, k -> new LinkedHashSet<>());
             for (int row = 1; row <= 4; row++) {
                 for (int col = 1; col <= 8; col++) {
                     ItemStack s = slots.get(row * 9 + col);
-                    if (!s.isEmpty()) in.add(name(s));
+                    if (!s.isEmpty() && in.add(name(s))) changed = true;
                 }
             }
+            if (changed) recipesChanged();
         }
         for (int row = 1; row <= 4; row++) {
             for (int col = 1; col <= 8; col++) {
@@ -752,9 +777,13 @@ public final class Recipes {
             }
             Recipe r = new Recipe(p[0], Integer.parseInt(p[1]), grid);
             if (missingOnly && RECIPES.containsKey(r.name())) continue;
-            Recipe old = RECIPES.put(r.name(), r);
-            if (old == null || !Arrays.equals(old.grid(), r.grid()) || old.count() != r.count()) changed = true;
+            Recipe old = RECIPES.get(r.name());
+            if (old == null || !Arrays.equals(old.grid(), r.grid()) || old.count() != r.count()) {
+                RECIPES.put(r.name(), r);
+                changed = true;
+            }
         }
+        if (changed) recipesChanged();
         return changed;
     }
 
@@ -763,6 +792,9 @@ public final class Recipes {
     private static Map<String, Integer> holdingsCache;
     private static long holdingsAt;
     private static String holdingsScope;
+    private record StoredHoldings(List<ItemStack> items, Map<String, Integer> counts) { }
+    private static final Map<Integer, StoredHoldings> storedHoldings = new HashMap<>();
+    private static final Map<String, StoredHoldings> chestHoldings = new HashMap<>();
 
     /**
      * Everything you hold, by name: your inventory, every storage page ever snapshotted,
@@ -778,7 +810,11 @@ public final class Recipes {
         if (holdingsCache != null && now - holdingsAt < 100 && scope.equals(holdingsScope)) return holdingsCache;
         holdingsAt = now;
         holdingsScope = scope;
-        return holdingsCache = countHoldings();
+        Map<String, Integer> counted = countHoldings();
+        // Keep the identity when counts did not change: closest-craft ordering and
+        // recipe tooltips should survive the ten-per-second inventory refresh.
+        if (holdingsCache == null || !holdingsCache.equals(counted)) holdingsCache = counted;
+        return holdingsCache;
     }
 
     private static Map<String, Integer> countHoldings() {
@@ -788,16 +824,29 @@ public final class Recipes {
             for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) count(have, s);
         }
         if (INV.equals(scope)) return have;
+        storedHoldings.keySet().retainAll(StoragePreview.snapshots().keySet());
         for (PageSnapshot snap : StoragePreview.snapshots().values()) {
             // The storage overview keeps its own copy of the ender chest; this list has
             // one already, and counting both read every ender chest item as two.
             if (snap.page() == StoragePreview.ENDER_CHEST) continue;
-            for (ItemStack s : snap.items()) count(have, s);
+            StoredHoldings cached = storedCounts(snap.items(), storedHoldings.get(snap.page()));
+            storedHoldings.put(snap.page(), cached);
+            cached.counts().forEach((name, count) -> have.merge(name, count, Integer::sum));
         }
-        for (List<ItemStack> chest : CHESTS.values()) {
-            for (ItemStack s : chest) count(have, s);
+        chestHoldings.keySet().retainAll(CHESTS.keySet());
+        for (Map.Entry<String, List<ItemStack>> chest : CHESTS.entrySet()) {
+            StoredHoldings cached = storedCounts(chest.getValue(), chestHoldings.get(chest.getKey()));
+            chestHoldings.put(chest.getKey(), cached);
+            cached.counts().forEach((name, count) -> have.merge(name, count, Integer::sum));
         }
         return have;
+    }
+
+    private static StoredHoldings storedCounts(List<ItemStack> items, StoredHoldings old) {
+        if (old != null && old.items() == items) return old;
+        Map<String, Integer> counts = new HashMap<>();
+        for (ItemStack stack : items) count(counts, stack);
+        return new StoredHoldings(items, Map.copyOf(counts));
     }
 
     private static void count(Map<String, Integer> have, ItemStack s) {
@@ -813,12 +862,17 @@ public final class Recipes {
     }
 
     /** The recipe this item is, with a reforge taken off the front, or null. Longest match wins. */
+    private static final Map<String, String> baseCache = new HashMap<>();
+
     private static String base(String name) {
+        if (baseCache.containsKey(name)) return baseCache.get(name);
         String best = null;
         for (String key : RECIPES.keySet()) {
             if (!name.endsWith(" " + key)) continue;
             if (best == null || key.length() > best.length()) best = key;
         }
+        if (baseCache.size() >= 4096) baseCache.clear();
+        baseCache.put(name, best);
         return best;
     }
 
@@ -841,14 +895,21 @@ public final class Recipes {
      * shopping list of two lines that says nothing about the two thousand viscera
      * under it; this is the two thousand, against what you have.
      */
+    private static final Map<Recipe, List<Ingredient>> fullCostCache = new java.util.IdentityHashMap<>();
+
     static List<Ingredient> fullCost(Recipe r, Map<String, Integer> have) {
+        List<Ingredient> cached = fullCostCache.get(r);
+        if (cached != null) return cached;
         Map<String, Integer> raw = new LinkedHashMap<>();
         Set<String> path = new HashSet<>();
         path.add(r.name());
         for (Ingredient i : r.needs()) expand(i.name(), i.count(), raw, path);
         List<Ingredient> out = new ArrayList<>();
         raw.forEach((n, c) -> out.add(new Ingredient(n, c)));
-        return out;
+        if (fullCostCache.size() >= 512) fullCostCache.clear();
+        List<Ingredient> result = List.copyOf(out);
+        fullCostCache.put(r, result);
+        return result;
     }
 
     private static void expand(String item, int count, Map<String, Integer> raw, Set<String> path) {
@@ -893,6 +954,38 @@ public final class Recipes {
     private static int page;
     /** What the left box shows: a recipe, or an item whose uses are listed; null for closed. */
     private static String openRecipe, openUses;
+
+    /** A full recipe viewer is distinct from the small item grid on the right. */
+    public static boolean overlayOpen() {
+        Minecraft mc = Minecraft.getInstance();
+        return enabled && panel && !RECIPES.isEmpty() && owner == mc.screen
+                && (openRecipe != null || openUses != null);
+    }
+
+    /** HUD controls must never draw or receive clicks through a recipe pane. */
+    public static boolean overlayOccludes(int x, int y, int w, int h) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!(mc.screen instanceof AbstractContainerScreen<?> s) || owner != s
+                || !enabled || RECIPES.isEmpty() || StorageOverview.active(s)) return false;
+        if (panel) {
+            if (shown) {
+                Frame f = frame(s);
+                if (overlaps(x, y, w, h, f.x, f.y, f.w, f.h)) return true;
+            }
+            int[] tab = tab(s);
+            if (overlaps(x, y, w, h, tab[0], tab[1], tab[2], tab[3])) return true;
+            if (openRecipe != null || openUses != null) {
+                Viewer v = viewer(s);
+                if (overlaps(x, y, w, h, v.x, v.y, v.w, v.h)) return true;
+            }
+        }
+        CloseBox close = closeBox(s);
+        return close != null && overlaps(x, y, w, h, close.x, close.y, close.w, close.h);
+    }
+
+    private static boolean overlaps(int x, int y, int w, int h, int bx, int by, int bw, int bh) {
+        return w > 0 && h > 0 && x < bx + bw && x + w > bx && y < by + bh && y + h > by;
+    }
     private static final List<String> trail = new ArrayList<>();
     private static final List<String> RECENT = new ArrayList<>();
     private static boolean recentDirty;
@@ -969,7 +1062,14 @@ public final class Recipes {
      * "one ingredient short". Things you can make right now sort to the top, and
      * nothing is filtered out - the list pages through the lot.
      */
+    private static Map<String, Integer> closestHave;
+    private static long closestRevision = -1;
+    private static int closestView = -1;
+    private static List<Close> closestCache = List.of();
+
     private static List<Close> closest(Map<String, Integer> have) {
+        if (have == closestHave && closestRevision == recipeRevision && closestView == closeView)
+            return closestCache;
         List<Close> out = new ArrayList<>();
         for (Map.Entry<String, Boolean> step : nextSteps(have).entrySet()) {
             String name = step.getKey();
@@ -1004,7 +1104,10 @@ public final class Recipes {
             c = Integer.compare(a.missing, b.missing);
             return c != 0 ? c : a.name.compareToIgnoreCase(b.name);
         });
-        return out;
+        closestHave = have;
+        closestRevision = recipeRevision;
+        closestView = closeView;
+        return closestCache = List.copyOf(out);
     }
 
     private record CloseBox(int x, int y, int w, int h, int rows) {
@@ -1160,6 +1263,7 @@ public final class Recipes {
         // As Item Search does: the box first, and the inventory key hidden from the
         // screen while it is focused, so typing "e" types an "e". Escape still closes.
         ScreenKeyboardEvents.allowKeyPress(screen).register((s, e) -> {
+            if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return true;
             if (StorageOverview.active(s)) return true;
             if (!enabled || !panel) return true;
             if (box != null && box.isFocused() && e.key() != 256) {
@@ -1230,6 +1334,7 @@ public final class Recipes {
      * that the grid never shows, which is where "what is this even for" gets asked.
      */
     private static boolean lookup(AbstractContainerScreen<?> s, boolean uses) {
+        if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return false;
         if (StorageOverview.active(s)) return false;
         Minecraft mc = Minecraft.getInstance();
         double mx = mc.mouseHandler.getScaledXPos(mc.getWindow());
@@ -1266,16 +1371,25 @@ public final class Recipes {
     }
 
     /** The results to show: the category, filtered by the search, in the server's own order. */
+    private static long visibleRevision = -1;
+    private static String visibleQuery, visibleCategory;
+    private static List<String> visibleCache = List.of();
+
     private static List<String> visible() {
+        String q = query.trim().toLowerCase(Locale.ROOT);
+        if (visibleRevision == recipeRevision && q.equals(visibleQuery)
+                && java.util.Objects.equals(cat, visibleCategory)) return visibleCache;
         List<String> out = new ArrayList<>();
         Iterable<String> names = cat == null ? RECIPES.keySet() : CATEGORY.getOrDefault(cat, new LinkedHashSet<>());
-        String q = query.trim().toLowerCase();
         for (String n : names) {
             if (!RECIPES.containsKey(n)) continue;
-            if (!q.isEmpty() && !n.toLowerCase().contains(q)) continue;
+            if (!q.isEmpty() && !n.toLowerCase(Locale.ROOT).contains(q)) continue;
             out.add(n);
         }
-        return out;
+        visibleRevision = recipeRevision;
+        visibleQuery = q;
+        visibleCategory = cat;
+        return visibleCache = List.copyOf(out);
     }
 
     /** The category column's entries: All first, then the server's, each with its icon if one was seen. */
@@ -1350,6 +1464,7 @@ public final class Recipes {
     }
 
     private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
+        if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return;
         if (StorageOverview.active(s)) return;
         if (!enabled || RECIPES.isEmpty()) {
             if (box != null) box.visible = false;
@@ -1571,6 +1686,8 @@ public final class Recipes {
     private static String tipFor;
     private static Map<String, Integer> tipHave;
     private static List<String> tipLines;
+    private static ItemStack tipIcon;
+    private static long tipForgeRevision = -1;
 
     /**
      * Kept while the mouse stays on the same cell and the holdings are the same count:
@@ -1578,7 +1695,9 @@ public final class Recipes {
      * lot to do four hundred times a second for a box that does not change.
      */
     private static void tooltip(GuiGraphicsExtractor g, Font font, Recipe r, Map<String, Integer> have, int mx, int my) {
-        if (r.name().equals(tipFor) && have == tipHave) {
+        ItemStack icon = ICONS.get(r.name());
+        long forgeRevision = ForgeRecipes.revision();
+        if (r.name().equals(tipFor) && have == tipHave && icon == tipIcon && tipForgeRevision == forgeRevision) {
             pendingTip = tipLines;
             tipX = mx;
             tipY = my;
@@ -1586,10 +1705,11 @@ public final class Recipes {
         }
         tipFor = r.name();
         tipHave = have;
+        tipIcon = icon;
+        tipForgeRevision = forgeRevision;
         List<String> lines = new ArrayList<>();
         // The item as the game would show it - its stats and what it does - because
         // "what does this even give" is the question a grid of icons raises first.
-        ItemStack icon = ICONS.get(r.name());
         if (icon != null) {
             Minecraft mc = Minecraft.getInstance();
             for (Component c : icon.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
@@ -1640,6 +1760,9 @@ public final class Recipes {
         Recipe r = RECIPES.get(item);
         if (r == null) return List.of();
         Map<String, Integer> have = holdings();
+        long forgeRevision = ForgeRecipes.revision();
+        if (breakdownRecipe == r && breakdownHave == have && breakdownRevision == recipeRevision
+                && breakdownForgeRevision == forgeRevision && breakdownMaxRows == maxRows) return breakdownLines;
         List<String> lines = new ArrayList<>();
         // The one you are holding is built; the materials below would be for a second one.
         if (have.getOrDefault(r.name(), 0) > 0) return List.of("§aOwned");
@@ -1656,8 +1779,19 @@ public final class Recipes {
             }
             lines.add(materialBreakdownLine(i, have));
         }
-        return lines;
+        breakdownRecipe = r;
+        breakdownHave = have;
+        breakdownRevision = recipeRevision;
+        breakdownForgeRevision = forgeRevision;
+        breakdownMaxRows = maxRows;
+        return breakdownLines = List.copyOf(lines);
     }
+
+    private static Recipe breakdownRecipe;
+    private static Map<String, Integer> breakdownHave;
+    private static long breakdownRevision = -1, breakdownForgeRevision = -1;
+    private static int breakdownMaxRows;
+    private static List<String> breakdownLines = List.of();
 
     /** Forge slots that can run at once; what the build time is spread over. */
     private static final int FORGE_SLOTS = 7;
@@ -1910,10 +2044,17 @@ public final class Recipes {
         if (missing > 0) Toast.warn("Recipes", missing + " ingredient" + (missing == 1 ? "" : "s") + " not in your inventory");
     }
 
+    private static final Map<String, List<Recipe>> usesCache = new HashMap<>();
+
     private static List<Recipe> usesOf(String item) {
+        List<Recipe> cached = usesCache.get(item);
+        if (cached != null) return cached;
         List<Recipe> out = new ArrayList<>();
         for (Recipe r : RECIPES.values()) if (r.uses(item)) out.add(r);
-        return out;
+        if (usesCache.size() >= 512) usesCache.clear();
+        List<Recipe> result = List.copyOf(out);
+        usesCache.put(item, result);
+        return result;
     }
 
     private static int usesCols(Viewer v) {
@@ -2073,6 +2214,7 @@ public final class Recipes {
     // ── input ─────────────────────────────────────────────────────────────────
 
     private static boolean click(AbstractContainerScreen<?> s, double mx, double my, int button) {
+        if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return false;
         if (StorageOverview.active(s) || StorageOverview.backButton(s, mx, my)) return false;
         if (!enabled || RECIPES.isEmpty()) return false;
         if (clickClose(s, mx, my, button)) return true;
@@ -2270,6 +2412,7 @@ public final class Recipes {
     }
 
     private static boolean scroll(AbstractContainerScreen<?> s, double mx, double my, double dy) {
+        if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return false;
         if (StorageOverview.active(s)) return false;
         if (!enabled) return false;
         if (scrollClose(s, mx, my, dy)) return true;

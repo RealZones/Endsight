@@ -3,10 +3,11 @@ package com.endsight.dragons;
 import com.endsight.hud.Alert;
 import com.endsight.hud.Alerts;
 import com.endsight.hud.Area;
+import com.endsight.hud.TrackerHud;
+import com.endsight.hud.HudCard;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.Readout;
 import com.endsight.ui.Module;
-import com.endsight.ui.Setting;
+import com.endsight.ui.Theme;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -20,17 +21,18 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The Endstone Protector's climb from tier 2 to 5, as its own module.
+ * The Endstone Protector's server-wide climb, as its own module.
  *
- * Split out of Dragon Timer because it is a different clock. The dragon cycle and the
+ * Split out of Dragon Timer because it is a separate event. The dragon cycle and the
  * Protector run independently - the Protector is rising while you are placing eyes, and
  * dies while a dragon is up - so folding it into the dragon readout meant a row that
  * appeared and vanished for reasons that had nothing to do with the module it was in.
- * Two clocks, two modules, each switchable on its own.
+ * Two events, two modules, each switchable on its own.
  */
 public final class Protector {
 
@@ -48,8 +50,15 @@ public final class Protector {
      */
     private static final Pattern TIER = Pattern.compile(
             "Endstone Protector (?:is rising from|has emerged from) the ground! \\(Tier (\\d)/(\\d)\\)");
-    private static final Pattern TAB_TIER = Pattern.compile(
-            "(?i).*Protector.*Tier\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\D+(\\d{1,3})%?)?.*");
+    private static final Pattern STATUS_RISING = Pattern.compile(
+            "(?i)^Protector:\\s*Rising\\s*\\(Tier\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*,\\s*(\\d+))?\\)\\s*$");
+    private static final Pattern STATUS_RESTING = Pattern.compile(
+            "(?i)^Protector:\\s*Resting(?:\\s*\\((\\d+)\\))?\\s*$");
+    private static final Pattern STATUS_SPAWNED = Pattern.compile(
+            "(?i)^(Protector|Warden):\\s*(?:Spawned|Alive)\\s*$");
+    private static final int KILLS_PER_STAGE = 200;
+    // Stage five is the spawned boss, so only four stage transitions need kills.
+    private static final int KILL_GOAL = KILLS_PER_STAGE * 4;
     private static final String SPAWNED = "Endstone Protector has spawned";
     private static final String DEAD = "The Endstone Protector has been defeated";
 
@@ -59,9 +68,9 @@ public final class Protector {
      * suddenly doing things. So the transformation is inferred from its actions, and the
      * end of the fight from its own death message.
      *
-     * Without the death line the timer simply never stopped: the Protector was gone, but
+     * Without the death line the readout never stopped: the Protector was gone, but
      * nothing matching "The Endstone Protector has been defeated" ever arrived, so the
-     * readout counted upward forever.
+     * readout stayed active forever.
      */
     private static final String WARDEN_DEAD = "The Warden has been defeated";
     private static final Pattern WARDEN_ACTIVE = Pattern.compile(
@@ -74,16 +83,18 @@ public final class Protector {
 
     private static int tier;
     private static int tierMax = 5;
-    private static long since;
     private static boolean up;
     private static boolean warden;
-    private static float tabFill = -1f;
-    private static long tabSeen;
+    private static boolean resting;
+    private static int remaining = -1;
+    private static int killGoal = -1;
+    private static long statusSeen;
     private static long lastTabRead;
+    private static Object world;
 
     public static Module module() {
-        return new Module("dragon.protector", "Protector Stage",
-                "Protector tier and time up.", "Trackers",
+        return new Module("dragon.protector", "Golem Status",
+                "Server-wide Protector stage and kills toward its spawn. Shows Warden transformations too.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of());
     }
@@ -99,6 +110,7 @@ public final class Protector {
     public static void init() {
         // A backend switch is a join; a golem left behind in the End is not rising here.
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> reset());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             onLine(plain(message));
@@ -107,10 +119,8 @@ public final class Protector {
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "protector"),
                 (g, delta) -> draw(g));
 
-        // Registered with a sample so it can be positioned from the hub. This readout is
-        // invisible until a Protector actually starts rising, which makes it impossible
-        // to place - and easy to mistake for a module that is not working.
-        HudLayout.register("dragon.protector", "Protector Stage", 0.429f, 0.047f,
+        // A sample makes this End-only readout possible to place from the hub too.
+        HudLayout.register("dragon.protector", "Golem Status", 0.429f, 0.047f,
                 (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
     }
 
@@ -121,18 +131,21 @@ public final class Protector {
         if (m.find()) {
             tier = parse(m.group(1));
             tierMax = Math.max(1, parse(m.group(2)));
-            since = System.currentTimeMillis();
             up = false;
             warden = false;
-            tabFill = -1f;
+            resting = false;
+            remaining = -1;
+            if (tierMax != 5) killGoal = -1;
             return;
         }
         if (line.contains(SPAWNED)) {
             tier = tierMax;
             up = true;
             warden = false;
-            tabFill = -1f;
-            since = System.currentTimeMillis();
+            resting = false;
+            remaining = 0;
+            killGoal = tierMax == 5 ? KILL_GOAL : -1;
+            statusSeen = System.currentTimeMillis();
             if (Alerts.protector()) {
                 Alert.show("ENDSTONE PROTECTOR", "has spawned", PURPLE, 1.15f, Alerts.seconds());
             }
@@ -141,10 +154,7 @@ public final class Protector {
         // Either death ends the fight. Checked before the action pattern so a defeat
         // cannot be mistaken for the Warden still doing something.
         if (line.contains(DEAD) || line.contains(WARDEN_DEAD)) {
-            tier = 0;
-            up = false;
-            warden = false;
-            tabFill = -1f;
+            clearStatus();
             return;
         }
         if (up && WARDEN_ACTIVE.matcher(line).find()) {
@@ -153,11 +163,21 @@ public final class Protector {
     }
 
     private static void readTab(Minecraft mc) {
+        if (mc.level != world) {
+            reset();
+            world = mc.level;
+        }
         if (!enabled || mc.player == null || mc.level == null || mc.getConnection() == null) return;
         long now = System.currentTimeMillis();
         if (now - lastTabRead < 500) return;
         lastTabRead = now;
 
+        // Read the server's sidebar and tab data even while neither overlay is open.
+        // This is the lobby's progress, so personal kill attribution must never add to it.
+        String sidebar = Area.sidebarLine(mc, "Protector:");
+        if (sidebar != null && readTabLine(Zealots.strip(sidebar).trim(), now)) return;
+        String wardenSidebar = Area.sidebarLine(mc, "Warden:");
+        if (wardenSidebar != null && readTabLine(Zealots.strip(wardenSidebar).trim(), now)) return;
         List<String> lines = mc.getConnection().getListedOnlinePlayers().stream()
                 .map(Protector::tabName)
                 .filter(s -> !s.isBlank())
@@ -170,14 +190,47 @@ public final class Protector {
     }
 
     private static boolean readTabLine(String line, long now) {
-        Matcher m = TAB_TIER.matcher(line);
-        if (!m.matches()) return false;
-        tier = parse(m.group(1));
-        tierMax = Math.max(1, parse(m.group(2)));
-        tabFill = stageFill(m.group(3));
-        tabSeen = now;
-        if (!up && since == 0) since = now;
-        return true;
+        Matcher m = STATUS_RISING.matcher(line);
+        if (m.matches()) {
+            int nextTier = parse(m.group(1)), nextMax = parse(m.group(2));
+            if (nextTier < 1 || nextMax < 1 || nextTier > nextMax) return false;
+            tier = nextTier;
+            tierMax = nextMax;
+            remaining = m.group(3) == null ? -1 : parse(m.group(3));
+            killGoal = completedKills(tier, tierMax, remaining) < 0 ? -1 : KILL_GOAL;
+            up = false;
+            warden = false;
+            resting = false;
+            statusSeen = now;
+            return true;
+        }
+        m = STATUS_RESTING.matcher(line);
+        if (m.matches()) {
+            tier = 0;
+            remaining = m.group(1) == null ? -1 : parse(m.group(1));
+            // A resting countdown has no stage to attach to. Wait for the rising row
+            // rather than presenting last cycle's completed kills as this cycle's.
+            killGoal = -1;
+            up = false;
+            warden = false;
+            resting = true;
+            statusSeen = now;
+            return true;
+        }
+        m = STATUS_SPAWNED.matcher(line);
+        if (m.matches()) {
+            tier = tierMax;
+            remaining = 0;
+            killGoal = tierMax == 5 ? KILL_GOAL : -1;
+            up = true;
+            // Generic "Protector: Spawned" remains in tab after its transformation.
+            // Do not undo the Warden's own observed action messages every half second.
+            warden = warden || m.group(1).equalsIgnoreCase("Warden");
+            resting = false;
+            statusSeen = now;
+            return true;
+        }
+        return false;
     }
 
     private static String tabName(PlayerInfo info) {
@@ -186,14 +239,24 @@ public final class Protector {
         return Zealots.strip(c.getString()).trim();
     }
 
-    private static float stageFill(String raw) {
-        if (raw == null || raw.isBlank()) return -1f;
-        int n = parse(raw);
-        return n >= 0 && n <= 100 ? n / 100f : -1f;
+    private static int completedKills(int stage, int max, int left) {
+        // The server's bare comma number is kills LEFT until the next stage, as
+        // confirmed for the current server: four transitions of 200 kills, then
+        // stage five spawns the boss. Its counter must not start a fifth climb.
+        // Old recordings used another threshold, so neither their denominator nor the old percent
+        // interpretation belongs in the current HUD. Personal kills never add here.
+        if (max != 5 || stage < 1 || stage > max) return -1;
+        if (stage == max) return KILL_GOAL;
+        if (left < 0 || left > KILLS_PER_STAGE) return -1;
+        return Math.clamp((stage - 1) * KILLS_PER_STAGE + KILLS_PER_STAGE - left, 0, KILL_GOAL);
+    }
+
+    private static boolean counterFresh(long now) {
+        return statusSeen > 0 && now - statusSeen < 5_000;
     }
 
     private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled || tier <= 0) return;
+        if (!enabled || (tier <= 0 && !resting)) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         if (!Area.end()) return;
@@ -209,31 +272,17 @@ public final class Protector {
      * is the only version of this that cannot accidentally leave a copy on screen.
      */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        String label = !sample && warden ? "Warden" : "Protector";
-        String value;
-        float progress;
-        if (sample) {
-            value = "3/5";
-            progress = 0.6f;
-        } else {
-            value = up ? "up  " + secs(System.currentTimeMillis() - since)
-                    : tier + "/" + tierMax;
-            float liveFill = tabFill >= 0f && System.currentTimeMillis() - tabSeen < 2_500
-                    ? tabFill / Math.max(1, tierMax) : 0f;
-            progress = Math.min(1f, tier / (float) tierMax + liveFill);
-        }
-
-        int w = Readout.width(font, label, value);
-        int h = Readout.height(progress >= 0);
-        if (g != null) {
-            Readout.draw(g, font, x, y, w, label, value, sample || up, progress);
-        }
-        return new int[]{w, h};
-    }
-
-    private static String secs(long ms) {
-        long s = Math.max(0, ms / 1000);
-        return s < 60 ? s + "s" : (s / 60) + "m" + String.format("%02d", s % 60) + "s";
+        String label = !sample && warden ? "Warden Status" : "Golem Status";
+        boolean alive = !sample && up;
+        long now = System.currentTimeMillis();
+        boolean fresh = sample || counterFresh(now);
+        int completed = alive ? KILL_GOAL : completedKills(tier, tierMax, remaining);
+        // The kill count already says how far along it is; a Stage row repeated it.
+        String counter = sample ? "769 / 800"
+                : fresh && completed >= 0 && killGoal > 0 ? String.format(Locale.ROOT, "%,d / 800", completed) : "— / 800";
+        List<HudCard.Row> rows = List.of(new HudCard.Row("Kills", counter, Theme.obs()));
+        return TrackerHud.draw(g, font, x, y, label, alive ? "Alive" : !sample && resting ? "Resting" : "Rising",
+                alive ? Theme.pos() : Theme.obs(), rows, -1f);
     }
 
     private static String plain(Component c) {
@@ -244,16 +293,24 @@ public final class Protector {
         try {
             return Integer.parseInt(s);
         } catch (NumberFormatException e) {
-            return 0;
+            return -1;
         }
     }
 
     private static void reset() {
+        clearStatus();
+        tierMax = 5;
+        lastTabRead = 0;
+        world = null;
+    }
+
+    private static void clearStatus() {
         tier = 0;
-        since = 0;
         up = false;
         warden = false;
-        tabFill = -1f;
-        tabSeen = 0;
+        resting = false;
+        remaining = -1;
+        killGoal = -1;
+        statusSeen = 0;
     }
 }

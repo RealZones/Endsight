@@ -54,7 +54,6 @@ public final class DragonTimer {
     private static final Pattern DESPAWNED = Pattern.compile(
             "The (\\w+ Dragon) has de-spawned\\.");
 
-    private static final String EGG_SOON = "Dragon Egg is respawning in";
     private static final String EGG_UP = "The Egg has Spawned";
     private static final String EGG_RESPAWNED = "Dragon Egg has respawned";
     private static final String EYES_DONE = "Sleeping Eyes have been awoken";
@@ -97,20 +96,11 @@ public final class DragonTimer {
     private static long lastDragonEnded;
     private static String lastDragon;
 
-    /**
-     * When eyes become placeable again, as a wall-clock time.
-     *
-     * On 2026-10-02 the server shortened the interval from 24s to about 6s.
-     * The "respawning in 6 seconds" announcement now arrives with the dragon's
-     * de-spawn line, and the egg appears 5-6s later in the recorded logs. Both
-     * lines anchor the countdown; the egg-spawn line clears it immediately.
-     */
+    // The server's announced wait is authoritative. A death without its companion
+    // announcement uses the current ten-second interval, not the old six-second one.
     private static long eggAt;
+    private static long eggDuration = EggRespawnTiming.FALLBACK_MS;
     private static boolean eggReady;
-
-    private static final long DEATH_TO_EGG = 6_000L;
-    private static final long SOON_TO_EGG = 6_000L;
-    private static final long RESPAWNED_TO_EGG = 4_000L;
 
     public static Module module() {
         return new Module("dragon.timer", "Dragon Timer",
@@ -189,7 +179,8 @@ public final class DragonTimer {
         if ((m = DESPAWNED.matcher(line)).find()) {
             lastDragon = m.group(1);
             lastDragonEnded = System.currentTimeMillis();
-            eggAt = lastDragonEnded + DEATH_TO_EGG;
+            eggDuration = EggRespawnTiming.FALLBACK_MS;
+            eggAt = lastDragonEnded + eggDuration;
             eggReady = false;
             dragon = null;
             // A cycle ends when the dragon does, so the eye count resets here rather
@@ -199,14 +190,13 @@ public final class DragonTimer {
             return;
         }
 
-        if (line.contains(EGG_SOON)) {
-            eggAt = System.currentTimeMillis() + SOON_TO_EGG;
+        long announcedDelay = EggRespawnTiming.announcedDelay(line);
+        if (announcedDelay >= 0) {
+            eggDuration = announcedDelay;
+            eggAt = System.currentTimeMillis() + eggDuration;
             eggReady = false;
             resetCycle();
-        } else if (line.contains(EGG_RESPAWNED)) {
-            eggAt = System.currentTimeMillis() + RESPAWNED_TO_EGG;
-            eggReady = false;
-        } else if (line.contains(EGG_UP)) {
+        } else if (line.contains(EGG_UP) || line.contains(EGG_RESPAWNED)) {
             eggAt = 0;                                  // placeable now
             eggReady = true;
             resetCycle();
@@ -240,6 +230,7 @@ public final class DragonTimer {
         lastDragon = null;
         lastDragonEnded = 0;
         eggAt = 0;
+        eggDuration = EggRespawnTiming.FALLBACK_MS;
         eggReady = false;
     }
 
@@ -265,7 +256,7 @@ public final class DragonTimer {
     /**
      * One boxless line, plus a bar when there is something to fill.
      *
-     * The respawn wait is the case that earns the bar: "Eggs in 6s" tells you the
+     * The respawn wait is the case that earns the bar: "Eggs in 10s" tells you the
      * number, the bar tells you how close that is without reading it, and between runs
      * that is the only thing you actually want to know.
      */
@@ -295,7 +286,7 @@ public final class DragonTimer {
 
         if (sample) {
             label = "Egg Respawn";
-            value = "6s";
+            value = "10s";
             hot = false;
             progress = 0.55f;
         } else if (dragon != null) {
@@ -304,18 +295,23 @@ public final class DragonTimer {
             hot = true;
         } else if (until > 0) {
             label = "Egg Respawn";
-            value = (until / 1000 + 1) + "s";
+            value = EggRespawnTiming.countdown(until);
             hot = until <= 5000;
-            progress = 1f - (until / (float) DEATH_TO_EGG);   // fills as it approaches
+            progress = EggRespawnTiming.progress(until, eggDuration);
         } else if (eyes > 0) {
             label = "Eyes";
             value = eyes + "/" + eyesNeeded;
             hot = eyes >= eyesNeeded;
             progress = eyes / (float) eyesNeeded;
-        } else if (eggReady || eggAt > 0) {
+        } else if (eggReady) {
             label = "Egg";
             value = "Ready";
             hot = true;
+        } else if (eggAt > 0) {
+            // A lagging server can outlast its estimate; only a spawn confirms ready.
+            label = "Egg";
+            value = "waiting";
+            hot = false;
         } else if (lastDragon != null && now - lastDragonEnded < 300_000) {
             // Five minutes of "45s ago" is context; forty-five minutes of it is clutter.
             label = lastDragon;

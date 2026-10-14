@@ -1,36 +1,36 @@
 package com.endsight.dragons;
 
-import com.endsight.hud.HudLayout;
 import com.endsight.hud.Area;
-import com.endsight.hud.Readout;
+import com.endsight.hud.HudLayout;
+import com.endsight.hud.HudCard;
+import com.endsight.hud.TrackerHud;
+import com.endsight.ui.Theme;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import com.endsight.qol.Drops;
 import com.endsight.qol.NpcPrices;
 import com.endsight.qol.Rarity;
 import com.endsight.slayers.SlayerCosts;
 import com.endsight.storage.Recipes;
-import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
-import com.endsight.ui.Theme;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
@@ -50,13 +50,9 @@ import java.util.regex.Pattern;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Kills and drops from every boss - dragons, the Warden, the Protector, and the two
- * slayers - on ONE readout that shows whichever boss you killed last, the drops in
- * rarity order and in their own rarity's colour.
- *
- * One readout and not five, because five was a wall: the thing on screen should be
- * the thing you are doing, and the last boss to die is exactly that. Every boss keeps
- * its own count underneath, all the time; /drops <boss> prints any of them.
+ * Counts kills and drops from dragons, the Warden, the Protector, and the two
+ * slayers. Detailed results are available through /drops; the small Dragon Totals
+ * HUD reads the same counts as the configurable Boss Drops readout.
  *
  * <h2>Whose kill it was</h2>
  * A boss dying in the lobby is not a boss you killed. The first version counted every
@@ -79,27 +75,32 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * drop is never a boss's, whatever the timing says - a nest is always being farmed
  * beside the fight.
  *
- * A session and an all-time count; the chip on the title flips between them with
- * chat open. Everything is counted; the tier list decides what is worth a row.
+ * /drops prints all-time counts, or this session's with "session" on the end.
  */
 public final class BossDrops {
 
     private BossDrops() {
     }
 
-    static final String DRAGON = "Dragon", WARDEN = "Warden", GOLEM = "Golem", REVENANT = "Revenant", VOIDGLOOM = "Voidgloom";
-    private static final List<String> BOSSES = List.of(DRAGON, WARDEN, GOLEM, REVENANT, VOIDGLOOM);
+    static final String DRAGON = "Dragon", WARDEN = "Warden", GOLEM = "Golem", REVENANT = "Revenant", VOIDGLOOM = "Voidgloom", RIFTBORN = "Riftborn";
+    private static final String LEGACY_ENDERMAN = "Enderman (legacy)", UNKNOWN_ENDERMAN = "Enderman (unidentified)";
+    private static final String FAMILY_SCHEMA = "# slayer-family-v2";
+    private static final List<String> BOSSES = List.of(DRAGON, WARDEN, GOLEM, REVENANT, VOIDGLOOM, RIFTBORN,
+            LEGACY_ENDERMAN, UNKNOWN_ENDERMAN);
     private static final List<String> SLAYER_ITEMS = List.of(
             "Zombie Talisman", "Revenant Viscera", "Warden Heart", "Judgement Core",
             "Scythe Blade", "Shard of the Shredded", "Void Upgrade Stone",
             "High Class Archfiend Dice", "Beheaded Horror", "Rose of Lies",
             "Crypt Cache", "Undead Catalyst", "Revenant Catalyst",
-            "Transmission Tuner", "Etherwarp Conduit", "Etherwarp Merger", "Null Atom", "Null Ovoid");
+            "Transmission Tuner", "Etherwarp Conduit", "Etherwarp Merger", "Null Atom", "Null Ovoid",
+            "Rift Pass", "Seraph's Halo", "Whetstone", "Black Hole Fragment", "Combat XP Boost", "Seraph Quill",
+            "Streak Anchor", "Shadow Warp Scroll", "Golden Eye", "Seraph's Tally", "Seraph Plating", "Seraph's Plating", "Soulflow Pile",
+            "Void Talisman", "Void Fang", "Flesh Fang", "Riftstring");
     /**
      * Each kind of dragon is its own boss - "Golden Dragon", "Protector Dragon" - because
      * the drops worth counting are the kind's own: a Golden Dragon Chestplate is one in
      * so many Golden dragons, and a kill count over every dragon says nothing about it.
-     * The readout follows the last kind killed; /drops dragon adds them all up.
+     * /drops dragon adds all kinds up.
      */
     // Berserk, Chaotic and Arcane (Lv200) came in on 2026-10-08.
     private static final List<String> KINDS = List.of("Young", "Old", "Strong", "Wise", "Unstable", "Superior", "Protector", "Golden",
@@ -126,7 +127,8 @@ public final class BossDrops {
     /** Pets share a name across rarities; the tier belongs in the saved drop key. */
     private static final Pattern PET_NAME = Pattern.compile("^\\[Lvl \\d+\\] ");
     private static final Pattern PET_RARITY = Pattern.compile(" \\((Common/Uncommon|Rare|Epic|Legendary)\\)$");
-    private static final Pattern TARGET = Pattern.compile("Slay [\\d,]+ Combat XP worth of (\\w+)");
+    private static final Pattern TARGET = Pattern.compile("Slay ([\\d,]+) Combat XP worth of (\\w+)");
+    private static final Pattern QUEST_FAMILY = Pattern.compile("(?:^|Slayer:\\s*)(Riftborn Seraph|Voidgloom Seraph|Revenant Horror|Atoned Horror)(?:\\s+(IV|III|II|I|V))?\\b");
     /** The summary box: one message of many lines, "THE WARDEN DOWN!" and your place near the end. */
     private static final Pattern BOX = Pattern.compile(
             "(THE WARDEN|ENDSTONE PROTECTOR|(?:[A-Z]+ )?DRAGON) DOWN!.*?Your Damage: [\\d,.]+[KMB]? \\(Position #(\\d+)\\)", Pattern.DOTALL);
@@ -139,12 +141,13 @@ public final class BossDrops {
      * counted dragons without an eye of his. "You placed a Golden Eye" is printed after all;
      * Golden dragons had gone uncounted because the pattern only knew Summoning Eyes.
      */
-    private static final String AWOKEN = "Your Sleeping Eyes have been awoken";
     private static final String EGG_SPAWNED = "Egg has Spawned";
     private static final String WARDEN_DEAD = "The Warden has been defeated";
     private static final String GOLEM_DEAD = "The Endstone Protector has been defeated";
     private static final String SLAYER_DEAD = "SLAYER BOSS SLAIN";
     private static final String SLAYER_SPAWNING = "SLAYER BOSS SPAWNING";
+    private static final String SLAYER_STARTED = "SLAYER QUEST STARTED";
+    private static final String SLAYER_FAILED = "SLAYER QUEST FAILED";
     private static final String TREMBLE = "The ground trembles with ancient sculk energy";
     private static final String CATALYST = "Warden Catalyst";
     /** The top three get the Protector's and the Warden's loot. */
@@ -155,7 +158,6 @@ public final class BossDrops {
     private static final long BEFORE_MS = 2_000;
     /** A catalyst leaving your hands this long before the tremble was you placing it. */
     private static final long CATALYST_MS = 15_000;
-    private static final long DRAGON_LINGER_MS = 60_000;
     /** What zealots and the golden ones drop: never a boss's, whatever the timing says. */
     private static final Set<String> NEST = Set.of("summoning eye", "enderman", "null ovoid", "ender pearl",
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
@@ -181,21 +183,39 @@ public final class BossDrops {
     // in a dragon window.
     private static final Set<String> HIDDEN = Set.of("dragon scale", "pure seeds", "aspect of the dragons", "travel scroll", "hot potato book");
 
-    private static final String SESSION = "Session";
-    private static final String TOTAL = "Total";
-
     private static boolean enabled = true;
-    private static String mode = SESSION;
-    private static boolean compactLayout = true;
-    private static int cheapSlayerFloor = 100_000;
+    private static boolean showHud = true;
+    private static boolean compactHud = true;
+    private static String hudPeriod = "Session";
+    private static String displayedBoss = DRAGON;
     private static String minTier = "Rare and up";
-    /** Which drops make the list - everything is counted, this is only what is shown. */
+    /** Which drops make the command list - everything is counted. */
+
+    /** The two quest families have their own controls and placement, while sharing the loot recorder. */
+    private static final class ProfitHud {
+        final String id;
+        final String boss;          // unused since the merge; always null
+        boolean enabled = true, compact = true;
+        String period = "Session";
+
+        ProfitHud(String id, String boss) {
+            this.id = id;
+            this.boss = boss;
+        }
+    }
+    // One card, like Boss Drops. There were two - "Voidgloom Profit" and "Riftborn
+    // Profit" - which is two menu entries, two positions and two Period settings for a
+    // thing you can only ever be doing one of at a time. They were never on screen
+    // together anyway, so the split bought nothing and cost a duplicate of every
+    // setting. The title still names the family you are on.
+    private static final ProfitHud slayerHud = new ProfitHud("slayer.profit", null);
 
     /** One boss: kills, and drops by item. */
     private static final class Count {
         int kills;
         int starts, unknownCosts;
-        long spawnCost, historicalCost;
+        long spawnCost, historicalCost, activeMs;
+        boolean incompleteTime;
         final Map<String, Integer> drops = new LinkedHashMap<>();
     }
 
@@ -205,7 +225,8 @@ public final class BossDrops {
         final long at;
         int place = 99;
         boolean dead;
-        RewardWindow reward;
+        Object level;
+        RewardWindow reward, atomReward;
         final List<Drops.Drop> drops = new ArrayList<>();
 
         Death(String boss, long at) {
@@ -237,25 +258,40 @@ public final class BossDrops {
      * server's own word is the only rarity a new item has.
      */
     private static final Map<String, Integer> seen = new LinkedHashMap<>();
-    /** The boss on the readout: the last one killed. Any dragon is DRAGON here. */
-    private static String showing = DRAGON;
     /** The last dragon killed, by kind, for the "has obtained" lines that follow it. */
     private static String lastDragon = DRAGON;
-    /** Which dragons the readout adds up: every kind, or one. Cycled by the chip on the title. */
-    private static final String ALL = "all";
-    private static String kind = ALL;
-    /** The two chips on the title row, as offsets from the readout's left edge, for the click. */
-    private static int modeL, modeR, kindL, kindR;
     private static String slayer = REVENANT;
+    /** Menu names identify a quest, while Endermen alone cannot distinguish T4 from T5. */
+    private static final Map<Long, String> endermanFamilies = new HashMap<>(Map.of(
+            4_000L, VOIDGLOOM, 11_000L, VOIDGLOOM, 13_750L, RIFTBORN));
+    private static boolean profitQuestActive;
+    private static boolean profitSawStart;
+    private static long profitTickAt, profitLastLine;
+    private static Object profitWorld;
     private static Death death;
     private static RewardWindow rewardWindow;
-    /** The last drop line, for a kill line that arrives just after it. */
-    private static Drops.Drop held;
-    private static long heldAt;
+    /**
+     * The same measurement for Null Atoms. A T5 Voidgloom pays atoms every kill the way
+     * a normal one pays Ovoids - straight into the inventory, with no drop message - so
+     * the tracker, which only listened for drop lines, counted none of them (reported by
+     * Secrets, a T5 player, 2026-10-14). Measured on every Voidgloom: a T4's announced
+     * atom also lands in the inventory, and the larger of the two is what is counted.
+     */
+    private static RewardWindow atomWindow;
+    /** Every nearby drop line, for a kill line that arrives just after its loot. */
+    private record HeldDrop(Drops.Drop drop, long at, Object level, String bonusBoss) { }
+    private static final List<HeldDrop> held = new ArrayList<>();
+    private static final int HELD_LIMIT = 64;
+    private static Object messageWorld;
     private static int eyes;
-    private static boolean ownDragonUp;
-    private static long dragonActivityAt;
     private static long summaryAt, dragonKillAt;
+    /**
+     * Dragons since the last Superior and since the last Ender Dragon pet. A save from
+     * before these existed has totals but no order, so each starts unknown and counts up
+     * from install - shown as "37+" - until a real Superior or pet pins it.
+     */
+    private static int sinceSuperior, sincePet;
+    private static boolean superiorKnown, petKnown;
     /** The summary being read: raw line, item, count. */
     private static final List<String[]> summary = new ArrayList<>();
     private static boolean catalyst;
@@ -306,61 +342,99 @@ public final class BossDrops {
                 sum.unknownCosts += c.unknownCosts;
                 sum.spawnCost += c.spawnCost;
                 sum.historicalCost += c.historicalCost;
+                sum.activeMs += c.activeMs;
+                sum.incompleteTime |= c.incompleteTime;
                 c.drops.forEach((item, n) -> sum.drops.merge(item, n, Integer::sum));
             });
         }
         return out;
     }
 
-    /** The numbers the readout is set to: this session's, or all-time. */
-    private static Map<String, Count> view() {
-        return TOTAL.equals(mode) ? totals() : session;
+    /** Dragons killed of one kind, or of every kind for null; this session or all time. */
+    static int dragonKills(String kind, boolean allTime) {
+        // Dragon Totals asks once per kind in both the measuring and drawing pass.
+        // Merging every boss's complete loot history here made a count-only HUD
+        // allocate that history dozens of times per frame as the save grew.
+        return allTime ? dragonKills(loaded, kind) + dragonKills(unsaved, kind) : dragonKills(session, kind);
     }
 
-    /** What the readout shows for a boss: for dragons, all kinds or the one the chip picks. */
-    private static Count count(Map<String, Count> m, String boss) {
-        if (!DRAGON.equals(boss)) return of(m, boss);
-        return ALL.equals(kind) ? dragons(m) : of(m, kind + " Dragon");
+    private static int dragonKills(Map<String, Count> counts, String kind) {
+        if (kind != null) {
+            Count count = counts.get(kind + " Dragon");
+            return count == null ? 0 : count.kills;
+        }
+        int kills = 0;
+        for (Map.Entry<String, Count> entry : counts.entrySet())
+            if (isDragon(entry.getKey())) kills += entry.getValue().kills;
+        return kills;
     }
 
-    /** All, then each kind killed in the mode showing, then all again. */
-    private static void nextKind() {
-        Map<String, Count> m = view();
-        List<String> kinds = new ArrayList<>();
-        kinds.add(ALL);
-        for (String k : KINDS) if (of(m, k + " Dragon").kills > 0) kinds.add(k);
-        int i = kinds.indexOf(kind);
-        kind = kinds.get((i + 1) % kinds.size());
-    }
+    static int sinceSuperior() { return sinceSuperior; }
+
+    static boolean superiorKnown() { return superiorKnown; }
+
+    static int sincePet() { return sincePet; }
+
+    static boolean petKnown() { return petKnown; }
+
+    static List<String> dragonKinds() { return KINDS; }
 
     public static Module module() {
         return new Module("dragon.bossdrops", "Boss Drops",
-                "Kills, drops, Slayer costs and values.", "Trackers",
+                "Warden, Protector and Revenant loot; Enderman Slayers have their own profit trackers.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Toggle("Compact layout", "Counts first, with kills and spawn costs below.",
-                                () -> compactLayout, v -> compactLayout = v),
+                        new Setting.Toggle("Show on HUD", "Show the latest boss's kills and drops.",
+                                () -> showHud, v -> showHud = v),
+                        new Setting.Choice("Period", "Switch the counts shown on the HUD.",
+                                List.of("Session", "All Time"), () -> hudPeriod, v -> hudPeriod = v),
+                        new Setting.Toggle("Compact list", "Show the five highest-value items; /drops keeps the full list.",
+                                () -> compactHud, v -> compactHud = v),
                         new Setting.Choice("Show from",
-                                "Lowest tier that gets a row, for dragons.",
+                                "Lowest dragon drop tier printed by /drops.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v),
-                        new Setting.Slider("Hide cheap Slayer drops",
-                                "Hide priced Slayer rows below this total; they still count toward profit.",
-                                0, 5_000_000, 100_000, () -> cheapSlayerFloor, v -> cheapSlayerFloor = (int) v, " coins"),
                         new Setting.Toggle("Learn Slayer sale prices", "Use a Slayer drop's value after its first sale; off uses custom or built-in prices.",
                                 NpcPrices::learning, NpcPrices::learning),
                         new Setting.Action("Slayer drop prices", "Edit prices and reload a shared Slayer price file.",
                                 "Edit", DropPricesScreen::open)));
     }
 
+    public static Module slayerProfitModule() { return profitModule(slayerHud); }
+
+    private static Module profitModule(ProfitHud hud) {
+        return new Module(hud.id, "Slayer Profit",
+                "Loot, spawn costs and profit per hour during your Slayer quest.", "Trackers",
+                () -> hud.enabled, v -> hud.enabled = v,
+                List.of(
+                        new Setting.Choice("Period", "Switch the counts; click the HUD label in chat or inventory.",
+                                List.of("Session", "All Time"), () -> hud.period, v -> hud.period = v),
+                        new Setting.Toggle("Compact list", "Show the five highest-value items; profit still includes every priced drop.",
+                                () -> hud.compact, v -> hud.compact = v),
+                        new Setting.Toggle("Learn Slayer sale prices", "Use a Slayer drop's value after its first sale; off uses custom or built-in prices.",
+                                NpcPrices::learning, NpcPrices::learning),
+                        new Setting.Action("Slayer drop prices", "Edit prices shared by your Slayer profit trackers.",
+                                "Edit", DropPricesScreen::open)));
+    }
+
+    private static boolean trackingEnabled() { return enabled || slayerHud.enabled; }
+
     public static void init() {
         load();
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "boss_drops"),
+                (g, delta) -> drawHud(g));
+        HudLayout.register("dragon.bossdrops", "Boss Drops", 0.006f, 0.62f, BossDrops::drawHudAt);
+        HudLayout.register(slayerHud.id, "Slayer Profit", 0.006f, 0.62f,
+                (g, font, x, y, sample) -> drawProfitHudAt(slayerHud, g, font, x, y, sample));
         NpcPrices.init();
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (!enabled || overlay) return;
+            if (!trackingEnabled() || overlay) return;
             String raw = message.getString();
             String line = Zealots.strip(raw).trim();
             if (DragonTimer.isPlayerChat(line)) return;
+            messageWorld = Minecraft.getInstance().level;
             long now = System.currentTimeMillis();
+            rewardQuestLine(line);
+            profitQuestLine(line, now);
             if (line.startsWith(SUMMARY)) {
                 settleSummary();
                 summaryAt = now;
@@ -377,24 +451,45 @@ public final class BossDrops {
             if (start != null) {
                 long coins = SlayerCosts.afterLoan(start.coins(), questDiscount());
                 for (Map<String, Count> counts : List.of(session, unsaved)) {
-                    Count c = of(counts, start.boss());
+                    Count c = of(counts, resolvedStartBoss(start.boss(), line));
                     c.starts++;
                     if (coins < 0) c.unknownCosts++;
                     else c.spawnCost += coins;
                 }
-                show(start.boss());
+                show(resolvedStartBoss(start.boss(), line));
                 save();
             }
             if (line.contains(SLAYER_SPAWNING)) {
+                // A fast next kill can begin before the previous 2.5s loot wait
+                // expires. Close that death before taking this boss's baseline.
+                settlePreviousSlayer();
                 Minecraft mc = Minecraft.getInstance();
                 String item = rewardItem(slayer);
-                rewardWindow = mc.player == null || mc.level == null || item == null ? null
-                        : new RewardWindow(slayer, item, inventoryCount(mc, item), mc.level, now);
+                rewardSpawned(slayer, item, inventoryCount(mc, item), mc.player == null ? null : mc.level, now);
+                String atom = atomItem(slayer);
+                atomSpawned(slayer, atom, inventoryCount(mc, atom), mc.player == null ? null : mc.level, now);
                 return;
             }
 
             Drops.Drop d = Drops.parse(raw);
             if (d != null) {
+                if (line.startsWith("BONUS! ")) {
+                    // This generic wording also pays altar sacrifices. Only an
+                    // armed personal Slayer fight can make it boss loot.
+                    if (!slayerBonusEligible(d.item(), now, messageWorld)) return;
+                    if (slayerDeathWindow(now, messageWorld)) death.drops.add(d);
+                    else hold(d, now, true);
+                    return;
+                }
+                String reward = slayerDeathWindow(now, messageWorld) ? rewardItem(death.boss) : rewardItem(slayer);
+                if (lootName(d.item()).equalsIgnoreCase(reward) && slayerBonusEligible(d.item(), now, messageWorld)) {
+                    // Ovoids also come from ordinary End mobs. Only a confirmed
+                    // personal Slayer window lets their announced stack supplement
+                    // the inventory snapshot, rather than attributing nearby mobs.
+                    if (slayerDeathWindow(now, messageWorld)) death.drops.add(d);
+                    else hold(d, now, true);
+                    return;
+                }
                 // Dragon loot is announced by name and credited that way; a dragon's
                 // "loot number → Golden Dragon Leggings" landing in the second a Warden
                 // died is the dragon's, not the Warden's.
@@ -402,17 +497,15 @@ public final class BossDrops {
                 if (!NEST.contains(lower) && !MINED.contains(lower)) {
                     if (death != null) {
                         if ((isDragon(death.boss) || !lower.contains("dragon")) && belongs(death.boss, d.item())) death.drops.add(d);
+                        else hold(d, now);
                     }
-                    else {
-                        held = d;
-                        heldAt = now;
-                    }
+                    else hold(d, now);
                 }
                 return;
             }
             Matcher m = TARGET.matcher(line);
             if (m.find()) {
-                slayer = m.group(1).toLowerCase(Locale.ROOT).startsWith("ender") ? VOIDGLOOM : REVENANT;
+                slayer = questBoss(line);
                 return;
             }
             if (EYE_PLACED.matcher(line).find()) {
@@ -420,15 +513,10 @@ public final class BossDrops {
                 show(DRAGON);
                 return;
             }
-            if (line.contains(AWOKEN)) {
-                if (eyes > 0) ownDragonUp = true;
-                return;
-            }
             // "has awoken" is broadcast to the whole lobby, so it says nothing about who
             // placed an eye; counting it as one made every dragon yours.
             if (line.contains(EGG_SPAWNED)) {
                 eyes = 0;
-                ownDragonUp = false;
                 return;
             }
             if (line.contains(TREMBLE)) {
@@ -437,7 +525,6 @@ public final class BossDrops {
             }
             m = DRAGON_DEAD.matcher(line);
             if (m.find()) {
-                ownDragonUp = false;
                 // Yours if you put an eye in. Its drops are announced by name, seconds
                 // later, or as a debug loot line right after the summary box.
                 if (eyes > 0) {
@@ -464,11 +551,13 @@ public final class BossDrops {
                 return;
             }
             if (line.contains(SLAYER_DEAD)) {
+                // Missing a spawn line must still leave each SLAIN as its own kill.
+                settlePreviousSlayer();
                 Death x = open(slayer, now, true);
                 x.dead = true;
                 x.place = 1;
-                x.reward = rewardWindow;
-                rewardWindow = null;
+                x.reward = takeReward();
+                x.atomReward = takeAtomReward();
                 return;
             }
             m = OBTAINED.matcher(line);
@@ -476,19 +565,28 @@ public final class BossDrops {
                 Minecraft mc = Minecraft.getInstance();
                 if (mc.player != null && m.group(1).equalsIgnoreCase(mc.player.getName().getString())) {
                     String item = m.group(2).trim();
-                    drop(lastDragon, obtainedDrop(raw, item));
+                    // A dragon's kill is counted 2.5 s after it de-spawns, and in his logs about
+                    // one obtained line in six landed inside that wait (201 of 1,310 within 2 s).
+                    // Dropped straight away, a pet reset "since pet" and the kill then made it
+                    // 1. Held with the kill, it is counted after it.
+                    if (death != null && isDragon(death.boss)) death.drops.add(obtainedDrop(raw, item));
+                    else drop(lastDragon, obtainedDrop(raw, item));
                 }
             }
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             long now = System.currentTimeMillis();
+            clockProfit(now, mc.player == null ? null : mc.level);
+            if (mc.player != null && menuTicks % 5 == 0) observeQuestSidebar(mc, now);
+            rewardWorld(mc.player == null ? null : mc.level);
             if (death != null && now - death.at > HOLD_MS) settle();
             if (summaryAt != 0 && now - summaryAt >= SUMMARY_MS) settleSummary();
             if (mc.player == null) {
                 catalysts = -1;
-                ownDragonUp = false;
                 eyes = 0;
                 rewardWindow = null;
+                atomWindow = null;
+                held.clear();
                 spawnCosts.resetPending();
                 return;
             }
@@ -503,62 +601,60 @@ public final class BossDrops {
             if (catalysts >= 0 && n == catalysts - 1 && mc.screen == null) catalystAt = now;
             catalysts = n;
         });
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, ctx) -> {
-            var root = ClientCommands.literal("drops").executes(c -> {
-                Map<String, Count> m = totals();
-                for (String boss : BOSSES) {
-                    Count counts = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
-                    if (counts.kills > 0 || counts.starts > 0) say(boss);
-                }
-                return 1;
-            });
-            root.then(ClientCommands.literal("audit").executes(c -> audit(false))
-                    .then(ClientCommands.literal("apply").executes(c -> audit(true))));
-            // /drops dragon is every kind together; /drops golden one kind.
-            for (String boss : BOSSES) {
-                root.then(ClientCommands.literal(boss.toLowerCase(Locale.ROOT)).executes(c -> {
-                    say(boss);
-                    return 1;
-                }));
-            }
-            root.then(ClientCommands.literal("zombie").executes(c -> {
-                say(REVENANT);
-                return 1;
-            }));
-            root.then(ClientCommands.literal("enderman").executes(c -> {
-                say(VOIDGLOOM);
-                return 1;
-            }));
-            for (String k : KINDS) {
-                root.then(ClientCommands.literal(k.toLowerCase(Locale.ROOT)).executes(c -> {
-                    say(k + " Dragon");
-                    return 1;
-                }));
-            }
-            dispatcher.register(root);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
+            clockProfit(System.currentTimeMillis(), mc.player == null ? null : mc.level);
+            save();
         });
-        // The chip is clickable whenever the mouse is free over the world - chat open.
-        ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
-            if (!(screen instanceof ChatScreen)) return;
-            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
-                int[] b = HudLayout.bounds("drops.boss");
-                if (b == null) return true;
-                float sc = HudLayout.scale("drops.boss");
-                if (click.y() < b[1] || click.y() >= b[1] + (Readout.ROW_H + 2) * sc) return true;
-                double lx = (click.x() - b[0]) / sc;     // the chips are known as offsets in the readout's own pixels
-                if (lx >= modeL && lx < modeR) {
-                    mode = TOTAL.equals(mode) ? SESSION : TOTAL;
-                    return false;
+        ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+            if (!HudLayout.interactiveScreen(screen)) return;
+            ScreenMouseEvents.allowMouseClick(screen).register((s, event) -> {
+                if (event.button() != 0 || client.options.hideGui) return true;
+                if (bossHudVisible()) {
+                    int[] bounds = HudLayout.bounds("dragon.bossdrops");
+                    if (periodHit(bounds, HudLayout.scale("dragon.bossdrops"), event.x(), event.y(), client.font.width(periodText(hudPeriod)))) {
+                        hudPeriod = hudPeriod.equals("Session") ? "All Time" : "Session";
+                        com.endsight.Config.save(com.endsight.EndsightClient.registry());
+                        return false;
+                    }
                 }
-                if (kindR > kindL && lx >= kindL && lx < kindR) {
-                    nextKind();
-                    return false;
+                for (ProfitHud hud : List.of(slayerHud)) {
+                    if (!profitHudVisible(hud)) continue;
+                    int[] bounds = HudLayout.bounds(hud.id);
+                    if (periodHit(bounds, HudLayout.scale(hud.id), event.x(), event.y(), client.font.width(periodText(hud.period)))) {
+                        hud.period = hud.period.equals("Session") ? "All Time" : "Session";
+                        com.endsight.Config.save(com.endsight.EndsightClient.registry());
+                        return false;
+                    }
                 }
                 return true;
             });
         });
-        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "bossdrops"), (g, delta) -> draw(g));
-        HudLayout.register("drops.boss", "Boss Drops", 0.994f, 0.35f, (g, font, x, y, sample) -> drawAt(g, font, x, y, sample));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, ctx) -> {
+            // /drops is all time; "session" on the end gives this launch instead.
+            var root = ClientCommands.literal("drops").executes(c -> sayAll(false));
+            root.then(ClientCommands.literal("session").executes(c -> sayAll(true)));
+            root.then(ClientCommands.literal("audit").executes(c -> audit(false))
+                    .then(ClientCommands.literal("apply").executes(c -> audit(true))));
+            // /drops dragon is every kind together; /drops golden one kind.
+            for (String boss : BOSSES) {
+                if (boss.equals(LEGACY_ENDERMAN) || boss.equals(UNKNOWN_ENDERMAN)) continue;
+                root.then(ClientCommands.literal(boss.toLowerCase(Locale.ROOT)).executes(c -> say(boss, false))
+                        .then(ClientCommands.literal("session").executes(c -> say(boss, true))));
+            }
+            root.then(ClientCommands.literal("zombie").executes(c -> say(REVENANT, false))
+                    .then(ClientCommands.literal("session").executes(c -> say(REVENANT, true))));
+            root.then(ClientCommands.literal("enderman").executes(c -> say(VOIDGLOOM, false))
+                    .then(ClientCommands.literal("session").executes(c -> say(VOIDGLOOM, true))));
+            root.then(ClientCommands.literal("legacy").executes(c -> say(LEGACY_ENDERMAN, false))
+                    .then(ClientCommands.literal("session").executes(c -> say(LEGACY_ENDERMAN, true))));
+            root.then(ClientCommands.literal("unidentified").executes(c -> say(UNKNOWN_ENDERMAN, false))
+                    .then(ClientCommands.literal("session").executes(c -> say(UNKNOWN_ENDERMAN, true))));
+            for (String k : KINDS) {
+                root.then(ClientCommands.literal(k.toLowerCase(Locale.ROOT)).executes(c -> say(k + " Dragon", false))
+                        .then(ClientCommands.literal("session").executes(c -> say(k + " Dragon", true))));
+            }
+            dispatcher.register(root);
+        });
     }
 
     /**
@@ -582,18 +678,110 @@ public final class BossDrops {
     }
 
     private static void learnSpawnCosts(Minecraft mc) {
-        if (!enabled || !(mc.screen instanceof AbstractContainerScreen<?> screen)) return;
+        if (!trackingEnabled() || !(mc.screen instanceof AbstractContainerScreen<?> screen)) return;
         String title = Zealots.strip(screen.getTitle().getString()).trim();
-        if (!title.equals("Revenant Horror") && !title.equals("Voidgloom Seraph")) return;
+        if (!title.equals("Revenant Horror") && !title.equals("Voidgloom Seraph") && !title.equals("Riftborn Seraph")) return;
         for (var slot : screen.getMenu().slots) {
             if (slot.container == mc.player.getInventory()) continue;
             ItemStack stack = slot.getItem();
             var lore = stack.get(DataComponents.LORE);
             if (lore == null) continue;
-            SlayerCosts.Quote quote = SlayerCosts.quote(Zealots.strip(stack.getHoverName().getString()).trim(),
+            String name = Zealots.strip(stack.getHoverName().getString()).trim();
+            SlayerCosts.Quote quote = SlayerCosts.quote(name,
                     lore.lines().stream().map(c -> Zealots.strip(c.getString()).trim()).toList());
             spawnCosts.learn(quote);
+            if (quote != null && quote.boss().equals(VOIDGLOOM)) {
+                String family = namedQuestBoss(name);
+                if (family != null) endermanFamilies.put(quote.xp(), family);
+            }
         }
+    }
+
+    /** The current menu's named boss wins over defaults when its XP requirement changes. */
+    private static String questBoss(String line) {
+        Matcher target = TARGET.matcher(line);
+        if (!target.find()) return null;
+        String mob = target.group(2).toLowerCase(Locale.ROOT);
+        if (mob.startsWith("zombie")) return REVENANT;
+        if (!mob.startsWith("ender")) return null;
+        try {
+            return endermanFamilies.getOrDefault(Long.parseLong(target.group(1).replace(",", "")), UNKNOWN_ENDERMAN);
+        } catch (NumberFormatException invalidXp) {
+            return UNKNOWN_ENDERMAN;
+        }
+    }
+
+    private static String namedQuestBoss(String line) {
+        if (line == null) return null;
+        Matcher name = QUEST_FAMILY.matcher(Zealots.strip(line).trim());
+        if (!name.find()) return null;
+        return switch (name.group(1)) {
+            case "Riftborn Seraph" -> RIFTBORN;
+            case "Voidgloom Seraph" -> "V".equals(name.group(2)) ? RIFTBORN : VOIDGLOOM;
+            default -> REVENANT;
+        };
+    }
+
+    private static String resolvedStartBoss(String mergedBoss, String line) {
+        if (!mergedBoss.equals(VOIDGLOOM)) return mergedBoss;
+        String fromTarget = questBoss(line);
+        return fromTarget == null ? UNKNOWN_ENDERMAN : fromTarget;
+    }
+
+    private static void profitQuestLine(String line, long now) {
+        clockProfit(now, profitWorld);
+        if (line.contains(SLAYER_STARTED)) {
+            profitQuestActive = true;
+            profitSawStart = true;
+            // A fresh quest must not inherit the previous quest's family before its target arrives.
+            slayer = UNKNOWN_ENDERMAN;
+            profitLastLine = now;
+        }
+        String target = questBoss(line);
+        if (target != null) {
+            slayer = target;
+            profitQuestActive = true;
+            profitLastLine = now;
+            if (!profitSawStart) markIncompleteTime(slayer);
+        }
+        String named = namedQuestBoss(line);
+        if (named != null && profitQuestActive) slayer = named;
+        if (line.contains(SLAYER_SPAWNING)) {
+            profitQuestActive = true;
+            profitLastLine = now;
+        }
+        if (line.contains(SLAYER_DEAD) || line.contains(SLAYER_FAILED) || line.contains("SLAYER QUEST COMPLETE")) {
+            profitQuestActive = false;
+            profitSawStart = false;
+        }
+    }
+
+    private static void observeQuestSidebar(Minecraft mc, long now) {
+        if (!profitQuestActive) return;
+        String family = namedQuestBoss(Area.sidebarLine(mc, "Slayer:"));
+        if (family != null) {
+            clockProfit(now, mc.level);
+            slayer = family;
+            if (!profitSawStart) markIncompleteTime(slayer);
+        }
+    }
+
+    private static void markIncompleteTime(String boss) {
+        for (Map<String, Count> counts : List.of(session, unsaved)) of(counts, boss).incompleteTime = true;
+    }
+
+    private static void clockProfit(long now, Object world) {
+        if (profitWorld != null && profitWorld != world) {
+            profitQuestActive = false;
+            profitSawStart = false;
+        }
+        if (trackingEnabled() && profitQuestActive && world != null && world == profitWorld && profitTickAt > 0
+                && now >= profitTickAt && now - profitLastLine < 15 * 60_000L) {
+            long elapsed = now - profitTickAt;
+            for (Map<String, Count> counts : List.of(session, unsaved)) of(counts, slayer).activeMs += elapsed;
+        }
+        profitTickAt = now;
+        profitWorld = world;
     }
 
     /**
@@ -604,46 +792,173 @@ public final class BossDrops {
         if (death != null && !death.boss.equals(boss)) settle();
         if (death == null) {
             death = new Death(boss, now);
-            if (takeHeld && held != null && now - heldAt < BEFORE_MS && belongs(boss, held.item())) death.drops.add(held);
+            death.level = messageWorld;
         }
-        held = null;
+        held.removeIf(pending -> now < pending.at() || now - pending.at() >= BEFORE_MS);
+        if (takeHeld) {
+            var pending = held.iterator();
+            while (pending.hasNext()) {
+                HeldDrop entry = pending.next();
+                if (entry.level() != death.level || entry.bonusBoss() != null && !entry.bonusBoss().equals(boss)
+                        || !belongs(boss, entry.drop().item())) continue;
+                death.drops.add(entry.drop());
+                pending.remove();
+            }
+        }
         return death;
     }
 
-    /** Decide whose it was, and count it if it was yours. */
-    private static void settle() {
-        Death d = death;
+    private static void hold(Drops.Drop drop, long now) {
+        hold(drop, now, false);
+    }
+
+    private static void hold(Drops.Drop drop, long now, boolean slayerBonus) {
+        held.removeIf(pending -> now < pending.at() || now - pending.at() >= BEFORE_MS);
+        if (held.size() == HELD_LIMIT) held.removeFirst();
+        // A bonus item can arrive before SLAIN immediately after the rare item.
+        // Remembering only the last line replaced that rare drop with the bonus.
+        held.add(new HeldDrop(drop, now, messageWorld, slayerBonus ? slayer : null));
+    }
+
+    private static boolean slayerBonusEligible(String item, long now, Object level) {
+        if (level == null || item == null) return false;
+        String name = plain(Zealots.strip(item)).trim().replace('\u2019', '\'');
+        // Eyes are shared with altar rewards; saved history alone is not evidence
+        // that another generic BONUS line belongs to the current Slayer fight.
+        if (name.equalsIgnoreCase("Golden Eye") || name.equalsIgnoreCase("Summoning Eye")
+                || SLAYER_ITEMS.stream().noneMatch(n -> n.equalsIgnoreCase(name))) return false;
+        if (slayerDeathWindow(now, level)) return true;
+        return profitQuestActive && now >= profitLastLine && now - profitLastLine < 15 * 60_000L
+                && rewardWindow != null && isSlayer(rewardWindow.boss()) && rewardWindow.boss().equals(slayer)
+                && rewardWindow.level() == level;
+    }
+
+    private static boolean slayerDeathWindow(long now, Object level) {
+        return death != null && death.dead && isSlayer(death.boss) && death.level == level
+                && now >= death.at && now - death.at <= HOLD_MS;
+    }
+
+    private static void settlePreviousSlayer() {
+        Death previous = takeDeadSlayer();
+        if (previous != null) settle(previous);
+    }
+
+    /** Only an already slain personal Slayer needs the next-fight boundary. */
+    private static Death takeDeadSlayer() {
+        return death != null && death.dead && isSlayer(death.boss) ? takeDeath() : null;
+    }
+
+    private static Death takeDeath() {
+        Death previous = death;
         death = null;
+        return previous;
+    }
+
+    /** Decide whose it was, and count it if it was yours. */
+    private static void settle() { settle(takeDeath()); }
+
+    private static void settle(Death d) {
+        if (d == null) return;
+        String reward = rewardItem(d.boss), atom = atomItem(d.boss);
+        int observed = measured(d.reward, d.boss, reward), atoms = measured(d.atomReward, d.boss, atom);
+        settle(d, observed, atoms, BossDrops::kill, BossDrops::drop, Drops::tierOf);
+    }
+
+    /** Inventory gain since the spawn; only touches the client when there is a baseline to compare. */
+    private static int measured(RewardWindow window, String boss, String item) {
+        if (window == null || item == null) return 0;
+        Minecraft mc = Minecraft.getInstance();
+        return observedReward(window, boss, item, mc.player == null ? null : mc.level, inventoryCount(mc, item));
+    }
+
+    // Keep the actual kill and payout calculation testable without booting a
+    // client. The live path supplies its normal persistence and alert callbacks.
+    private static void settle(Death d, int observed, java.util.function.Consumer<String> kill,
+                               java.util.function.BiConsumer<String, Drops.Drop> payout,
+                               java.util.function.ToIntFunction<String> tier) {
+        settle(d, observed, 0, kill, payout, tier);
+    }
+
+    private static void settle(Death d, int observed, int observedAtoms, java.util.function.Consumer<String> kill,
+                               java.util.function.BiConsumer<String, Drops.Drop> payout,
+                               java.util.function.ToIntFunction<String> tier) {
         if (d == null) return;
         boolean mine = d.place <= PLACES
                 || (d.dead && !d.drops.isEmpty())
                 || (d.dead && WARDEN.equals(d.boss) && catalyst);
         if (WARDEN.equals(d.boss)) catalyst = false;
         if (!mine) return;
-        kill(d.boss);
-        String reward = rewardItem(d.boss);
-        int announced = 0;
+        kill.accept(d.boss);
+        String reward = rewardItem(d.boss), atom = atomItem(d.boss);
+        int announced = announcedQuantity(d.drops, reward), announcedAtoms = announcedQuantity(d.drops, atom);
         for (Drops.Drop x : d.drops) {
-            if (reward != null && lootName(x.item()).equalsIgnoreCase(reward)) announced++;
-            else drop(d.boss, x);
+            String name = lootName(x.item());
+            if ((reward == null || !name.equalsIgnoreCase(reward)) && (atom == null || !name.equalsIgnoreCase(atom)))
+                payout.accept(d.boss, x);
         }
+        // Each measured item is paid once, as the larger of what chat announced and what
+        // the inventory gained: an announced atom also lands in the bag, so adding the
+        // two would count it twice, and a silent T5 stack has nothing announced at all.
         if (reward != null) {
-            Minecraft mc = Minecraft.getInstance();
-            int observed = d.reward != null && d.reward.boss().equals(d.boss)
-                    && d.reward.level() == mc.level && mc.player != null
-                    && System.currentTimeMillis() - d.reward.at() < 120_000
-                    ? inventoryCount(mc, reward) - d.reward.baseline() : 0;
             int quantity = rewardQuantity(announced, observed);
-            if (quantity > 0) drop(d.boss, new Drops.Drop(reward, Drops.tierOf(reward)), quantity);
+            if (quantity > 0) payout.accept(d.boss, new Drops.Drop(reward, tier.applyAsInt(reward), quantity));
         }
+        if (atom != null) {
+            int quantity = rewardQuantity(announcedAtoms, observedAtoms);
+            if (quantity > 0) payout.accept(d.boss, new Drops.Drop(atom, tier.applyAsInt(atom), quantity));
+        }
+    }
+
+    /** The second item a kill pays straight into the inventory, or null. See {@link #atomWindow}. */
+    private static String atomItem(String boss) {
+        return VOIDGLOOM.equals(boss) || UNKNOWN_ENDERMAN.equals(boss) ? "Null Atom" : null;
+    }
+
+    private static void atomSpawned(String boss, String item, int baseline, Object level, long at) {
+        atomWindow = level == null || item == null ? null : new RewardWindow(boss, item, baseline, level, at);
+    }
+
+    private static RewardWindow takeAtomReward() {
+        RewardWindow atoms = atomWindow;
+        atomWindow = null;
+        return atoms;
     }
 
     private static String rewardItem(String boss) {
         return switch (boss) {
             case REVENANT -> "Revenant Viscera";
-            case VOIDGLOOM -> "Null Ovoid";
+            case VOIDGLOOM, RIFTBORN, UNKNOWN_ENDERMAN -> "Null Ovoid";
             default -> null;
         };
+    }
+
+    private static void rewardQuestLine(String line) {
+        if (line.contains(SLAYER_STARTED) || line.contains(SLAYER_FAILED)) { rewardWindow = null; atomWindow = null; }
+    }
+
+    private static void rewardSpawned(String boss, String item, int baseline, Object level, long at) {
+        rewardWindow = level == null || item == null ? null : new RewardWindow(boss, item, baseline, level, at);
+    }
+
+    private static RewardWindow takeReward() {
+        RewardWindow reward = rewardWindow;
+        rewardWindow = null;
+        return reward;
+    }
+
+    private static void rewardWorld(Object level) {
+        held.removeIf(pending -> pending.level() != level);
+        if (rewardWindow != null && rewardWindow.level() != level) rewardWindow = null;
+        if (atomWindow != null && atomWindow.level() != level) atomWindow = null;
+        if (death != null && death.reward != null && death.reward.level() != level) death.reward = null;
+        if (death != null && death.atomReward != null && death.atomReward.level() != level) death.atomReward = null;
+    }
+
+    private static int observedReward(RewardWindow reward, String boss, String item, Object level, int current) {
+        // A long T5 fight is still the same quest. The former two-minute cutoff could
+        // lose its guaranteed stack; quest transitions and world changes invalidate it now.
+        return reward != null && reward.boss().equals(boss) && reward.item().equals(item)
+                && level != null && reward.level() == level ? current - reward.baseline() : 0;
     }
 
     private static int inventoryCount(Minecraft mc, String item) {
@@ -659,6 +974,14 @@ public final class BossDrops {
 
     static int rewardQuantity(int announced, int inventoryDelta) {
         return Math.max(Math.max(0, announced), inventoryDelta);
+    }
+
+    private static int announcedQuantity(List<Drops.Drop> drops, String item) {
+        if (item == null) return 0;
+        long quantity = 0;
+        for (Drops.Drop drop : drops)
+            if (lootName(drop.item()).equalsIgnoreCase(item)) quantity += drop.quantity();
+        return (int) Math.min(Integer.MAX_VALUE, quantity);
     }
 
     /** Count what the dragon's loot summary listed, and the kill if the eye lines missed it. */
@@ -694,11 +1017,30 @@ public final class BossDrops {
     }
 
     private static void kill(String boss) {
-        if (isDragon(boss)) dragonKillAt = System.currentTimeMillis();
+        if (isDragon(boss)) {
+            dragonKillAt = System.currentTimeMillis();
+            countTowardStreaks(boss);
+        }
         of(session, boss).kills++;
         of(unsaved, boss).kills++;
         show(boss);
         save();
+    }
+
+    /** One more dragon toward both streaks; a Superior resets its own. */
+    static void countTowardStreaks(String boss) {
+        // A Golden Dragon comes from Golden Eyes, not the roll that makes a Superior, so
+        // it is no chance missed; it still counts toward the pet.
+        if ("Superior Dragon".equals(boss)) {
+            sinceSuperior = 0;
+            superiorKnown = true;
+        } else if (!"Golden Dragon".equals(boss)) sinceSuperior++;
+        sincePet++;
+    }
+
+    /** The Ender Dragon pet at any level or rarity, as a counted drop key. */
+    static boolean isDragonPet(String item) {
+        return "ender dragon".equals(lootName(item));
     }
 
     /** Fodder and every dragon armour piece: no row, whatever the tier says. */
@@ -770,7 +1112,7 @@ public final class BossDrops {
     }
 
     private static void drop(String boss, Drops.Drop d) {
-        drop(boss, d, 1);
+        drop(boss, d, d.quantity());
     }
 
     private static void drop(String boss, Drops.Drop d, int quantity) {
@@ -778,11 +1120,20 @@ public final class BossDrops {
         String item = petKey(d.item(), d.tier());
         if (hidden(item) || !counted(boss, item)) return;
         if (repeatedDrop(boss, item, System.currentTimeMillis())) return;
-        of(session, boss).drops.merge(item, quantity, Integer::sum);
-        of(unsaved, boss).drops.merge(item, quantity, Integer::sum);
+        recordDrop(boss, item, quantity);
+        if (isDragon(boss) && isDragonPet(item)) {
+            sincePet = 0;
+            petKnown = true;
+        }
         seen.merge(item, d.tier(), Math::max);
         show(boss);
         save();
+    }
+
+    private static void recordDrop(String boss, String item, int quantity) {
+        if (quantity <= 0) return;
+        of(session, boss).drops.merge(item, quantity, Integer::sum);
+        of(unsaved, boss).drops.merge(item, quantity, Integer::sum);
     }
 
     private static boolean repeatedDrop(String boss, String item, long now) {
@@ -792,15 +1143,237 @@ public final class BossDrops {
         return last != null && now - last < SAME_DROP_MS;
     }
 
-    /** The readout turns to the boss that just did something; a dragon of any kind is the dragon readout. */
+    /** Keep the last dragon kind for its later reward announcements. */
     private static void show(String boss) {
-        if (isDragon(boss)) {
-            lastDragon = boss;
-            showing = DRAGON;
-            dragonActivityAt = System.currentTimeMillis();
-        } else {
-            showing = boss;
+        displayedBoss = boss;
+        if (isDragon(boss)) lastDragon = boss;
+    }
+
+    private static void drawHud(GuiGraphicsExtractor g) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.options.hideGui) return;
+        if (bossHudVisible()) HudLayout.draw("dragon.bossdrops", g, mc.font, false);
+        if (profitHudVisible(slayerHud)) HudLayout.draw(slayerHud.id, g, mc.font, false);
+    }
+
+    private static boolean bossHudVisible() {
+        String boss = hudBoss();
+        return enabled && showHud && !isDragon(boss) && !endermanSlayer(boss) && (Area.end() || Area.crypts())
+                && (!isSlayer(boss) || profitQuestActive);
+    }
+
+    private static boolean profitHudVisible(ProfitHud hud) {
+        return hud.enabled && (Area.end() || Area.crypts())
+                && profitHudMatches(profitFamily(), slayer, profitQuestActive);
+    }
+
+    /**
+     * The family the profit card is for: whichever Slayer quest is running.
+     *
+     * Null when that is not a known family, which keeps the old guarantee - an
+     * unidentified or legacy Enderman never borrows another family's history just to
+     * fill a card - now that one card serves them all.
+     */
+    static String profitFamily() {
+        return isSlayer(slayer) && !UNKNOWN_ENDERMAN.equals(slayer) && !LEGACY_ENDERMAN.equals(slayer)
+                ? slayer : null;
+    }
+
+    private static boolean profitHudMatches(String family, String questFamily, boolean questActive) {
+        // XP/name identification is shared with the recorder. Unknown and legacy
+        // Endermen never borrow another family's history just to fill a HUD.
+        return questActive && family != null && family.equals(questFamily);
+    }
+
+    /**
+     * The running quest's family once it is known, else the last boss with a kill or drop.
+     * Going by the last drop alone left a fresh Riftborn quest showing Voidgloom's numbers
+     * until its first loot arrived. A quest whose family is not read yet keeps the last boss.
+     */
+    private static String hudBoss() {
+        return profitQuestActive && isSlayer(slayer) && !UNKNOWN_ENDERMAN.equals(slayer) ? slayer : displayedBoss;
+    }
+
+    private static String periodText(String period) { return period.equals("All Time") ? "[Total]" : "[Session]"; }
+
+    private static boolean periodHit(int[] bounds, float scale, double mouseX, double mouseY, int textWidth) {
+        if (bounds == null) return false;
+        // Reserve only the header's small period label, never the rows or inventory slots beneath.
+        return mouseX >= bounds[0] + bounds[2] - (textWidth + 4) * scale && mouseX < bounds[0] + bounds[2]
+                && mouseY >= bounds[1] && mouseY < bounds[1] + 12 * scale;
+    }
+
+    private static String itemColour(String item) {
+        int rgb = Rarity.colour(item, Drops.colour(tier(item))) & 0xFFFFFF;
+        for (var colour : net.minecraft.ChatFormatting.values())
+            if (colour.isColor() && colour.getColor() != null && colour.getColor() == rgb) return "§" + colour.getChar();
+        return "§f";
+    }
+
+    private static List<Map.Entry<String, Integer>> valueSorted(Map<String, Integer> drops) {
+        // Price lookup normalizes names and checks recorded Slayer loot. Resolve it
+        // once per item instead of doing that work again for every sort comparison.
+        final class PricedDrop {
+            final Map.Entry<String, Integer> drop;
+            final long value;
+            private int rank = Integer.MIN_VALUE;
+            private String name;
+
+            PricedDrop(Map.Entry<String, Integer> drop) {
+                this.drop = drop;
+                value = NpcPrices.value(drop.getKey(), drop.getValue());
+            }
+
+            int rank() {
+                if (rank == Integer.MIN_VALUE) rank = rankOf(drop.getKey());
+                return rank;
+            }
+
+            String name() {
+                if (name == null) name = plain(drop.getKey());
+                return name;
+            }
         }
+        return drops.entrySet().stream().filter(e -> e.getValue() > 0)
+                .map(PricedDrop::new)
+                .sorted((a, b) -> {
+                    int compared = Long.compare(b.value, a.value);
+                    if (compared != 0) return compared;
+                    int rank = Integer.compare(b.rank(), a.rank());
+                    return rank == 0 ? a.name().compareToIgnoreCase(b.name()) : rank;
+                }).map(e -> e.drop).toList();
+    }
+
+    private static boolean missingValues(Count c) {
+        return c.drops.entrySet().stream().anyMatch(e -> e.getValue() > 0 && NpcPrices.priceInfo(e.getKey()) == null);
+    }
+
+    private static long profit(Count c) {
+        long loot = 0;
+        for (Map.Entry<String, Integer> item : c.drops.entrySet()) {
+            long value = NpcPrices.value(item.getKey(), item.getValue());
+            loot = value > Long.MAX_VALUE - loot ? Long.MAX_VALUE : loot + value;
+        }
+        return loot - c.spawnCost - c.historicalCost;
+    }
+
+    private static int[] drawHudAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
+        String boss = sample ? GOLEM : hudBoss();
+        return drawCountsHudAt(g, font, x, y, sample, boss, hudPeriod, compactHud, boss + " Drops");
+    }
+
+    private static int[] drawProfitHudAt(ProfitHud hud, GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
+        String family = profitFamily();
+        String boss = sample || family == null ? VOIDGLOOM : family;   // preview with no quest running
+        return drawCountsHudAt(g, font, x, y, sample, boss, hud.period, hud.compact, boss + " Profit");
+    }
+
+    private static Count hudCount(String boss, String period) {
+        if (DRAGON.equals(boss)) return dragons(period.equals("All Time") ? totals() : session);
+        String key = bossKey(boss);
+        if (!period.equals("All Time")) return of(session, key);
+        Count base = loaded.get(key), fresh = unsaved.get(key);
+        if (base == null) return fresh == null ? new Count() : fresh;
+        if (fresh == null) return base;
+        // A Slayer readout only needs its own counts. Copying every other boss's
+        // drop history here scaled rendering cost with the entire saved account.
+        Count total = new Count();
+        for (Count part : List.of(base, fresh)) {
+            total.kills += part.kills;
+            total.starts += part.starts;
+            total.unknownCosts += part.unknownCosts;
+            total.spawnCost += part.spawnCost;
+            total.historicalCost += part.historicalCost;
+            total.activeMs += part.activeMs;
+            total.incompleteTime |= part.incompleteTime;
+            part.drops.forEach((item, n) -> total.drops.merge(item, n, Integer::sum));
+        }
+        return total;
+    }
+
+    private record CountState(int kills, int starts, int unknownCosts, long spawnCost, long historicalCost,
+                              boolean incompleteTime, Map<String, Integer> drops) {
+        static CountState of(Count count, boolean snapshot) {
+            return count == null ? null : new CountState(count.kills, count.starts, count.unknownCosts,
+                    count.spawnCost, count.historicalCost, count.incompleteTime,
+                    snapshot ? Map.copyOf(count.drops) : count.drops);
+        }
+    }
+
+    private record CountsHudState(String boss, String period, boolean compact, boolean sample,
+                                  long prices, Object palette, long quarterSecond, CountState base, CountState fresh) { }
+    private record CountsHudContext(String boss, String period, boolean compact, boolean sample) { }
+    private record CountsHudRows(CountsHudState state, List<HudCard.Row> rows) { }
+    // Boss Drops and Slayer Profit can both be visible, with separate periods and
+    // preview data. A single last-result cache made those two cards evict each other
+    // every frame. Bound the few display contexts rather than retaining history.
+    private static final Map<CountsHudContext, CountsHudRows> shownHudRows = new LinkedHashMap<>(8, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<CountsHudContext, CountsHudRows> eldest) {
+            return size() > 16;
+        }
+    };
+
+    private static CountsHudState countsHudState(String boss, String period, boolean compact, boolean sample,
+                                                 long now, boolean snapshot) {
+        boolean allTime = period.equals("All Time");
+        return new CountsHudState(boss, period, compact, sample, NpcPrices.revision(), Theme.palette(), now / 250,
+                CountState.of((allTime ? loaded : session).get(bossKey(boss)), snapshot),
+                allTime ? CountState.of(unsaved.get(bossKey(boss)), snapshot) : null);
+    }
+
+    private static List<HudCard.Row> countsHudRows(String boss, String period, boolean compact, boolean sample, long now) {
+        CountsHudContext context = new CountsHudContext(boss, period, compact, sample);
+        CountsHudState state = countsHudState(boss, period, compact, sample, now, false);
+        CountsHudRows shown = shownHudRows.get(context);
+        // The short refresh also catches newly seen item rarity and a reloaded tier
+        // list. Counts, period, prices and palette edits invalidate immediately.
+        if (!DRAGON.equals(boss) && shown != null && state.equals(shown.state())) return shown.rows();
+        List<HudCard.Row> rows = List.copyOf(buildCountsHudRows(boss, period, compact, sample));
+        shownHudRows.put(context, new CountsHudRows(countsHudState(boss, period, compact, sample, now, true), rows));
+        return rows;
+    }
+
+    private static int[] drawCountsHudAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample,
+                                          String boss, String period, boolean compact, String title) {
+        return TrackerHud.draw(g, font, x, y, title, periodText(period), Theme.muted(),
+                countsHudRows(boss, period, compact, sample, System.currentTimeMillis()), -1);
+    }
+
+    private static List<HudCard.Row> buildCountsHudRows(String boss, String period, boolean compact, boolean sample) {
+        Count c = hudCount(boss, period);
+        if (sample && isSlayer(boss)) {
+            c = new Count();
+            c.kills = 12;
+            c.starts = 12;
+            c.spawnCost = 180_000_000L;
+            c.activeMs = 1_800_000L;
+            c.drops.put("Null Ovoid", 120);
+            c.drops.put(RIFTBORN.equals(boss) ? "Rift Pass" : "Judgement Core", 2);
+        }
+        List<HudCard.Row> rows = new ArrayList<>();
+        rows.add(new HudCard.Row("Kills", sample ? "12" : String.format(Locale.ROOT, "%,d", c.kills)));
+        // Price order applies to the short HUD; the command retains the full rarity list.
+        List<Map.Entry<String, Integer>> list = valueSorted(c.drops);
+        int limit = compact ? 5 : 10;
+        for (Map.Entry<String, Integer> drop : list.stream().limit(limit).toList()) {
+            String value = String.format(Locale.ROOT, "%,d", drop.getValue());
+            if (isSlayer(boss)) value += " §8· §7" + (NpcPrices.value(drop.getKey(), drop.getValue()) > 0
+                    ? compactCoins(NpcPrices.value(drop.getKey(), drop.getValue())) : "?");
+            rows.add(new HudCard.Row(itemColour(drop.getKey()) + plain(drop.getKey()), value));
+        }
+        if (sample && !isSlayer(boss)) rows.add(new HudCard.Row("§6Giant's Core", "2"));
+        else if (list.isEmpty()) rows.add(new HudCard.Row("Drops", "None yet"));
+        if (list.size() > limit) rows.add(new HudCard.Row("More items", "+" + (list.size() - limit) + " §8(/drops)"));
+        if (isSlayer(boss)) {
+            rows.add(new HudCard.Row("Spawn costs", costText(c), Theme.neg()));
+            long profit = profit(c);
+            String unknown = missingValues(c) || c.unknownCosts > 0 ? " + ?" : "";
+            rows.add(new HudCard.Row("Profit", compactCoins(profit) + unknown, profit < 0 ? Theme.neg() : Theme.pos()));
+            rows.add(new HudCard.Row("Profit/h", c.activeMs == 0 || c.incompleteTime ? "—"
+                    : compactCoins(Math.round(profit * (3_600_000.0 / c.activeMs))) + unknown,
+                    profit < 0 ? Theme.neg() : Theme.pos()));
+        }
+        return rows;
     }
 
     /** A name to sort by: a pet's "[Lvl 1] " is not part of what it is, and "[" sorts before every letter. */
@@ -812,19 +1385,19 @@ public final class BossDrops {
         Set<String> names = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         names.addAll(SLAYER_ITEMS);
         for (Map<String, Count> counts : List.of(session, loaded, unsaved))
-            for (String boss : List.of(REVENANT, VOIDGLOOM))
+            for (String boss : List.of(REVENANT, VOIDGLOOM, RIFTBORN, LEGACY_ENDERMAN, UNKNOWN_ENDERMAN))
                 names.addAll(of(counts, boss).drops.keySet());
-        names.addAll(NpcPrices.knownNames());
+        NpcPrices.knownNames().stream().filter(BossDrops::isSlayerDropName).forEach(names::add);
         return List.copyOf(names);
     }
 
     public static boolean isSlayerDropName(String item) {
         if (item == null) return false;
-        String name = plain(Zealots.strip(item)).trim();
+        String name = plain(Zealots.strip(item)).trim().replace('\u2019', '\'');
         if (SLAYER_ITEMS.stream().anyMatch(n -> n.equalsIgnoreCase(name))) return true;
         for (Map<String, Count> counts : List.of(session, loaded, unsaved))
-            for (String boss : List.of(REVENANT, VOIDGLOOM))
-                if (of(counts, boss).drops.keySet().stream().anyMatch(n -> plain(n).equalsIgnoreCase(name))) return true;
+            for (String boss : List.of(REVENANT, VOIDGLOOM, RIFTBORN, LEGACY_ENDERMAN, UNKNOWN_ENDERMAN))
+                if (of(counts, boss).drops.keySet().stream().anyMatch(n -> plain(n).replace('\u2019', '\'').equalsIgnoreCase(name))) return true;
         return false;
     }
 
@@ -862,18 +1435,29 @@ public final class BossDrops {
         };
     }
 
+    /** /drops: every boss with something to show, all time or this session. */
+    private static int sayAll(boolean thisSession) {
+        Map<String, Count> m = thisSession ? session : totals();
+        for (String boss : BOSSES) {
+            Count counts = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
+            if (counts.kills > 0 || counts.starts > 0) say(boss, thisSession);
+        }
+        return 1;
+    }
+
     /**
-     * One boss's numbers into chat, the same order and colours as the readout. Always all
-     * time: it followed the readout's chip, so with the chip on session, /drops answered
-     * "how many have I ever got" with this session's handful.
+     * One boss's numbers into chat, the same order and colours as the readout: all time
+     * by default, or this session's with "session" on the end.
      */
-    private static void say(String boss) {
+    private static int say(String boss, boolean thisSession) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
-        Map<String, Count> m = totals();
+        if (mc.player == null) return 0;
+        Map<String, Count> m = thisSession ? session : totals();
         Count c = DRAGON.equals(boss) ? dragons(m) : of(m, boss);
         mc.player.sendSystemMessage(Component.literal("§d" + boss + " §7- §f" + c.kills + (c.kills == 1 ? " kill" : " kills")
-                + " §8(all time)"));
+                + (thisSession ? " §8(session)" : " §8(all time)")));
+        if (boss.equals(LEGACY_ENDERMAN)) mc.player.sendSystemMessage(Component.literal(
+                "§7Saved before family separation; these kills and drops may include Voidgloom and Riftborn."));
         if (isSlayer(boss)) mc.player.sendSystemMessage(Component.literal("§7Spawn costs: §c" + costText(c)));
         if (DRAGON.equals(boss)) {
             StringBuilder kinds = new StringBuilder("§8  ");
@@ -883,7 +1467,7 @@ public final class BossDrops {
         List<Map.Entry<String, Integer>> list = sorted(boss, c.drops);
         if (list.isEmpty()) {
             mc.player.sendSystemMessage(Component.literal("§8  nothing worth a row yet"));
-            return;
+            return 1;
         }
         for (Map.Entry<String, Integer> e : list) {
             int colour = Rarity.colour(e.getKey(), Drops.colour(tier(e.getKey())));
@@ -891,6 +1475,7 @@ public final class BossDrops {
                     .append(Component.literal(e.getKey()).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(colour & 0xFFFFFF))))
                     .append(Component.literal("  §f" + e.getValue())));
         }
+        return 1;
     }
 
     // ── the file ──────────────────────────────────────────────────────────────
@@ -987,9 +1572,18 @@ public final class BossDrops {
     }
 
     private static void save() {
-        // Someone else wrote the file since we read it: take theirs as the base.
+        // Someone else wrote the file since we read it: take theirs as the base. Counts add
+        // up across the two; a streak is a position, and this client's is the newest.
         try {
-            if (Files.exists(file()) && Files.getLastModifiedTime(file()).toMillis() != fileStamp) load();
+            if (Files.exists(file()) && Files.getLastModifiedTime(file()).toMillis() != fileStamp) {
+                int superior = sinceSuperior, pet = sincePet;
+                boolean superiorPinned = superiorKnown, petPinned = petKnown;
+                load();
+                sinceSuperior = superior;
+                sincePet = pet;
+                superiorKnown = superiorPinned;
+                petKnown = petPinned;
+            }
         } catch (IOException ignored) {
         }
         try {
@@ -1020,48 +1614,94 @@ public final class BossDrops {
 
     private static List<String> savedLines() {
         List<String> lines = new ArrayList<>();
+        lines.add(FAMILY_SCHEMA);
         lines.add("# all-time: kill, drop, tier; cost<TAB>boss<TAB>starts<TAB>coins<TAB>unknown<TAB>historical estimate; dragons by kind");
         totals().forEach((boss, c) -> {
             lines.add("kill\t" + boss + "\t" + c.kills);
             c.drops.forEach((item, n) -> lines.add("drop\t" + boss + "\t" + item + "\t" + n));
             if (isSlayer(boss)) lines.add("cost\t" + boss + "\t" + c.starts + "\t" + c.spawnCost
                     + "\t" + c.unknownCosts + "\t" + c.historicalCost);
+            if (isSlayer(boss)) lines.add("time\t" + boss + "\t" + c.activeMs + "\t" + (c.incompleteTime ? "0" : "1"));
         });
         seen.forEach((item, t) -> lines.add("tier\t" + item + "\t" + t));
+        lines.add("streak\tsuperior\t" + sinceSuperior + "\t" + (superiorKnown ? 1 : 0));
+        lines.add("streak\tpet\t" + sincePet + "\t" + (petKnown ? 1 : 0));
         lobbyTaken.forEach((boss, n) -> lines.add("lobby\t" + boss + "\t" + n));
         return lines;
     }
 
+    /**
+     * "streak<TAB>pet<TAB>37<TAB>1": the count, then 1 once a real pet or Superior has pinned
+     * it. A count of -1 is how an unreleased build wrote "unknown"; it reads as unknown from 0.
+     */
+    private static void readStreak(String[] p) {
+        int n = Integer.parseInt(p[2]);
+        boolean known = n >= 0 && p.length >= 4 && p[3].equals("1");
+        if (p[1].equals("superior")) {
+            sinceSuperior = Math.max(0, n);
+            superiorKnown = known;
+        } else if (p[1].equals("pet")) {
+            sincePet = Math.max(0, n);
+            petKnown = known;
+        }
+    }
+
     private static void readCounts(List<String> lines) {
         Set<String> costRecords = new java.util.HashSet<>();
+        Set<String> timeRecords = new java.util.HashSet<>();
+        boolean separated = lines.contains(FAMILY_SCHEMA);
         for (String line : lines) {
             String[] p = line.split("\t");
-            if (p[0].equals("kill") && p.length == 3) of(loaded, p[1]).kills = Integer.parseInt(p[2]);
+            String boss = p.length > 1 ? storedBoss(p[1], separated) : "";
+            if (p[0].equals("kill") && p.length == 3) of(loaded, boss).kills = Integer.parseInt(p[2]);
             // Retain the existing loot rules; this migration never changes kill/drop counts.
-            else if (p[0].equals("drop") && p.length == 4 && counted(p[1], p[2])) of(loaded, p[1]).drops.put(p[2], Integer.parseInt(p[3]));
+            else if (p[0].equals("drop") && p.length == 4 && counted(boss, p[2])) of(loaded, boss).drops.put(p[2], Integer.parseInt(p[3]));
             else if (p[0].equals("tier") && p.length == 3) seen.put(p[1], Integer.parseInt(p[2]));
+            else if (p[0].equals("streak") && p.length >= 3) readStreak(p);
             else if (p[0].equals("lobby") && p.length == 3) lobbyTaken.put(p[1], Integer.parseInt(p[2]));
             else if (p[0].equals("cost") && p.length == 6) {
-                Count c = of(loaded, p[1]);
+                Count c = of(loaded, boss);
                 c.starts = Integer.parseInt(p[2]);
                 c.spawnCost = Long.parseLong(p[3]);
                 c.unknownCosts = Integer.parseInt(p[4]);
                 c.historicalCost = Long.parseLong(p[5]);
-                costRecords.add(bossKey(p[1]));
+                costRecords.add(boss);
+            }
+            else if (p[0].equals("time") && p.length >= 3) {
+                Count c = of(loaded, boss);
+                c.activeMs = Math.max(0, Long.parseLong(p[2]));
+                c.incompleteTime = p.length >= 4 && !p[3].equals("1");
+                timeRecords.add(boss);
             }
         }
-        for (String boss : List.of(REVENANT, VOIDGLOOM)) {
+        for (String boss : List.of(REVENANT, LEGACY_ENDERMAN)) {
             // Only legacy files lack a cost record. Persisting even a zero prevents
             // this requested T5 assumption from being applied again on a later load.
             if (!costRecords.contains(boss)) {
                 Count c = of(loaded, boss);
-                c.historicalCost = SlayerCosts.historicalCost(boss, c.kills);
+                c.historicalCost = SlayerCosts.historicalCost(boss.equals(LEGACY_ENDERMAN) ? VOIDGLOOM : boss, c.kills);
             }
         }
+        loaded.forEach((boss, c) -> {
+            // Saved kills without their tracked time cannot produce a meaningful
+            // all-time hourly rate, even once a later session has a running clock.
+            if (isSlayer(boss) && !timeRecords.contains(boss) && (c.kills > 0 || c.starts > 0)) c.incompleteTime = true;
+        });
     }
 
     private static boolean isSlayer(String boss) {
-        return REVENANT.equals(boss) || VOIDGLOOM.equals(boss);
+        return REVENANT.equals(boss) || endermanSlayer(boss);
+    }
+
+    private static boolean endermanSlayer(String boss) {
+        return boss != null && List.of(VOIDGLOOM, RIFTBORN, LEGACY_ENDERMAN, UNKNOWN_ENDERMAN).contains(boss);
+    }
+
+    private static String storedBoss(String boss, boolean separated) {
+        String key = bossKey(boss);
+        // The old file never distinguished quest families. A drop's name cannot
+        // recover which boss paid it, so preserve that history under its own key.
+        return !separated && key.equals(VOIDGLOOM) ? LEGACY_ENDERMAN : key;
     }
 
     private static String costText(Count c) {
@@ -1071,40 +1711,11 @@ public final class BossDrops {
     }
 
     private static String compactCoins(long coins) {
+        if (coins < 0) return "-" + compactCoins(coins == Long.MIN_VALUE ? Long.MAX_VALUE : -coins);
         if (coins < 1_000) return String.valueOf(coins);
         long divisor = coins >= 1_000_000_000 ? 1_000_000_000 : coins >= 1_000_000 ? 1_000_000 : 1_000;
         String suffix = divisor == 1_000_000_000 ? "b" : divisor == 1_000_000 ? "m" : "k";
         return String.format(Locale.ROOT, "%.1f", coins / (double) divisor).replaceFirst("\\.0$", "") + suffix;
-    }
-
-    private static long addCoins(long a, long b) {
-        return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b;
-    }
-
-    private static long pricedValue(List<Map.Entry<String, Integer>> entries) {
-        long result = 0;
-        for (Map.Entry<String, Integer> e : entries)
-            result = addCoins(result, NpcPrices.value(plain(e.getKey()), e.getValue()));
-        return result;
-    }
-
-    // ── drawing ───────────────────────────────────────────────────────────────
-
-    private static void draw(GuiGraphicsExtractor g) {
-        Minecraft mc = Minecraft.getInstance();
-        if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        long now = System.currentTimeMillis();
-        boolean recentDragon = dragonHudVisible(now, Area.where() == Area.Where.END);
-        if (DRAGON.equals(showing) && !recentDragon) return;
-        // A paid attempt has something to show even when its boss was never killed.
-        Count c = count(session, showing);
-        if (c.kills == 0 && c.starts == 0 && !TOTAL.equals(mode) && !recentDragon) return;
-        HudLayout.draw("drops.boss", g, mc.font, false);
-    }
-
-    private static boolean dragonHudVisible(long now, boolean inEnd) {
-        return (ownDragonUp && inEnd) || (dragonActivityAt > 0 && now >= dragonActivityAt
-                && now - dragonActivityAt < DRAGON_LINGER_MS);
     }
 
     /**
@@ -1136,272 +1747,4 @@ public final class BossDrops {
         return out;
     }
 
-    private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        return compactLayout ? drawCompact(g, font, x, y, sample) : drawClassic(g, font, x, y, sample);
-    }
-
-    private static int[] drawClassic(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        String boss = showing;
-        Count c = count(view(), boss);
-        int kills = c.kills;
-        Map<String, Integer> drops = c.drops;
-        String kindChip = DRAGON.equals(boss) ? (ALL.equals(kind) ? ALL : kind.toLowerCase(Locale.ROOT)) : null;
-        if (sample) {
-            boss = DRAGON;
-            kindChip = ALL;
-            kills = 12;
-            drops = new LinkedHashMap<>();
-            drops.put("Golden Dragon Chestplate", 1);
-            drops.put("Aspect of the Dragons", 3);
-        }
-        String title = (DRAGON.equals(boss) && kindChip != null && !ALL.equals(kindChip) ? kind.toUpperCase(Locale.ROOT) + " " : "")
-                + boss.toUpperCase(Locale.ROOT) + " DROPS";
-        String chip = TOTAL.equals(mode) ? "total" : "session";
-        String killLine = kills + (kills == 1 ? " kill" : " kills");
-        List<Map.Entry<String, Integer>> list = sample ? new ArrayList<>(drops.entrySet()) : sorted(boss, drops);
-        String costs = costText(c);
-        long priced = pricedValue(list);
-        String pricedText = priced > 0 ? compactCoins(priced) : null;
-        int w = font.width(title) + 20 + font.width(chip) + 12 + (kindChip == null ? 0 : font.width(kindChip) + 12);
-        for (Map.Entry<String, Integer> e : list) {
-            long worth = NpcPrices.value(plain(e.getKey()), e.getValue());
-            String tail = String.valueOf(e.getValue()) + (worth > 0 ? "  " + compactCoins(worth) : "");
-            w = Math.max(w, 8 + font.width(e.getKey()) + 12 + font.width(tail));
-        }
-        if (list.isEmpty()) w = Math.max(w, 8 + font.width("Nothing worth a row yet"));
-        if (isSlayer(boss)) w = Math.max(w, Readout.width(font, "Spawn costs", costs));
-        if (pricedText != null) w = Math.max(w, Readout.width(font, "Known loot value", pricedText));
-        int h = Readout.ROW_H + 3 + (Readout.ROW_H + 2) + Math.max(1, list.size()) * (Readout.ROW_H + 2)
-                + (isSlayer(boss) ? Readout.ROW_H + 2 : 0)
-                + (pricedText != null ? Readout.ROW_H + 2 : 0);
-        if (g != null) {
-            Readout.tick(g, x, y, w, Theme.accent());
-            Draw.text(g, font, title, Readout.left(x), y, Theme.muted());
-            int cw = font.width(chip) + 8;
-            int cx = Readout.right(x, w) - cw;
-            Draw.roundedRect(g, cx, y - 2, cw, 11, 3, Draw.alpha(Theme.accent(), 0.22f));
-            Draw.text(g, font, chip, cx + 4, y, Theme.accent());
-            modeL = cx - x;
-            modeR = cx + cw - x;
-            if (kindChip != null) {
-                int kw = font.width(kindChip) + 8;
-                int kx = cx - 4 - kw;
-                Draw.roundedRect(g, kx, y - 2, kw, 11, 3, Draw.alpha(Theme.muted(), 0.22f));
-                Draw.text(g, font, kindChip, kx + 4, y, Theme.muted());
-                kindL = kx - x;
-                kindR = kx + kw - x;
-            } else {
-                kindL = kindR = 0;
-            }
-            int ry = y + Readout.ROW_H + 3;
-            Draw.text(g, font, killLine, Readout.left(x), ry, Theme.dim());
-            ry += Readout.ROW_H + 2;
-            if (list.isEmpty()) {
-                Draw.text(g, font, "Nothing worth a row yet", Readout.left(x), ry, Theme.dim());
-                ry += Readout.ROW_H + 2;
-            }
-            for (Map.Entry<String, Integer> e : list) {
-                int colour = Rarity.colour(e.getKey(), Drops.colour(tier(e.getKey())));
-                Draw.text(g, font, e.getKey(), Readout.left(x), ry, colour | 0xFF000000);
-                int numbersRight = Readout.right(x, w);
-                long worth = NpcPrices.value(plain(e.getKey()), e.getValue());
-                if (worth > 0) {
-                    String money = compactCoins(worth);
-                    Draw.textRight(g, font, money, numbersRight, ry, Theme.dim());
-                    numbersRight -= font.width(money) + 6;
-                }
-                Draw.textRight(g, font, String.valueOf(e.getValue()), numbersRight, ry, Theme.text());
-                ry += Readout.ROW_H + 2;
-            }
-            if (isSlayer(boss)) {
-                Draw.text(g, font, "Spawn costs", Readout.left(x), ry, Theme.dim());
-                Draw.textRight(g, font, costs, Readout.right(x, w), ry, Theme.neg());
-                ry += Readout.ROW_H + 2;
-            }
-            if (pricedText != null) {
-                Draw.text(g, font, "Known loot value", Readout.left(x), ry, Theme.dim());
-                Draw.textRight(g, font, pricedText, Readout.right(x, w), ry, Theme.pos());
-            }
-        }
-        return new int[]{w, h};
-    }
-
-    private record ProfitRow(String name, int count, long value) { }
-
-    /** Value-sorted Slayer view. Unknown items and costs keep the footer honest. */
-    private static int[] drawSlayerProfit(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        String boss = sample ? VOIDGLOOM : showing;
-        Count c = sample ? new Count() : count(view(), boss);
-        Map<String, Integer> drops = c.drops;
-        if (sample) {
-            c.kills = 12;
-            c.starts = 14;
-            c.spawnCost = 70_000_000;
-            drops = Map.of("Judgement Core", 1, "Transmission Tuner", 12, "Null Atom", 9);
-        }
-        String name = VOIDGLOOM.equals(boss) ? "Voidgloom Seraph" : "Revenant Horror";
-        String title = name + " Profit Tracker";
-        String chip = TOTAL.equals(mode) ? "total" : "session";
-        List<ProfitRow> rows = new ArrayList<>();
-        long loot = 0;
-        int unpriced = 0;
-        for (Map.Entry<String, Integer> e : drops.entrySet()) {
-            long value = sample ? switch (e.getKey()) {
-                case "Judgement Core" -> 2_100_000_000L;
-                case "Transmission Tuner" -> 2_400_000L;
-                default -> 900_000L;
-            } : NpcPrices.value(plain(e.getKey()), e.getValue());
-            loot = addCoins(loot, value);
-            if (value == 0) unpriced++;
-            rows.add(new ProfitRow(e.getKey(), e.getValue(), value));
-        }
-        rows.sort((a, b) -> {
-            int byValue = Long.compare(b.value(), a.value());
-            return byValue != 0 ? byValue : a.name().compareToIgnoreCase(b.name());
-        });
-        List<ProfitRow> visible = new ArrayList<>();
-        int cheap = 0;
-        for (ProfitRow row : rows) {
-            if (row.value() > 0 && row.value() < cheapSlayerFloor) cheap++;
-            else visible.add(row);
-        }
-        int overflow = Math.max(0, visible.size() - 18);
-        if (overflow > 0) visible = new ArrayList<>(visible.subList(0, 18));
-        long cost = addCoins(c.spawnCost, c.historicalCost);
-        long net = loot - cost;
-        boolean complete = unpriced == 0 && c.unknownCosts == 0 && c.historicalCost == 0;
-        String profitLabel = complete ? "Tracked Profit: " : "Tracked Profit (partial): ";
-        String netText = String.format(Locale.ROOT, "%,d coins", net);
-        int rowH = Readout.ROW_H + 1;
-        int w = font.width(title) + 8 + font.width(chip);
-        for (ProfitRow row : visible) {
-            String left = String.format(Locale.ROOT, "%,dx ", row.count()) + row.name() + ": ";
-            String right = row.value() > 0 ? compactCoins(row.value()) : "?";
-            w = Math.max(w, font.width(left) + font.width(right));
-        }
-        w = Math.max(w, font.width(profitLabel + netText));
-        w = Math.max(w, font.width("Slayer Spawn Cost: " + costText(c)));
-        if (cheap > 0) w = Math.max(w, font.width(cheap + " cheap items are hidden."));
-        int extra = (cheap > 0 ? 1 : 0) + (overflow > 0 ? 1 : 0);
-        int h = rowH * (1 + Math.max(1, visible.size()) + extra + 3);
-
-        if (g != null) {
-            Draw.text(g, font, title, x, y, 0xFFFFFF55);
-            modeL = modeR = kindL = kindR = 0;
-            if (!sample && Minecraft.getInstance().screen instanceof ChatScreen) {
-                int cw = font.width(chip);
-                int cx = x + w - cw;
-                Draw.text(g, font, chip, cx, y, Theme.dim());
-                modeL = cx - x;
-                modeR = cx + cw - x;
-            }
-            int ry = y + rowH;
-            if (visible.isEmpty()) {
-                Draw.text(g, font, "No Slayer drops yet", x, ry, Theme.dim());
-                ry += rowH;
-            }
-            for (ProfitRow row : visible) {
-                String prefix = String.format(Locale.ROOT, "%,dx ", row.count());
-                int colour = Rarity.colour(row.name(), Drops.colour(tier(row.name()))) | 0xFF000000;
-                Draw.text(g, font, prefix, x, ry, Theme.dim());
-                int nx = x + font.width(prefix);
-                Draw.text(g, font, row.name(), nx, ry, colour);
-                int vx = nx + font.width(row.name());
-                Draw.text(g, font, ": " + (row.value() > 0 ? compactCoins(row.value()) : "?"), vx, ry,
-                        row.value() > 0 ? 0xFFFFAA00 : Theme.neg());
-                ry += rowH;
-            }
-            if (cheap > 0) {
-                Draw.text(g, font, cheap + " cheap items are hidden.", x, ry, Theme.dim());
-                ry += rowH;
-            }
-            if (overflow > 0) {
-                Draw.text(g, font, overflow + " more drops not shown.", x, ry, Theme.dim());
-                ry += rowH;
-            }
-            Draw.text(g, font, "Slayer Spawn Cost: ", x, ry, Theme.dim());
-            Draw.text(g, font, costText(c), x + font.width("Slayer Spawn Cost: "), ry, Theme.neg());
-            ry += rowH;
-            Draw.text(g, font, profitLabel, x, ry, Theme.dim());
-            Draw.text(g, font, netText, x + font.width(profitLabel), ry, net < 0 ? Theme.neg() : 0xFFFFAA00);
-            ry += rowH;
-            Draw.text(g, font, "Bosses killed: ", x, ry, Theme.dim());
-            Draw.text(g, font, String.format(Locale.ROOT, "%,d", c.kills), x + font.width("Bosses killed: "), ry, 0xFFFFFF55);
-        }
-        return new int[]{w, h};
-    }
-
-    private static int[] drawCompact(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        String boss = showing;
-        if (isSlayer(boss) || sample) return drawSlayerProfit(g, font, x, y, sample);
-        Count c = count(view(), boss);
-        Map<String, Integer> drops = c.drops;
-        String kindChip = DRAGON.equals(boss) ? (ALL.equals(kind) ? ALL : kind.toLowerCase(Locale.ROOT)) : null;
-        String name = switch (boss) {
-            case VOIDGLOOM -> "Voidgloom Seraph";
-            case REVENANT -> "Revenant Horror";
-            case GOLEM -> "Endstone Protector";
-            case DRAGON -> ALL.equals(kind) ? "Dragon" : kind + " Dragon";
-            default -> boss;
-        };
-        String title = "\u00a7l" + name + " Drops";
-        String chip = TOTAL.equals(mode) ? "total" : "session";
-        String killLabel = "Bosses killed: ";
-        String kills = String.format(Locale.ROOT, "%,d", c.kills);
-        String costLabel = "Spawn costs: ";
-        String costs = costText(c);
-        List<Map.Entry<String, Integer>> list = sample ? new ArrayList<>(drops.entrySet()) : sorted(boss, drops);
-        int w = font.width(title) + 8 + font.width(chip) + (kindChip == null ? 0 : font.width(kindChip) + 8);
-        for (Map.Entry<String, Integer> e : list) w = Math.max(w, font.width(dropPrefix(e.getValue()) + e.getKey()));
-        if (list.isEmpty()) w = Math.max(w, font.width("Nothing worth a row yet"));
-        w = Math.max(w, font.width(killLabel + kills));
-        if (isSlayer(boss)) w = Math.max(w, font.width(costLabel + costs));
-        int rowH = Readout.ROW_H + 1;
-        int h = rowH * (1 + Math.max(1, list.size()) + 1 + (isSlayer(boss) ? 1 : 0));
-
-        if (g != null) {
-            Draw.text(g, font, title, x, y, 0xFFFFFF55);
-            // Keep the existing controls, but only reveal them when the mouse is free.
-            // Reserve their width so opening chat never shifts the HUD underneath it.
-            modeL = modeR = kindL = kindR = 0;
-            if (!sample && Minecraft.getInstance().screen instanceof ChatScreen) {
-                int cw = font.width(chip);
-                int cx = x + w - cw;
-                Draw.text(g, font, chip, cx, y, Theme.dim());
-                modeL = cx - x;
-                modeR = cx + cw - x;
-                if (kindChip != null) {
-                    int kw = font.width(kindChip);
-                    int kx = cx - 8 - kw;
-                    Draw.text(g, font, kindChip, kx, y, Theme.dim());
-                    kindL = kx - x;
-                    kindR = kx + kw - x;
-                }
-            }
-            int ry = y + rowH;
-            if (list.isEmpty()) {
-                Draw.text(g, font, "Nothing worth a row yet", x, ry, Theme.dim());
-                ry += rowH;
-            }
-            for (Map.Entry<String, Integer> e : list) {
-                String prefix = dropPrefix(e.getValue());
-                int colour = Rarity.colour(e.getKey(), Drops.colour(tier(e.getKey())));
-                Draw.text(g, font, prefix, x, ry, 0xFFAAAAAA);
-                Draw.text(g, font, e.getKey(), x + font.width(prefix), ry, colour | 0xFF000000);
-                ry += rowH;
-            }
-            if (isSlayer(boss)) {
-                Draw.text(g, font, costLabel, x, ry, 0xFFAAAAAA);
-                Draw.text(g, font, costs, x + font.width(costLabel), ry, 0xFFFF5555);
-                ry += rowH;
-            }
-            Draw.text(g, font, killLabel, x, ry, 0xFFAAAAAA);
-            Draw.text(g, font, kills, x + font.width(killLabel), ry, 0xFFFFFF55);
-        }
-        return new int[]{w, h};
-    }
-
-    private static String dropPrefix(int count) {
-        return String.format(Locale.ROOT, "%,dx ", count);
-    }
 }

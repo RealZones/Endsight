@@ -13,8 +13,9 @@ import net.minecraft.network.chat.Component;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Supplier;
 
-/** Slayer-only price editor. The shared file holds overrides; sale evidence stays local. */
+/** Shared drop price editor. Overrides are portable; sale evidence stays local. */
 public final class DropPricesScreen extends Screen {
     private final Screen parent;
     private EditBox search;
@@ -22,15 +23,24 @@ public final class DropPricesScreen extends Screen {
     private String selected;
     private String status = "";
     private int scroll;
+    private final String heading;
+    private final Supplier<List<String>> items;
 
-    private DropPricesScreen(Screen parent) {
-        super(Component.literal("Slayer drop prices"));
+    private DropPricesScreen(Screen parent, String heading, Supplier<List<String>> items) {
+        super(Component.literal(heading));
         this.parent = parent;
+        this.heading = heading;
+        this.items = items;
     }
 
     public static void open() {
         Minecraft mc = Minecraft.getInstance();
-        mc.setScreen(new DropPricesScreen(mc.screen));
+        mc.setScreen(new DropPricesScreen(mc.screen, "Slayer drop prices", BossDrops::knownSlayerDropNames));
+    }
+
+    public static void openZealot() {
+        Minecraft mc = Minecraft.getInstance();
+        mc.setScreen(new DropPricesScreen(mc.screen, "Zealot drop prices", () -> NpcPrices.ZEALOT_PROFIT_ITEMS));
     }
 
     private int x() { return Math.max(8, (width - w()) / 2); }
@@ -46,7 +56,7 @@ public final class DropPricesScreen extends Screen {
     @Override
     protected void init() {
         int px = x(), py = y();
-        search = new EditBox(font, px + 18, py + 49, listW() - 22, 18, Component.literal("Search Slayer drops"));
+        search = new EditBox(font, px + 18, py + 49, listW() - 22, 18, Component.literal("Search drops"));
         search.setMaxLength(80);
         search.setHint(Component.literal("Search drops"));
         search.setResponder(value -> scroll = 0);
@@ -57,14 +67,14 @@ public final class DropPricesScreen extends Screen {
         amount.setMaxLength(24);
         amount.setHint(Component.literal("e.g. 2.5m"));
         addRenderableWidget(amount);
-        List<String> names = BossDrops.knownSlayerDropNames();
+        List<String> names = items.get();
         if (selected == null || !names.contains(selected)) selected = names.isEmpty() ? null : names.getFirst();
         showSelected();
     }
 
     private List<String> filtered() {
         String query = search == null ? "" : search.getValue().trim().toLowerCase(Locale.ROOT);
-        return BossDrops.knownSlayerDropNames().stream()
+        return items.get().stream()
                 .filter(name -> name.toLowerCase(Locale.ROOT).contains(query)).toList();
     }
 
@@ -81,7 +91,7 @@ public final class DropPricesScreen extends Screen {
         int px = x(), py = y(), pw = w(), ph = h(), lw = listW();
         g.fill(0, 0, width, height, Theme.scrim());
         Draw.roundedOutline(g, px, py, pw, ph, 8, Theme.line(), Theme.bg());
-        Draw.text(g, font, "Slayer drop prices", px + 18, py + 17, Theme.text());
+        Draw.text(g, font, heading, px + 18, py + 17, Theme.text());
         Draw.text(g, font, "Back", px + pw - 36, py + 17, Theme.accent());
         Draw.rect(g, px + 12, py + 38, pw - 24, 1, Theme.line());
         Draw.rect(g, px + lw + 4, py + 47, 1, ph - 62, Theme.line());
@@ -97,7 +107,7 @@ public final class DropPricesScreen extends Screen {
             if (NpcPrices.customPrice(name) != null) Draw.textRight(g, font, "C", px + lw - 12, ry, Theme.accent());
             else if (NpcPrices.observedPrice(name) != null) Draw.textRight(g, font, "$", px + lw - 12, ry, Theme.pos());
         }
-        if (names.isEmpty()) Draw.text(g, font, "No matching Slayer drops", px + 18, rowsTop(), Theme.dim());
+        if (names.isEmpty()) Draw.text(g, font, "No matching drops", px + 18, rowsTop(), Theme.dim());
 
         int dx = px + lw + 16;
         if (selected != null) {

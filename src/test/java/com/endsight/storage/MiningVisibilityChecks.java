@@ -28,8 +28,8 @@ public final class MiningVisibilityChecks {
         equal(VoidFragments.announced("RARE DROP! (Void Fragment) (✯ 239%)"), 1L);
         equal(VoidFragments.announced("[VIP+] Player: RARE DROP! Void Fragment"), 0L);
         equal(VoidFragments.announced("RARE DROP! Void Core"), 0L);
-        equal(VoidFragments.row(false, 0), "0  -/h");
-        equal(VoidFragments.row(false, 1_800_000), "0  0.0/h");
+        equal(VoidFragments.row(false, 0), "0 · —/h");
+        equal(VoidFragments.row(false, 1_800_000), "0 · 0.0/h");
         System.out.println(checks + " Mining HUD visibility checks passed");
     }
 

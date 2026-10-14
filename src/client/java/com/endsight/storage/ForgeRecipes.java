@@ -137,16 +137,21 @@ public final class ForgeRecipes {
 
     /** Name to info, rebuilt when a recipe is learned; asked for every grid cell every frame. */
     private static Map<String, Info> INFO = Map.of();
-    private static int infoSize = -1;
+    private static long recipeRevision;
+    private static long infoRevision = -1;
+
+    public static long revision() {
+        return recipeRevision;
+    }
 
     public static Info info(String item) {
-        if (infoSize != RECIPES.size()) {
+        if (infoRevision != recipeRevision) {
             Map<String, Info> m = new HashMap<>();
             for (ForgeRecipe r : RECIPES.values()) {
                 m.putIfAbsent(r.name(), new Info(r.process(), r.duration(), millis(r.duration()), r.requirement()));
             }
             INFO = m;
-            infoSize = RECIPES.size();
+            infoRevision = recipeRevision;
         }
         return INFO.get(item);
     }
@@ -178,6 +183,12 @@ public final class ForgeRecipes {
                 drawRecent(container, g, mx, my);
             });
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !click(container, click.x(), click.y(), click.button()));
+            ScreenEvents.remove(screen).register(s -> {
+                if (observedScreen == s) {
+                    observedScreen = null;
+                    observedSlots.clear();
+                }
+            });
         });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "forge_timer"), (g, delta) -> draw(g));
         HudLayout.register(TIMER_ID, "Forge Timer", 0.74f, 0.19f,
@@ -186,6 +197,21 @@ public final class ForgeRecipes {
 
     /** The title before this one, so a process page can be told by where it was opened from. */
     private static String curTitle = "", prevTitle = "";
+    private record Observed(ItemStack stack, ForgeRecipe recipe, Active active, boolean empty) { }
+    private static AbstractContainerScreen<?> observedScreen;
+    private static String observedTitle = "";
+    private static final Map<Integer, Observed> observedSlots = new HashMap<>();
+
+    private static Observed observe(String title, Slot slot) {
+        ItemStack stack = slot.getItem();
+        Observed old = observedSlots.get(slot.index);
+        if (old != null && old.stack().getCount() == stack.getCount()
+                && ItemStack.isSameItemSameComponents(old.stack(), stack)) return old;
+        Observed value = new Observed(stack.copy(), read(title, stack),
+                FORGE.equals(title) && forgeSlot(slot.index) ? readActive(slot) : null, emptySlot(slot));
+        observedSlots.put(slot.index, value);
+        return value;
+    }
 
     private static void tick(AbstractContainerScreen<?> screen) {
         if (!enabled) return;
@@ -199,29 +225,39 @@ public final class ForgeRecipes {
         // every chest and storage page, for recipes that were never going to be there.
         // A process page not yet known is still read, by having come from Select Process.
         if (!forgeScreen(screen) && !prevTitle.equals("Select Process")) return;
+        if (Minecraft.getInstance().level == null) return;
+        if (observedScreen != screen || !observedTitle.equals(title)) {
+            observedScreen = screen;
+            observedTitle = title;
+            observedSlots.clear();
+        }
         List<Slot> slots = containerSlots(screen);
         followRecentShortcut(screen, title, slots);
         boolean changed = false;
         boolean activeChanged = false;
         for (Slot slot : slots) {
             ItemStack s = slot.getItem();
-            ForgeRecipe r = read(title, s);
+            ForgeRecipe r = observe(title, slot).recipe();
             if (r == null) continue;
             rememberIcon(r.name(), s);
             String key = r.process() + "\t" + r.name();
-            ForgeRecipe old = RECIPES.put(key, r);
-            if (!same(old, r)) changed = true;
+            ForgeRecipe old = RECIPES.get(key);
+            if (!same(old, r)) {
+                RECIPES.put(key, r);
+                changed = true;
+            }
         }
         if (FORGE.equals(title)) {
             for (Slot slot : slots) {
                 if (!forgeSlot(slot.index)) continue;
-                Active a = readActive(slot);
+                Observed observed = observedSlots.get(slot.index);
+                Active a = observed.active();
                 if (a != null) {
                     SLOTS.add(slot.index);
                     Active old = ACTIVE.put(a.slot(), a);
                     if (!same(old, a)) activeChanged = true;
                     if (old == null || !old.name().equals(a.name())) touchRecent(a.name());
-                } else if (emptySlot(slot)) {
+                } else if (observed.empty()) {
                     if (SLOTS.add(slot.index)) activeChanged = true;
                     if (ACTIVE.remove(slot.index) != null) activeChanged = true;
                 } else {
@@ -230,7 +266,10 @@ public final class ForgeRecipes {
                 }
             }
         }
-        if (changed) save();
+        if (changed) {
+            recipeRevision++;
+            save();
+        }
         if (activeChanged) saveActive();
     }
 
@@ -244,7 +283,7 @@ public final class ForgeRecipes {
         List<Ingredient> needs = new ArrayList<>();
         boolean readingNeeds = false;
 
-        for (Component c : s.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.NORMAL)) {
+        for (Component c : serverTooltip(s)) {
             String line = Zealots.strip(c.getString()).trim();
             if (line.isBlank()) continue;
             if (line.equals("Items Required")) {
@@ -285,7 +324,7 @@ public final class ForgeRecipes {
         String left = "";
         String finish = "";
         boolean claim = false;
-        for (Component c : s.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.NORMAL)) {
+        for (Component c : serverTooltip(s)) {
             String line = Zealots.strip(c.getString()).trim();
             Matcher t = TIME_LEFT.matcher(line);
             if (t.matches()) left = t.group(1);
@@ -305,6 +344,19 @@ public final class ForgeRecipes {
         if (s.isEmpty()) return false;
         String n = name(s).toLowerCase();
         return n.matches("slot #\\d+");
+    }
+
+    private static List<Component> serverTooltip(ItemStack stack) {
+        Minecraft mc = Minecraft.getInstance();
+        boolean previous = inTooltip;
+        inTooltip = true;
+        try {
+            // Internal discovery needs server lore only. Running our own tooltip
+            // extension here rebuilt the entire material tree for each menu slot.
+            return stack.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.NORMAL);
+        } finally {
+            inTooltip = previous;
+        }
     }
 
     private static boolean same(ForgeRecipe a, ForgeRecipe b) {
@@ -344,7 +396,7 @@ public final class ForgeRecipes {
     }
 
     private static void rememberIcon(String name, ItemStack s) {
-        if (!s.isEmpty()) ICONS.putIfAbsent(name, s.copyWithCount(1));
+        if (!s.isEmpty() && !ICONS.containsKey(name)) ICONS.put(name, s.copyWithCount(1));
     }
 
     private static boolean click(AbstractContainerScreen<?> screen, double mx, double my, int button) {
@@ -595,9 +647,13 @@ public final class ForgeRecipes {
             ForgeRecipe r = new ForgeRecipe(p[0], p[1], p[2], List.copyOf(needs), p[p.length - 1]);
             String key = r.process() + "\t" + r.name();
             if (missingOnly && RECIPES.containsKey(key)) continue;
-            ForgeRecipe old = RECIPES.put(key, r);
-            if (!same(old, r)) changed = true;
+            ForgeRecipe old = RECIPES.get(key);
+            if (!same(old, r)) {
+                RECIPES.put(key, r);
+                changed = true;
+            }
         }
+        if (changed) recipeRevision++;
         return changed;
     }
 

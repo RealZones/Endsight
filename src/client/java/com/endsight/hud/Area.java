@@ -34,7 +34,7 @@ public final class Area {
     private Area() {
     }
 
-    public enum Where { END, CRYPTS, VOID_SEPULTURE, HUB, UNKNOWN }
+    public enum Where { END, CRYPTS, VOID_SEPULTURE, HUB, DUNGEON, UNKNOWN }
 
     private static Where where = Where.UNKNOWN;
     private static long lastRead;
@@ -56,6 +56,13 @@ public final class Area {
     public static boolean voidSepulture() {
         return where == Where.VOID_SEPULTURE;
     }
+
+    public static boolean dungeon() { return where == Where.DUNGEON; }
+
+    public static Where placeOf(String line) { return placeLine(Zealots.strip(line)); }
+
+    /** Shared live sidebar evidence for modes which must not trust a stale warp hint. */
+    public static List<String> sidebarLines(Minecraft mc) { return sidebar(mc); }
 
     /** A place line in the current sidebar, not just the last proxy warp hint. */
     public static boolean sidebarShows(Minecraft mc, Where place) {
@@ -97,6 +104,8 @@ public final class Area {
     /** A sidebar line that IS a place name, once the marker and colour in front of it are gone. */
     private static Where placeLine(String line) {
         String s = line.replaceAll("^[^\\p{L}]+", "").trim().toLowerCase();
+        if (s.equals("the catacombs") || s.startsWith("the catacombs ")
+                || s.equals("catacombs") || s.startsWith("catacombs ")) return Where.DUNGEON;
         if (s.equals("crypts") || s.startsWith("crypts ")) return Where.CRYPTS;
         if (s.equals("void sepulture") || s.startsWith("void sepulture ")) return Where.VOID_SEPULTURE;
         if (s.equals("dragon's den") || s.equals("dragons den") || s.equals("the end")) return Where.END;
@@ -106,6 +115,7 @@ public final class Area {
 
     /** A move line from the proxy: "warping to crypts…", "moving you to dragon's den #2...". */
     private static Where classify(String s) {
+        if (s.contains("catacombs")) return Where.DUNGEON;
         if (s.contains("void sepulture")) return Where.VOID_SEPULTURE;
         if (s.contains("crypt")) return Where.CRYPTS;
         if (s.contains("dragon") || s.contains("the end")) return Where.END;

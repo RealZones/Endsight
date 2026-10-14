@@ -74,7 +74,6 @@ public final class Slayer {
     private static boolean timerOn = true;
     private static boolean killTimeInChat = true;
     private static boolean questReminder = true;
-    private static double hideAfterMin = 3;
 
     // ── tracked ───────────────────────────────────────────────────────────────
     private static long bossSpawnedAt;
@@ -145,9 +144,6 @@ public final class Slayer {
                 () -> timerOn, v -> timerOn = v,
                 List.of(
                         new Setting.Section("Readout"),
-                        new Setting.Slider("Hide when idle",
-                                "Fade out after this long idle. 0 never.",
-                                0, 15, 1, () -> hideAfterMin, v -> hideAfterMin = v, "m"),
                         new Setting.Toggle("Kill time in chat",
                                 "Print each boss's own time when it dies.",
                                 () -> killTimeInChat, v -> killTimeInChat = v),
@@ -402,13 +398,24 @@ public final class Slayer {
      */
     private static void drawTimer(GuiGraphicsExtractor g, Minecraft mc) {
         if (!timerOn) return;
-        // Gone, not frozen: a tracker showing a stale average while you fight a dragon
-        // is worse than no tracker, because it looks live.
-        Run r = cur();
-        if (hideAfterMin > 0 && (r.lastActivity == 0
-                || System.currentTimeMillis() - r.lastActivity > idleMs())) return;
+        // The session numbers remain saved, but an ended quest must not leave a stale
+        // Slayer panel on screen while the player is doing something else. The sidebar
+        // also covers a quest already active when the client joins mid-run.
+        String area = reminderSlayer();
+        boolean sidebarQuest = questStatus(
+                Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
+                Area.sidebarShows(mc, REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE))
+                == QuestStatus.ACTIVE;
+        // Voidgloom quests also run in Dragon's Den. Location alone must not hide
+        // a quest confirmed by chat, but an old session must stay hidden in the hub.
+        if (!trackerVisible(!area.isEmpty(), Area.end(), questActive(), sidebarQuest)) return;
 
         HudLayout.draw("slayer.timer", g, mc.font, false);
+    }
+
+    static boolean trackerVisible(boolean slayerArea, boolean endArea,
+                                  boolean activeQuest, boolean sidebarQuest) {
+        return (slayerArea || endArea) && (activeQuest || sidebarQuest);
     }
 
     /**
@@ -450,27 +457,24 @@ public final class Slayer {
 
         int rate = perHour();
         String[][] rows = sample
-                ? new String[][]{{topLabel, topValue}, {"Kills", "12"},
-                                 {"Elapsed", "8m32s"}, {"Rate", "84/h"}}
-                : new String[][]{{topLabel, topValue},
-                                 {"Kills", String.valueOf(r.bossesKilled)},
-                                 {"Elapsed", r.sessionStart == 0 ? "-" : secs(elapsedMs(r))},
-                                 {"Rate", rate < 0 ? "-" : rate + "/h"}};
+                ? new String[][]{{"Kills", "12 §8· §784/h"}, {topLabel, topValue}, {"Time", "8m32s"}}
+                : new String[][]{{"Kills", r.bossesKilled + " §8· §7" + (rate < 0 ? "—" : rate + "/h")},
+                                 {topLabel, topValue},
+                                 {"Time", r.sessionStart == 0 ? "—" : secs(elapsedMs(r))}};
 
-        String title = sample ? "SLAYER TRACKER" : (slayer != null ? slayer : "Slayer").toUpperCase() + " SLAYER";
+        String title = sample ? "Voidgloom" : (slayer != null ? slayer : "Slayer");
         int w = font.width(title) + 20;
         for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
         int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
 
         if (g != null) {
-            Readout.tick(g, x, y, w, Theme.accent());
-            Draw.text(g, font, title, Readout.left(x), y, Theme.muted());
+            Draw.text(g, font, title, Readout.left(x), y, Theme.text());
 
             int ry = y + Readout.ROW_H + 3;
             for (int i = 0; i < rows.length; i++) {
-                Draw.text(g, font, rows[i][0], Readout.left(x), ry, Theme.dim());
+                Draw.text(g, font, rows[i][0], Readout.left(x), ry, Theme.muted());
                 Draw.textRight(g, font, rows[i][1], Readout.right(x, w), ry,
-                        i == 0 && hot ? Theme.accent() : Theme.text());
+                        i == 1 && hot ? Theme.neg() : Theme.text());
                 ry += Readout.ROW_H + 2;
             }
         }
@@ -614,10 +618,6 @@ public final class Slayer {
         if (s.contains("zombie")) return REVENANT;
         if (s.contains("endermen") || s.contains("enderman")) return VOIDGLOOM;
         return target.endsWith("s") ? target.substring(0, target.length() - 1) : target;
-    }
-
-    private static long idleMs() {
-        return (long) (Math.max(1, hideAfterMin) * 60_000);
     }
 
     /** Time on slayers, with the break you are in right now already stopped. */

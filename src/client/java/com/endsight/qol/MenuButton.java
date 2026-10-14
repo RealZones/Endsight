@@ -20,8 +20,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Buttons in the server's main menu for the screens it has no item for: the Heart of
- * the Dragon, and the Accessory Bag.
+ * A button in the server's main menu for a screen it has no item for: the Heart of
+ * the Dragon.
+ *
+ * The Accessory Bag button was removed in 1.6.1 - the server added its own, in slot 28,
+ * which is where ours used to sit. Two buttons for one screen is worse than none, and a
+ * mod drawing over the server's own item is exactly the kind of thing that reads as a
+ * bug. So ours moved up to slot 10 and the duplicate went.
  *
  * Drawn as more of the menu's own items, in empty slots, with the same tooltip shape the
  * server uses - so they read as part of the menu, not mod boxes over it. A click sends
@@ -43,24 +48,19 @@ public final class MenuButton {
     private static final java.util.Map<Integer, ItemStack> icons = new java.util.HashMap<>();
 
     private static final List<Button> BUTTONS = List.of(
-            // Under the Skills sword (slot 19).
-            new Button(28, () -> new ItemStack(Items.DRAGON_EGG), List.of(
+            // Slot 10: two rows above the old spot, same column, so it still lines up with
+            // the Skills sword (19) rather than sitting under the server's new button.
+            new Button(10, () -> new ItemStack(Items.DRAGON_EGG), List.of(
                     Component.literal("Heart of the Dragon").withStyle(ChatFormatting.LIGHT_PURPLE),
                     Component.literal("Spend powder on perks.").withStyle(ChatFormatting.GRAY),
                     Component.empty(),
-                    Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW)), "hotd"),
-            // Above Storage (slot 25).
-            new Button(16, () -> new ItemStack(Items.BUNDLE), List.of(
-                    Component.literal("Accessory Bag").withStyle(ChatFormatting.GOLD),
-                    Component.literal("Your talismans, rings and artifacts.").withStyle(ChatFormatting.GRAY),
-                    Component.empty(),
-                    Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW)), "accessories"));
+                    Component.literal("Click to open!").withStyle(ChatFormatting.YELLOW)), "hotd"));
 
     private static boolean enabled = true;
 
     public static Module module() {
         return new Module("qol.hotdButton", "Menu Buttons",
-                "Heart of the Dragon and Accessory Bag items in the Dragon Sim Menu.", "Quality of Life",
+                "A Heart of the Dragon item in the Dragon Sim Menu.", "Quality of Life",
                 () -> enabled, v -> enabled = v, List.of());
     }
 
@@ -111,8 +111,13 @@ public final class MenuButton {
             int x = screen.leftPos + slot.x, y = screen.topPos + slot.y;
             ItemStack icon = icons.computeIfAbsent(b.slot(), k -> b.icon().get());
             // A new stratum, or the item lands under the pane vanilla already drew there.
+            //
+            // No backing fill. There used to be one - vanilla's slot grey, 0xFF8B8B8B -
+            // painted to hide the pane. That colour is vanilla's, and this server's menu
+            // is dark, so it showed up as a lit square around our icon and made the
+            // button look bolted on. Drawing on the later stratum already puts the icon
+            // over the pane, which is what the fill was really for.
             g.nextStratum();
-            g.fill(x, y, x + 16, y + 16, 0xFF8B8B8B);   // the slot's own grey, so the pane is gone
             g.fakeItem(icon, x, y);
             if (over(screen, slot, mx, my)) {
                 g.fill(x, y, x + 16, y + 16, 0x80FFFFFF);

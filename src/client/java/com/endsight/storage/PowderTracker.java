@@ -1,7 +1,8 @@
 package com.endsight.storage;
 
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.Readout;
+import com.endsight.hud.HudCard;
+import com.endsight.hud.TrackerHud;
 import com.endsight.hud.Toast;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -500,46 +501,57 @@ public final class PowderTracker {
         HudLayout.draw(ID, g, mc.font, false);
     }
 
-    /**
-     * POWDER, Active or Rates; XP/h; Ender/hr and Void/hr; Ender and Void as session
-     * gain then total; HOTD n ready. Rows with nothing known are left out rather than
-     * shown as placeholders - the sample for placement shows them all.
-     */
+    /** Short labeled rows keep session gain and hourly pace readable at every HUD scale. */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        long[] hourly = {sample ? 22_000 : Math.round(pace(0)), sample ? 0 : Math.round(pace(1))};
-        long[] gained = {sample ? 20_000 : gain(0), sample ? 83 : gain(1)};
-        boolean known = sample || total[0] >= 0 || total[1] >= 0;
-        int ready = sample ? 1 : ready().size();
         boolean active = sample || System.currentTimeMillis() - lastActive < PAUSE_MS;
         String title = active ? "Active" : "Paused";
+        return TrackerHud.draw(g, font, x, y, "Powder (est.)", title,
+                active ? Theme.pos() : Theme.muted(), hudRows(sample, active), -1);
+    }
 
+    private record PowderHudState(boolean sample, boolean active, boolean showPowder, boolean enderVisible,
+                                   boolean voidVisible, boolean enderKnown, boolean voidKnown, long enderEstimate,
+                                   long voidEstimate, long enderBase, long voidBase, long elapsedQuarter,
+                                   List<Upgrade> upgrades, Object palette) { }
+    private static PowderHudState shownState;
+    private static List<HudCard.Row> shownRows;
 
-        List<String[]> rows = new ArrayList<>();
-        if (showPowder && (hourly[0] > 0 || hourly[1] > 0)) {
-            rows.add(new String[]{"Powder/h", "End " + (hourly[0] > 0 ? compact(hourly[0]) : "-") + "   Void " + (hourly[1] > 0 ? compact(hourly[1]) : "-")});
+    private static List<HudCard.Row> hudRows(boolean sample, boolean active) {
+        long ender = sample ? 0 : estimate(0), voidPowder = sample ? 0 : estimate(1);
+        PowderHudState state = new PowderHudState(sample, active, showPowder, total[0] >= 0, total[1] >= 0,
+                sessionSet[0], sessionSet[1], ender, voidPowder, sessionBase[0], sessionBase[1],
+                activeMs / 250, upgrades, Theme.palette());
+        if (state.equals(shownState)) return shownRows;
+        // Each upgrade used to recalculate the same estimates, including pet buffs,
+        // during both HUD passes. Two estimates cover the whole readiness list.
+        int ready = sample ? 1 : readyCount(ender, voidPowder);
+        List<HudCard.Row> rows = new ArrayList<>();
+        if (showPowder) {
+            for (int t = 0; t < TYPE.length; t++) {
+                if (!sample && total[t] < 0) continue;
+                // An unknown baseline used to read +0; the first 30 seconds also
+                // looked like a measured zero rate. Neither is a real measurement.
+                boolean known = sample || sessionSet[t];
+                long gain = Math.max(0, (t == 0 ? ender : voidPowder) - sessionBase[t]);
+                String session = known ? "+" + compact(sample ? (t == 0 ? 0 : 2_100_000) : gain) : "—";
+                String hourly = known && (sample || activeMs >= 30_000)
+                        ? compact(sample ? (t == 0 ? 0 : 8_200_000) : Math.round(gain * 3_600_000.0 / activeMs)) : "—";
+                String colour = t == 0 ? "§b" : "§d";
+                rows.add(new HudCard.Row(colour + TYPE[t] + " session", session));
+                rows.add(new HudCard.Row(TYPE[t] + "/h", "§b" + hourly));
+            }
         }
-        if (showPowder && known) rows.add(new String[]{"Session", "End +" + compact(gained[0]) + "   Void +" + compact(gained[1])});
-        if (ready > 0) rows.add(new String[]{"Perks", ready + (ready == 1 ? " Upgrade available" : " Upgrades available")});
+        if (ready > 0) rows.add(new HudCard.Row("HOTD", ready + " ready", Theme.pos()));
+        shownRows = List.copyOf(rows);
+        shownState = state;
+        return shownRows;
+    }
 
-        int w = Readout.width(font, "POWDER", title);
-        for (String[] row : rows) w = Math.max(w, Readout.width(font, row[0], row[1]));
-        int h = Readout.ROW_H + 3 + rows.size() * (Readout.ROW_H + 2);
-        if (g == null) return new int[]{w, h};
-
-        // Drawn the way the MINING readout is: one tick at the title, lit while active,
-        // and plain rows under it. Each row carried its own accent tick before - a
-        // column of bars down the left edge that read as a list of separate things, and
-        // was the "lines on the left" that made this one look off beside MINING.
-        Readout.tick(g, x, y, w, active ? Theme.accent() : Theme.line());
-        Draw.text(g, font, "POWDER", Readout.left(x), y, Theme.muted());
-        Draw.textRight(g, font, title, Readout.right(x, w), y, active ? Theme.accent() : Theme.text());
-        int ry = y + Readout.ROW_H + 3;
-        for (String[] row : rows) {
-            Draw.text(g, font, row[0], Readout.left(x), ry, Theme.dim());
-            Draw.textRight(g, font, row[1], Readout.right(x, w), ry, Theme.text());
-            ry += Readout.ROW_H + 2;
-        }
-        return new int[]{w, h};
+    private static int readyCount(long ender, long voidPowder) {
+        int count = 0;
+        for (Upgrade upgrade : upgrades)
+            if (total[upgrade.type()] >= 0 && (upgrade.type() == 0 ? ender : voidPowder) >= upgrade.cost()) count++;
+        return count;
     }
 
     /**
@@ -575,12 +587,26 @@ public final class PowderTracker {
         long f = sample ? 2_776 : fuel, max = sample ? 3_000 : fuelMax;
         if (f < 0 || max <= 0) return new int[]{0, 0};
         int pct = (int) Math.round(100.0 * f / max);
-        String label = "Fuel: ", value = String.format(Locale.ROOT, "%,d/%s (%d%%)", f, max >= 1000 ? (max / 1000) + "K" : String.valueOf(max), pct);
+        String label = "Fuel: ", value = fuelText(f, max);
         int w = font.width(label) + font.width(value), h = 10;
         if (g == null) return new int[]{w, h};
         Draw.text(g, font, label, x, y, 0xFF55FFFF);
         Draw.text(g, font, value, x + font.width(label), y, pct >= 50 ? 0xFF55FF55 : pct >= 25 ? 0xFFFFFF55 : 0xFFFF5555);
         return new int[]{w, h};
+    }
+
+    private static long shownFuel = -1, shownFuelMax = -1;
+    private static String shownFuelText;
+
+    private static String fuelText(long fuel, long max) {
+        if (fuel != shownFuel || max != shownFuelMax || shownFuelText == null) {
+            int percent = (int) Math.round(100.0 * fuel / max);
+            shownFuelText = String.format(Locale.ROOT, "%,d/%s (%d%%)", fuel,
+                    max >= 1000 ? (max / 1000) + "K" : String.valueOf(max), percent);
+            shownFuel = fuel;
+            shownFuelMax = max;
+        }
+        return shownFuelText;
     }
 
     /** A kind's rate at today's buff: measured at one percentage, scaled to the current one. */

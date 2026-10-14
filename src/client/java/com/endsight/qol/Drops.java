@@ -42,7 +42,8 @@ public final class Drops {
 
     public static final List<String> TIERS = List.of("Any drop", "Rare and up", "Epic and up", "Legendary and up");
 
-    public record Drop(String item, int tier) {
+    public record Drop(String item, int tier, int quantity) {
+        public Drop(String item, int tier) { this(item, tier, 1); }
     }
 
     /** {@code name} as written in the file, {@code needle} lowercased for matching. */
@@ -57,27 +58,39 @@ public final class Drops {
     private static final Pattern LOOT = Pattern.compile("loot number:[^→]*→\\s*(?:§[k-or])*(§[0-9a-f])?(.+)$");
     /** A pet drop carries its level: "[Lvl 1] Ender Dragon". Its rarity is not in the name. */
     private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl \\d+\\]");
+    private static final Pattern BONUS = Pattern.compile("^BONUS! You received ([\\d,]+)x (.+)!$");
+    private static final Pattern SUFFIX_AMOUNT = Pattern.compile("^(.+?)\\s+[x×]([\\d,]+)$");
+    private static final Pattern PREFIX_AMOUNT = Pattern.compile("^([\\d,]+)x\\s+(.+)$");
 
     /** Longest needle first, so "Golden Hot Potato Book" wins over "Hot Potato Book". */
     private static List<Rule> rules;
 
-    /** The same item inside this window is the same drop reported twice. */
-    private static final long REPEAT_MS = 1_500;
-    private static String lastItem = "";
-    private static long lastAt;
+    private static final DropDeduplicator deduplicator = new DropDeduplicator();
+    private static long messageId, lastMessageId = -1;
     /** The last line asked about and its answer, for the next module asking about the same line. */
     private static String lastRaw = "";
     private static Drop lastResult;
     private static long lastRawAt;
+
+    public static void init() {
+        // Register before drop consumers. Identical text can be two real messages;
+        // only consumers of the SAME event should share its cached result.
+        net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!overlay) messageId++;
+        });
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            messageId++;
+            deduplicator.clear();
+        });
+    }
 
     /**
      * The drop in this line, or null if it is not one - or if it is the one just seen.
      * {@code raw} keeps its colour codes.
      *
      * With /debug on, one drop is two lines a tick apart: "loot number: 57 → Golden
-     * Eye" and then "EPIC DROP! Golden Eye". Counting both put every drop on the tracker
-     * twice and rang the alert twice. The second sighting of an item within a second and
-     * a half is the same drop.
+     * Eye" and then "EPIC DROP! Golden Eye". Pair those two sources; two announcements
+     * or an additional bonus are separate rewards, even when their item names match.
      *
      * The /debug line only counts for an item in your list. Its colour is not the
      * rarity - the log shows a §a Hot Potato Book on the loot line and a §5 one on the
@@ -85,43 +98,51 @@ public final class Drops {
      * the one to trust, and it always follows.
      */
     public static Drop parse(String raw) {
-        // Three modules ask about every line. The repeat check below is what makes
-        // "loot number → X" and "DROP! X" one drop, but it also made the second module
-        // to ask about the SAME line get nothing - the alert went missing on any drop
-        // the boss tracker had already seen. So one line gets one answer, shared.
-        long now = System.currentTimeMillis();
-        if (raw.equals(lastRaw) && now - lastRawAt < 100) return lastResult;
-        lastRaw = raw;
-        lastRawAt = now;
-        return lastResult = read(raw);
+        return parseMessage(raw, messageId, System.currentTimeMillis());
     }
 
-    private static Drop read(String raw) {
+    static Drop parseMessage(String raw, long id, long now) {
+        if (raw.equals(lastRaw) && id == lastMessageId && (id != 0 || now - lastRawAt < 100)) return lastResult;
+        lastRaw = raw;
+        lastRawAt = now;
+        lastMessageId = id;
+        return lastResult = read(raw, now);
+    }
+
+    private static Drop read(String raw, long now) {
         String line = Zealots.strip(raw).trim();
         // Someone pasting their drop into chat is "[MVP+] Name: EPIC DROP! Golden Eye",
         // which is not your drop. The server's own line has no speaker in front of it.
         if (DragonTimer.isPlayerChat(line)) return null;
+        Drop bonus = bonus(raw);
+        if (bonus != null) return once(new Drop(bonus.item(), tierOf(bonus.item()), bonus.quantity()), DropDeduplicator.Source.BONUS, now);
         Matcher a = ANNOUNCE.matcher(line);
         if (a.find()) {
-            String item = a.group(2).trim();
+            ItemAmount amount = itemAmount(a.group(2).trim());
+            if (amount == null) return null;
+            String item = amount.item();
+            DropDeduplicator.Source source = a.group(1).contains("BONUS")
+                    ? DropDeduplicator.Source.BONUS : DropDeduplicator.Source.ANNOUNCEMENT;
             // A pet says its own rarity at the end - "Obsidian Golem Pet (Uncommon)" - and
             // that beats the tier list, which names a family rather than one drop. The list
             // has "Golem (pet)" as epic, so an uncommon one rang the epic call.
             String note = a.group(3);
             if (note != null && RARITY_NOTE.matcher(note).find()) {
-                return once(new Drop(item, rank(note)));
+                return once(new Drop(item, rank(note), amount.quantity()), source, now);
             }
             // A boss or slayer pet has no bracket - "[Lvl 1] Ender Dragon" - and its rarity is
             // only the colour of the name: gold legendary, purple epic. The tier list names the
             // pet, not the rarity, so every Ender Dragon pet read as legendary; Delox got two
             // epic ones and the mod called both legendary.
             int pet = petTier(raw);
-            if (pet >= 0) return once(new Drop(item, pet));
-            return once(new Drop(item, tierOf(item, rank(a.group(1)))));
+            if (pet >= 0) return once(new Drop(item, pet, amount.quantity()), source, now);
+            return once(new Drop(item, tierOf(item, rank(a.group(1))), amount.quantity()), source, now);
         }
         Matcher l = LOOT.matcher(raw);
         if (l.find()) {
-            String item = Zealots.strip(l.group(2)).trim();
+            ItemAmount amount = itemAmount(Zealots.strip(l.group(2)).trim());
+            if (amount == null) return null;
+            String item = amount.item();
             // The loot-table colour before [Lvl 1] says nothing about a pet's rarity,
             // but some server lines also colour the name after the level. Use that
             // colour when present: a personal debug line can be the only evidence if
@@ -130,20 +151,45 @@ public final class Drops {
             // from the family's tier in drops.txt.
             if (PET_LEVEL.matcher(item).find()) {
                 int pet = petTier(raw);
-                return pet < 0 ? null : once(new Drop(item, pet));
+                return pet < 0 ? null : once(new Drop(item, pet, amount.quantity()), DropDeduplicator.Source.DEBUG, now);
             }
             int tier = tierOf(item, -1);
-            return tier < 0 ? null : once(new Drop(item, tier));
+            return tier < 0 ? null : once(new Drop(item, tier, amount.quantity()), DropDeduplicator.Source.DEBUG, now);
         }
         return null;
     }
 
-    private static Drop once(Drop d) {
-        long now = System.currentTimeMillis();
-        if (d.item().equalsIgnoreCase(lastItem) && now - lastAt < REPEAT_MS) return null;
-        lastItem = d.item();
-        lastAt = now;
-        return d;
+    private static Drop once(Drop d, DropDeduplicator.Source source, long now) {
+        int credit = deduplicator.credit(d, source, now);
+        return credit == 0 ? null : credit == d.quantity() ? d : new Drop(d.item(), d.tier(), credit);
+    }
+
+    /** This is a received bonus, not evidence that a boss or zealot supplied it. */
+    public static Drop bonus(String raw) {
+        Matcher m = BONUS.matcher(Zealots.strip(raw).trim());
+        if (!m.matches()) return null;
+        int quantity = quantity(m.group(1));
+        return quantity == 0 ? null : new Drop(m.group(2).trim(), 0, quantity);
+    }
+
+    private record ItemAmount(String item, int quantity) { }
+
+    private static ItemAmount itemAmount(String text) {
+        Matcher suffix = SUFFIX_AMOUNT.matcher(text), prefix = PREFIX_AMOUNT.matcher(text);
+        if (suffix.matches()) {
+            int count = quantity(suffix.group(2));
+            return count == 0 ? null : new ItemAmount(suffix.group(1).trim(), count);
+        }
+        if (prefix.matches()) {
+            int count = quantity(prefix.group(1));
+            return count == 0 ? null : new ItemAmount(prefix.group(2).trim(), count);
+        }
+        return new ItemAmount(text, 1);
+    }
+
+    private static int quantity(String text) {
+        try { return Math.max(0, Integer.parseInt(text.replace(",", ""))); }
+        catch (NumberFormatException e) { return 0; }
     }
 
     /** Minecraft's own rarity colours, so the call reads like the item's name would. */

@@ -35,6 +35,8 @@ public final class InventoryHookChecks {
                     "Summon TextDisplay hook");
         }
         String container = "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen";
+        check(method(container, "extractRenderState").methodType().stringValue()
+                .equals("(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V"), "Storage overview container render hook");
         check(method(container, "slotClicked").methodType().stringValue()
                 .equals("(Lnet/minecraft/world/inventory/Slot;IILnet/minecraft/world/inventory/ContainerInput;)V"), "Slot Lock click hook");
         check(method(container, "getHoveredSlot").methodType().stringValue()
@@ -49,6 +51,23 @@ public final class InventoryHookChecks {
                         && invoke.name().stringValue().equals("send")
                         && invoke.type().stringValue().equals("(Lnet/minecraft/network/protocol/Packet;)V")).count();
         check(swapSends == 1, "Offhand swap packet hook is unique");
+        // Fabric afterExtract wraps this outer method. Its deferred flush has already
+        // happened when our hover runs, so the profit overlay must use immediate draw.
+        calls("net/minecraft/client/gui/screens/Screen", "extractRenderStateWithTooltipAndSubtitles",
+                "extractDeferredElements", "(IIF)V", 1);
+        calls("com/endsight/zealots/ZealotTracker", "drawProfitTooltip", "tooltip",
+                "(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/Identifier;)V", 1);
+        calls("com/endsight/zealots/ZealotTracker", "drawProfitTooltip", "setTooltipForNextFrame",
+                "(Lnet/minecraft/client/gui/Font;Ljava/util/List;Ljava/util/Optional;II)V", 0);
+        calls("com/endsight/zealots/ZealotTracker", "drawProfitTooltip", "nextStratum", "()V", 1);
+        calls("com/endsight/visual/EquipmentHud", "itemTooltip", "tooltip",
+                "(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/Identifier;)V", 1);
+        calls("com/endsight/visual/EquipmentHud", "itemTooltip", "nextStratum", "()V", 1);
+        check(method(GUI, "tooltip").methodType().stringValue().equals(
+                "(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/Identifier;)V"),
+                "Native immediate tooltip API");
+        check(method(GUI, "nextStratum").methodType().stringValue().equals("()V"), "HUD overlay stratum API");
+
         System.out.println(checks + " Minecraft render hook checks passed");
     }
 

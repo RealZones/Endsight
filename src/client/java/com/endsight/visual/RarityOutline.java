@@ -4,6 +4,7 @@ import com.endsight.qol.Rarity;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
+import com.endsight.ui.Theme;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -29,7 +30,7 @@ public final class RarityOutline {
     }
 
     private static boolean enabled = true;
-    private static final List<String> STYLES = List.of("Corners", "Outline", "Glow");
+    private static final List<String> STYLES = List.of("Corners", "Outline", "Glow", "Pixel");
     private static String style = "Corners";
     private static double opacity = 0.75;
 
@@ -38,9 +39,9 @@ public final class RarityOutline {
                 "Rarity colour round every item, in windows and on the hotbar.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Choice("Style", "Corners are quieter; glow is the loud old-school look.",
+                        new Setting.Choice("Style", "Corners, outlines, glow or a stepped pixel background.",
                                 STYLES, () -> style, v -> style = v),
-                        new Setting.Slider("Opacity", "How solid the outline is.",
+                        new Setting.Slider("Opacity", "How solid the rarity highlight is.",
                                 0.2, 1, 0.05, () -> opacity, v -> opacity = v, "")));
     }
 
@@ -65,6 +66,7 @@ public final class RarityOutline {
         switch (style) {
             case "Outline" -> frame(g, x - 1, y - 1, 18, 18, c);
             case "Glow" -> glow(g, x - 2, y - 2, 20, 20, colour | 0xFF000000);
+            case "Pixel" -> pixel(g, x - 1, y - 1, colour | 0xFF000000);
             default -> corners(g, x - 1, y - 1, 18, 18, c);
         }
     }
@@ -94,5 +96,20 @@ public final class RarityOutline {
     private static void glow(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
         frame(g, x, y, w, h, Draw.alpha(colour, (float) opacity * 0.35f));
         frame(g, x + 1, y + 1, w - 2, h - 2, Draw.alpha(colour, (float) opacity));
+    }
+
+    private static void pixel(GuiGraphicsExtractor g, int x, int y, int colour) {
+        // Two-pixel steps read like Minecraft sprites rather than a smooth circular halo.
+        badge(g, x, y, 18, Draw.alpha(colour, (float) opacity * 0.65f));
+        badge(g, x + 1, y + 1, 16,
+                Draw.alpha(Draw.lerp(Theme.bg(), colour, 0.32f), (float) opacity));
+    }
+
+    private static void badge(GuiGraphicsExtractor g, int x, int y, int size, int colour) {
+        Draw.rect(g, x + 4, y, size - 8, 2, colour);
+        Draw.rect(g, x + 2, y + 2, size - 4, 2, colour);
+        Draw.rect(g, x, y + 4, size, size - 8, colour);
+        Draw.rect(g, x + 2, y + size - 4, size - 4, 2, colour);
+        Draw.rect(g, x + 4, y + size - 2, size - 8, 2, colour);
     }
 }

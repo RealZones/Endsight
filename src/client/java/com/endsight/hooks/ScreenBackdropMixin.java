@@ -1,6 +1,7 @@
 package com.endsight.hooks;
 
 import com.endsight.visual.InventoryGlass;
+import com.endsight.storage.StorageOverview;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * screens draw their own panel and call up the chain for the backdrop, so cancelling here
  * takes the blur and the dim with it and leaves the frame and the slots.
  *
- * Only while Glass Inventory applies: every other screen - pause, options, anything with
+ * Only while Glass Inventory or Storage Overview applies: every other screen - pause, options, anything with
  * text meant to be read against a quiet background - keeps the backdrop it was designed
  * with.
  */
@@ -26,6 +27,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class ScreenBackdropMixin {
     @Inject(method = "extractBackground", at = @At("HEAD"), cancellable = true)
     private void endsight$clear(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (InventoryGlass.applies(this)) ci.cancel();
+        // Overview opacity is its single backdrop, including a clear world at zero.
+        if (InventoryGlass.applies(this) || StorageOverview.active((Screen) (Object) this)
+                || com.endsight.dungeon.TerminalSolver.compactActive((Screen) (Object) this)) ci.cancel();
     }
 }

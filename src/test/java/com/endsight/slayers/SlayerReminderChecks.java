@@ -4,6 +4,10 @@ public final class SlayerReminderChecks {
     private static int checks;
 
     public static void main(String[] args) {
+        equal(Slayer.trackerVisible(false, true, true, false), true); // Dragon's Den quest
+        equal(Slayer.trackerVisible(false, true, false, false), false); // completed quest
+        equal(Slayer.trackerVisible(true, false, false, true), true); // join mid-quest
+        equal(Slayer.trackerVisible(false, false, true, false), false); // stale quest in hub
         equal(Slayer.questStatus(null, null, false), Slayer.QuestStatus.UNKNOWN);
         equal(Slayer.questStatus(null, null, true), Slayer.QuestStatus.NOT_STARTED);
         equal(Slayer.questStatus("§cSlayer: Not started", null, true), Slayer.QuestStatus.NOT_STARTED);

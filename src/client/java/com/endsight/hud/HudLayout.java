@@ -7,6 +7,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import com.endsight.storage.Recipes;
+import com.endsight.storage.StorageOverview;
 
 /**
  * Where each HUD readout sits, and how to draw a sample of it.
@@ -44,9 +50,50 @@ public final class HudLayout {
     private static final Map<String, Float> SCALE = new LinkedHashMap<>();
     /** Where each element was last drawn, {x, y, w, h}, for anything that wants to be clicked. */
     private static final Map<String, int[]> BOUNDS = new LinkedHashMap<>();
+    private static final Map<String, Screen> BOUNDS_SCREEN = new LinkedHashMap<>();
+    private static final List<String> MENU_REQUESTS = new ArrayList<>();
+    private static boolean drawingOverMenu;
+
+    public static void init() {
+        ScreenEvents.AFTER_INIT.register((mc, screen, width, height) -> {
+            if (!(screen instanceof AbstractContainerScreen<?>)) return;
+            ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> {
+                List<String> requested = List.copyOf(MENU_REQUESTS);
+                MENU_REQUESTS.clear();
+                if (mc.screen != s) return;
+                List<String> stale = BOUNDS_SCREEN.entrySet().stream()
+                        .filter(e -> e.getValue() == s && !requested.contains(e.getKey()))
+                        .map(Map.Entry::getKey).toList();
+                for (String id : stale) { BOUNDS.remove(id); BOUNDS_SCREEN.remove(id); }
+                drawingOverMenu = true;
+                try {
+                    // Inventory contents and native tooltips have already been extracted.
+                    // Keep the menu HUD on its own layer; slot/recipe guards still apply.
+                    if (!requested.isEmpty()) g.nextStratum();
+                    for (String id : requested) draw(id, g, mc.font, false);
+                } finally { drawingOverMenu = false; }
+            });
+            ScreenEvents.remove(screen).register(s -> MENU_REQUESTS.clear());
+        });
+    }
 
     public static int[] bounds(String id) {
-        return BOUNDS.get(id);
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        // Opening chat must not reuse hit boxes drawn in the world or another menu.
+        // The next HUD frame records its actual screen before any control is clickable.
+        if (BOUNDS_SCREEN.get(id) != mc.screen) return null;
+        int[] b = BOUNDS.get(id);
+        if (b != null && mc.screen instanceof AbstractContainerScreen<?>
+                && Recipes.overlayOccludes(b[0], b[1], b[2], b[3])) return null;
+        return b;
+    }
+
+    /** Ordinary chat and inventories expose a cursor for the HUD's small controls. */
+    public static boolean interactiveScreen(Screen screen) {
+        // Pinned roll details own their clicks, including the area outside the box
+        // that dismisses them. A tracker behind that overlay must not steal a click.
+        return screen instanceof AbstractContainerScreen<?>
+                || screen instanceof ChatScreen && !(screen instanceof com.endsight.qol.LootRollDetailsScreen);
     }
     public static final float MIN_SCALE = 0.5f, MAX_SCALE = 2f;
 
@@ -74,23 +121,37 @@ public final class HudLayout {
     }
 
     /**
-     * @param overMenus draw even while an inventory-type window is open. Off for
-     *                  everything but the readout that belongs to a window: trackers
-     *                  showing through the recipe panel read as clutter, not context.
+     * @param overMenus allow a window-specific readout inside its native menu.
+     *                  Ordinary trackers render around inventories, avoiding their
+     *                  slots and recipe panes so invisible controls cannot steal clicks.
      */
     public static void draw(String id, GuiGraphicsExtractor g, Font font, boolean sample, boolean overMenus) {
         Element e = ELEMENTS.get(id);
         if (e == null) return;
         var mc = net.minecraft.client.Minecraft.getInstance();
-        if (!sample && !overMenus
-                && mc.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) return;
+        if (!sample && !overMenus && mc.screen instanceof AbstractContainerScreen<?> && !drawingOverMenu) {
+            // Render after inventory blur, but before recipe panes. Only HUDs
+            // whose own module called draw this frame are eligible, preserving their
+            // active/paused visibility rules instead of displaying every sample.
+            if (!MENU_REQUESTS.contains(id)) MENU_REQUESTS.add(id);
+            return;
+        }
         int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
         float s = scale(id);
         int[] size = e.renderer().draw(null, font, 0, 0, sample);
         int w = Math.round(size[0] * s), h = Math.round(size[1] * s);
         int x = x(id, w, sw), y = y(id, h, sh);
+        if (!sample && !overMenus && mc.screen instanceof AbstractContainerScreen<?> container
+                && (StorageOverview.active(container) || Recipes.overlayOccludes(x, y, w, h)
+                || (x < container.leftPos + container.imageWidth && x + w > container.leftPos
+                && y < container.topPos + container.imageHeight && y + h > container.topPos))) {
+            BOUNDS.remove(id);
+            BOUNDS_SCREEN.remove(id);
+            return;
+        }
         Readout.mirror = x + w / 2 > sw / 2;
         BOUNDS.put(id, new int[]{x, y, w, h});
+        BOUNDS_SCREEN.put(id, mc.screen);
         if (Math.abs(s - 1f) < 0.01f) {
             // As designed: drawn straight at its place, the way every readout always was.
             e.renderer().draw(g, font, x, y, sample);

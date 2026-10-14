@@ -4,6 +4,9 @@
 	"compatibilityLevel": "JAVA_25",
 	"client": [
 		"ContainerSlotMixin",
+		"StorageOverviewContainerMixin",
+		"TerminalContainerMixin",
+		"TerminalSlotUpdateMixin",
 		"SlotLockMixin",
 		"SlotLockPlayerMixin",
 		"HotbarSlotMixin",

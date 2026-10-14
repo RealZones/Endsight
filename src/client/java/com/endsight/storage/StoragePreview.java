@@ -5,6 +5,7 @@ import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -15,9 +16,11 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -96,6 +99,7 @@ public final class StoragePreview {
                         new Setting.Toggle("All-page overview",
                                 "Replace the Storage menu with a browsable view of every page.",
                                 () -> overview, v -> overview = v),
+                        StorageOverview.opacitySetting(),
                         new Setting.Toggle("Snapshot on close",
                                 "Remember each page as you leave it.",
                                 () -> capturing, v -> capturing = v),
@@ -129,9 +133,26 @@ public final class StoragePreview {
             // Registered per screen rather than globally because that is the only shape
             // the screen API offers for these - they hang off a specific screen.
             ScreenEvents.afterTick(screen).register(s -> capture(container));
-            ScreenEvents.remove(screen).register(s -> capture(container));
+            ScreenEvents.remove(screen).register(s -> {
+                capture(container);
+                if (snapshotScreen == container) {
+                    // Persist the last observation on close, without rewriting the
+                    // entire NBT file repeatedly while an unchanged page stays open.
+                    SnapshotStore.markDirty();
+                    snapshotScreen = null;
+                }
+                if (emptyScreen == container) emptyScreen = null;
+            });
             ScreenEvents.afterExtract(screen).register(
-                    (s, g, mouseX, mouseY, delta) -> draw(container, g));
+                    (s, g, mouseX, mouseY, delta) -> {
+                        draw(container, g);
+                        drawEnderNext(container, g, mouseX, mouseY);
+                    });
+            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
+                if (click.button() != 0 || !enderNextHit(container, click.x(), click.y())) return true;
+                if (client.getConnection() != null) client.getConnection().sendCommand("storage 1");
+                return false;
+            });
         });
     }
 
@@ -172,9 +193,22 @@ public final class StoragePreview {
             emptyScreen = null;
         }
 
-        SNAPSHOTS.put(page, new PageSnapshot(page, count, items, now));
+        boolean unchanged = existing != null && existing.pageCount() == count && sameItems(items, existing.items());
+        // Keeping a window open used to copy every component of every stack twenty
+        // times a second, and dirty the NBT file even when its contents never changed.
+        // Refresh the observation time once a second using the same immutable items.
+        if (unchanged && snapshotScreen == screen && now - existing.capturedAt() < 1000) return;
+        List<ItemStack> saved;
+        if (unchanged) saved = existing.items();
+        else {
+            saved = new ArrayList<>(items.size());
+            for (ItemStack stack : items) saved.add(stack.copy());
+            saved = List.copyOf(saved);
+        }
+        SNAPSHOTS.put(page, new PageSnapshot(page, count, saved, now));
+        snapshotScreen = screen;
         if (page != ENDER_CHEST) lastPage = page;      // placement previews a storage page
-        SnapshotStore.markDirty();
+        if (!unchanged) SnapshotStore.markDirty();
     }
 
     private static boolean allEmpty(List<ItemStack> items) {
@@ -185,7 +219,19 @@ public final class StoragePreview {
     }
 
     private static AbstractContainerScreen<?> emptyScreen;
+    private static AbstractContainerScreen<?> snapshotScreen;
     private static long emptySince;
+
+    static boolean sameItems(List<ItemStack> first, List<ItemStack> second) {
+        if (first == second) return true;
+        if (first == null || second == null || first.size() != second.size()) return false;
+        for (int i = 0; i < first.size(); i++) {
+            ItemStack a = first.get(i), b = second.get(i);
+            if (a.isEmpty() && b.isEmpty()) continue;
+            if (a.getCount() != b.getCount() || !ItemStack.isSameItemSameComponents(a, b)) return false;
+        }
+        return true;
+    }
 
     /**
      * The window's own slots, without the player inventory underneath.
@@ -203,7 +249,7 @@ public final class StoragePreview {
         try {
             for (Slot slot : screen.getMenu().slots) {
                 if (slot.container == playerInv) continue;
-                out.add(slot.getItem().copy());
+                out.add(slot.getItem());
             }
         } catch (RuntimeException ignored) {
             // Reached from remove(), where the menu may already be half torn down. A
@@ -269,22 +315,24 @@ public final class StoragePreview {
         Minecraft mc = Minecraft.getInstance();
         Container playerInv = mc.player == null ? null : mc.player.getInventory();
 
-        List<int[]> cells = new ArrayList<>();
+        int count = 0;
         int minX = Integer.MAX_VALUE;
         for (Slot slot : screen.getMenu().slots) {
             if (slot.container == playerInv) continue;
             minX = Math.min(minX, slot.x);
-            cells.add(new int[]{screen.leftPos + slot.x, screen.topPos + slot.y});
+            count++;
         }
         if (minX == Integer.MAX_VALUE) return null;
 
         frameGridLeft = screen.leftPos + minX;
         frameWindowTop = screen.topPos;
-        frameRows = Math.max(1, cells.size() / PageSnapshot.COLS);
-        frameCells = new int[cells.size() * 2];
-        for (int i = 0; i < cells.size(); i++) {
-            frameCells[i * 2] = cells.get(i)[0];
-            frameCells[i * 2 + 1] = cells.get(i)[1];
+        frameRows = Math.max(1, count / PageSnapshot.COLS);
+        if (frameCells == null || frameCells.length != count * 2) frameCells = new int[count * 2];
+        int i = 0;
+        for (Slot slot : screen.getMenu().slots) {
+            if (slot.container == playerInv) continue;
+            frameCells[i++] = screen.leftPos + slot.x;
+            frameCells[i++] = screen.topPos + slot.y;
         }
 
         return boundsAt(frameGridLeft, frameWindowTop, rows, screen.width, screen.height);
@@ -310,6 +358,28 @@ public final class StoragePreview {
     }
 
     // ── draw ──────────────────────────────────────────────────────────────────
+
+    private static boolean enderNextHit(AbstractContainerScreen<?> screen, double mx, double my) {
+        if (!enabled || !isEnderChest(screen)) return false;
+        int x = screen.leftPos + screen.imageWidth - 24, y = screen.topPos + 3;
+        return mx >= x && mx < x + 18 && my >= y && my < y + 12;
+    }
+
+    private static void drawEnderNext(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
+        if (!enabled || !isEnderChest(screen)) return;
+        int x = screen.leftPos + screen.imageWidth - 24, y = screen.topPos + 3;
+        boolean hovered = enderNextHit(screen, mx, my);
+        // Keep navigation in the title bar, so no chest item or server control is covered.
+        g.nextStratum();
+        Draw.roundedOutline(g, x, y, 18, 12, 3, hovered ? Theme.accent() : Theme.line(),
+                hovered ? Theme.hover() : Theme.surface());
+        Font font = Minecraft.getInstance().font;
+        Draw.textCentered(g, font, ">", x + 9, y + 2, hovered ? Theme.accent() : Theme.text());
+        if (hovered) {
+            g.setTooltipForNextFrame(font, Component.literal("Next page: PV 1"), mx, my);
+            g.extractDeferredElements(mx, my, 0f);
+        }
+    }
 
     private static void draw(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g) {
         if (!enabled) {
@@ -426,12 +496,35 @@ public final class StoragePreview {
     /** How many stacks in a remembered page match, furniture row excluded. */
     static int matchesIn(int page, String query) {
         PageSnapshot snap = SNAPSHOTS.get(page);
-        if (snap == null) return 0;
-        int n = 0;
-        for (int i = SKIP_ROWS * PageSnapshot.COLS; i < snap.items().size(); i++) {
-            if (StorageSearch.matches(snap.at(i), query)) n++;
+        return searchMatches(snap, query).cardinality();
+    }
+
+    private record SearchMatch(List<ItemStack> items, BitSet slots) { }
+    private static String matchQuery = "";
+    private static final Map<Integer, SearchMatch> matchCache = new HashMap<>();
+    private static final BitSet NO_MATCHES = new BitSet();
+
+    /** A single pass answers both the page count and every highlighted slot. */
+    static BitSet searchMatches(PageSnapshot snap, String query) {
+        String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.equals(matchQuery)) {
+            matchQuery = normalized;
+            matchCache.clear();
         }
-        return n;
+        if (snap == null || normalized.isEmpty()) return NO_MATCHES;
+        SearchMatch cached = matchCache.get(snap.page());
+        if (cached != null && cached.items() == snap.items()) return cached.slots();
+        BitSet slots = new BitSet(snap.items().size());
+        for (int i = SKIP_ROWS * PageSnapshot.COLS; i < snap.items().size(); i++) {
+            ItemStack stack = snap.at(i);
+            if (!stack.isEmpty() && plain(stack.getHoverName()).toLowerCase(Locale.ROOT).contains(normalized))
+                slots.set(i);
+        }
+        // Page numbers are bounded by the server menu in normal use; cap the cache
+        // too so stale snapshots from another server cannot accumulate indefinitely.
+        if (matchCache.size() >= 128) matchCache.clear();
+        matchCache.put(snap.page(), new SearchMatch(snap.items(), slots));
+        return slots;
     }
 
     static String plainText(Component c) {
@@ -453,8 +546,10 @@ public final class StoragePreview {
      */
     private static String plain(Component c) {
         if (c == null) return "";
-        return c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim();
+        return LEGACY_FORMAT.matcher(c.getString()).replaceAll("").trim();
     }
+
+    private static final Pattern LEGACY_FORMAT = Pattern.compile("§[0-9A-Fa-fK-Ok-orRxX]");
 
     private static int parse(String s) {
         try {

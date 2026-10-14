@@ -78,6 +78,12 @@ tasks.register('bossDropsChecks', JavaExec) {
 	mainClass = 'com.endsight.dragons.BossDropsChecks'
 }
 
+tasks.register('discordPresenceChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.social.DiscordPresenceChecks'
+}
+
 tasks.register('bossDropsAuditChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -127,7 +133,7 @@ tasks.register('recipesChecks', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn 'bossDropsChecks', 'bossDropsAuditChecks', 'cooldownsChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'revenantSpawnTilesChecks', 'recipesChecks'
+	dependsOn 'bossDropsChecks', 'bossDropsAuditChecks', 'cooldownsChecks', 'discordPresenceChecks', 'miningVisibilityChecks', 'slayerReminderChecks', 'slayerBestChecks', 'slayerSpawnSignalChecks', 'revenantSpawnTilesChecks', 'recipesChecks'
 }
 
 tasks.register('inventoryVisualChecks', JavaExec) {
@@ -206,6 +212,12 @@ tasks.register('lootRollChecks', JavaExec) {
 	mainClass = 'com.endsight.qol.LootRollChecks'
 }
 
+tasks.register('zealotTrackerChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.zealots.ZealotTrackerChecks'
+}
+
 tasks.register('storageOverviewChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -213,5 +225,128 @@ tasks.register('storageOverviewChecks', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn 'storageOverviewChecks', 'lootRollChecks'
+	dependsOn 'storageOverviewChecks', 'lootRollChecks', 'zealotTrackerChecks'
 }
+
+tasks.register('protectorChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dragons.ProtectorChecks'
+}
+
+tasks.register('equipmentHudChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.visual.EquipmentHudChecks'
+}
+
+tasks.register('miningProfitChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.MiningProfitChecks'
+}
+
+tasks.named('check') {
+	dependsOn 'protectorChecks', 'equipmentHudChecks', 'miningProfitChecks'
+}
+
+tasks.register('miningGainLedgerChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.MiningGainLedgerChecks'
+}
+
+tasks.named('check') { dependsOn 'miningGainLedgerChecks' }
+
+tasks.register('dungeonContextChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.DungeonContextChecks'
+}
+
+tasks.register('dungeonMapChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.DungeonMapChecks'
+}
+
+tasks.register('threeWeirdosChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.ThreeWeirdosChecks'
+}
+
+tasks.named('check') { dependsOn 'dungeonContextChecks', 'dungeonMapChecks', 'threeWeirdosChecks' }
+
+tasks.register('ticTacToeChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.TicTacToeChecks'
+}
+
+tasks.register('ticTacToeBoardChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.TicTacToeBoardChecks'
+}
+
+tasks.named('check') { dependsOn 'ticTacToeChecks', 'ticTacToeBoardChecks' }
+
+tasks.register('terminalLogicChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.TerminalLogicChecks'
+}
+tasks.named('check') { dependsOn 'terminalLogicChecks' }
+
+tasks.register('terminalUiChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.TerminalUiChecks'
+}
+tasks.named('check') { dependsOn 'terminalUiChecks' }
+
+tasks.register('quizChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.QuizChecks'
+}
+
+tasks.named('check') { dependsOn 'quizChecks' }
+
+tasks.register('icePathChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.IcePathChecks'
+}
+
+tasks.named('check') { dependsOn 'icePathChecks' }
+
+tasks.register('bloodRoomChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.BloodRoomChecks'
+}
+
+tasks.named('check') { dependsOn 'bloodRoomChecks' }
+
+tasks.register('eggRespawnTimingChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dragons.EggRespawnTimingChecks'
+}
+tasks.named('check') { dependsOn 'eggRespawnTimingChecks' }
+
+tasks.register('trackerRowsChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.hud.TrackerRowsChecks'
+}
+tasks.named('check') { dependsOn 'trackerRowsChecks' }
+
+tasks.register('compactModuleChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.ui.CompactModuleChecks'
+}
+tasks.named('check') { dependsOn 'compactModuleChecks' }

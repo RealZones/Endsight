@@ -11,6 +11,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /**
  * One module's settings, laid out from its {@link Setting} list.
@@ -26,6 +29,10 @@ public class SettingsScreen extends Screen {
     private final Screen parent;
     private final String brand;
     private final Module module;
+    private final boolean embedded;
+    private int embeddedX, embeddedY, embeddedW, clipTop, clipBottom;
+    private String settingsQuery = "";
+    private final Set<Integer> collapsed = new HashSet<>();
 
     private int scroll;
     private int contentHeight;
@@ -40,8 +47,11 @@ public class SettingsScreen extends Screen {
     private final Map<String, Anim> anims = new HashMap<>();
     private final List<Row> rows = new ArrayList<>();
 
-    private record Row(Setting setting, int x, int y, int w, int h) {
+    private record Row(Setting setting, int index, boolean expanded, boolean matching, int children,
+                       int x, int y, int w, int h) {
     }
+    private record WrappedNote(Font font, String text, int width, List<String> lines) { }
+    private final Map<Setting.Note, WrappedNote> wrappedNotes = new IdentityHashMap<>();
 
     private static final int ROW_H = 46;
     private static final int SECTION_ROW_H = 30;
@@ -49,7 +59,17 @@ public class SettingsScreen extends Screen {
     private static final int NOTE_LINES = 6;
 
     private int noteH(Setting.Note n, int w) {
-        return 24 + Draw.wrap(font, n.description(), w - 16, NOTE_LINES).size() * 11;
+        return 24 + noteLines(n, w).size() * 11;
+    }
+
+    private List<String> noteLines(Setting.Note note, int width) {
+        String text = note.description();
+        WrappedNote cached = wrappedNotes.get(note);
+        if (cached == null || cached.font() != font || cached.width() != width || !cached.text().equals(text)) {
+            cached = new WrappedNote(font, text, width, Draw.wrap(font, text, Math.max(20, width - 16), NOTE_LINES));
+            wrappedNotes.put(note, cached);
+        }
+        return cached.lines();
     }
     private static final int TRACK_H = 4;
     private static final int KNOB = 10;
@@ -63,12 +83,61 @@ public class SettingsScreen extends Screen {
     private static String openModule;
 
     public SettingsScreen(Screen parent, String brand, Module module) {
+        this(parent, brand, module, false);
+    }
+
+    private SettingsScreen(Screen parent, String brand, Module module, boolean embedded) {
         super(Component.literal(module.title()));
         this.parent = parent;
         this.brand = brand;
         this.module = module;
-        this.scroll = scrolls.getOrDefault(module.id(), 0);
-        openModule = module.id();
+        this.embedded = embedded;
+        if (embedded) collapsed.addAll(SettingsOutline.initiallyCollapsed(module.settings()));
+        else {
+            this.scroll = scrolls.getOrDefault(module.id(), 0);
+            openModule = module.id();
+        }
+    }
+
+    static SettingsScreen embedded(Screen parent, String brand, Module module) {
+        return new SettingsScreen(parent, brand, module, true);
+    }
+
+    @Override
+    protected void init() {
+        // Resize and resource-driven reinitialization must remeasure using the current font.
+        wrappedNotes.clear();
+    }
+
+    int embeddedHeight(int width, String query) {
+        embeddedW = width;
+        settingsQuery = query;
+        layout();
+        return contentHeight;
+    }
+
+    void embeddedBounds(int x, int y, int width, int top, int bottom, String query) {
+        embeddedX = x; embeddedY = y; embeddedW = width;
+        clipTop = top; clipBottom = bottom; settingsQuery = query;
+        layout();
+    }
+
+    void renderEmbedded(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        drawRows(g, font, mouseX, mouseY);
+    }
+
+    void renderEmbeddedOverlay(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        if (!picker.open() || !placePicker()) return;
+        g.enableScissor(contentX(), contentTop(), contentX() + contentW(), contentBottom());
+        try { picker.draw(g, font, mouseX, mouseY); }
+        finally { g.disableScissor(); }
+    }
+
+    boolean capturesKeyboard() { return binding != null || editing != null || picker.typing(); }
+    boolean bindingKey() { return binding != null; }
+
+    void cancelInteractions() {
+        dragging = null; binding = null; editing = null; picker.close();
     }
 
     /** The id of the settings page that was open when the GUI last closed, or null. */
@@ -78,7 +147,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public void removed() {
-        scrolls.put(module.id(), scroll);
+        if (!embedded) scrolls.put(module.id(), scroll);
         super.removed();
     }
 
@@ -94,24 +163,27 @@ public class SettingsScreen extends Screen {
     private int panelY() { return Theme.panelY(height); }
     private int panelW() { return Theme.panelW(width); }
     private int panelH() { return Theme.panelH(height); }
-    private int contentX() { return panelX() + Theme.SIDEBAR_W; }
-    private int contentW() { return panelW() - Theme.SIDEBAR_W; }
-    private int contentTop() { return panelY() + Theme.HEADER_H; }
-    private int contentBottom() { return panelY() + panelH() - Theme.PAD; }
+    private int contentX() { return embedded ? embeddedX : panelX() + Theme.SIDEBAR_W; }
+    private int contentW() { return embedded ? embeddedW : panelW() - Theme.SIDEBAR_W; }
+    private int contentTop() { return embedded ? clipTop : panelY() + Theme.HEADER_H; }
+    private int contentBottom() { return embedded ? clipBottom : panelY() + panelH() - Theme.PAD; }
 
     private void layout() {
         rows.clear();
-        int x = contentX() + Theme.PAD;
-        int w = contentW() - Theme.PAD * 2;
-        int y = contentTop() + Theme.PAD - scroll;
+        int x = contentX() + (embedded ? 12 : Theme.PAD);
+        int w = Math.max(40, contentW() - (embedded ? 24 : Theme.PAD * 2));
+        int start = embedded ? embeddedY : contentTop() + Theme.PAD - scroll;
+        int y = start;
 
-        for (Setting s : module.settings()) {
-            int h = s instanceof Setting.Section ? SECTION_ROW_H
-                    : s instanceof Setting.Note n ? noteH(n, w) : ROW_H;
-            rows.add(new Row(s, x, y, w, h));
+        for (SettingsOutline.Entry entry : SettingsOutline.visible(module.settings(), settingsQuery, collapsed)) {
+            Setting s = entry.setting();
+            int h = s instanceof Setting.Section ? (embedded ? 24 : SECTION_ROW_H)
+                    : s instanceof Setting.Note n ? noteH(n, w)
+                    : embedded && !(s instanceof Setting.Slider) ? 34 : ROW_H;
+            rows.add(new Row(s, entry.index(), entry.expanded(), entry.matching(), entry.children(), x, y, w, h));
             y += h + 4;
         }
-        contentHeight = (y + scroll) - (contentTop() + Theme.PAD) + Theme.PAD;
+        contentHeight = y - start + (embedded ? 4 : Theme.PAD);
     }
 
     private int maxScroll() {
@@ -128,7 +200,7 @@ public class SettingsScreen extends Screen {
     }
 
     private static int trackW(Row r) {
-        return r.w - 60;
+        return Math.max(1, r.w - 60);
     }
 
     private static int trackY(Row r) {
@@ -201,13 +273,14 @@ public class SettingsScreen extends Screen {
     private void drawSwatch(GuiGraphicsExtractor g, Font font, Row r, Setting.Color c, int mouseX, int mouseY) {
         int v = c.get().getAsInt();
         String text = v == Setting.Color.CHROMA ? "Chroma" : Setting.Color.hex(v);
-        int w = font.width(text) + 34;
+        int w = valueWidth(r, text, 34);
         int cx = r.x + r.w - w, cy = r.y + r.h / 2 - 10;
         boolean open = picker.setting() == c;
         float a = anim("val:" + c.label()).to(open || contains(cx, cy, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
         Draw.roundedRect(g, cx, cy, w, 20, Theme.RADIUS - 2, Draw.lerp(Theme.raised(), Theme.hover(), a));
         Draw.roundedRect(g, cx + 7, cy + 5, 10, 10, 3, Setting.Color.live(v));
-        Draw.text(g, font, text, cx + 23, cy + 6, Draw.lerp(Theme.muted(), Theme.text(), a));
+        Draw.text(g, font, Draw.fit(font, text, Math.max(10, w - 28)), cx + 23, cy + 6,
+                Draw.lerp(Theme.muted(), Theme.text(), a));
     }
 
     private void drawBack(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
@@ -222,8 +295,8 @@ public class SettingsScreen extends Screen {
 
     private void drawRows(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
         int top = contentTop(), bottom = contentBottom();
-        Draw.roundedRect(g, contentX(), top, contentW(), bottom - top, Theme.RADIUS_LG,
-                Theme.bg(), false, false, false, true);
+        if (!embedded) Draw.roundedRect(g, contentX(), top, contentW(), bottom - top, Theme.RADIUS_LG,
+                    Theme.bg(), false, false, false, true);
 
         if (rows.isEmpty()) {
             Draw.textCentered(g, font, "This module has nothing to configure.",
@@ -238,16 +311,19 @@ public class SettingsScreen extends Screen {
             if (r.y + r.h <= top || r.y >= bottom) continue;
 
             if (r.setting instanceof Setting.Section sec) {
-                Draw.text(g, font, sec.label().toUpperCase(), r.x, r.y + 14, Theme.muted());
-                int lx = r.x + font.width(sec.label().toUpperCase()) + 10;
-                Draw.rect(g, lx, r.y + 17, r.x + r.w - lx, 1, Theme.hair());
+                int ty = r.y + (r.h - 9) / 2;
+                String title = (r.expanded ? "v  " : ">  ") + sec.label();
+                Draw.text(g, font, Draw.fit(font, title, r.w - 30), r.x, ty,
+                        r.matching ? Theme.accent() : Theme.muted());
+                Draw.textRight(g, font, Integer.toString(r.children), r.x + r.w, ty, Theme.dim());
+                Draw.rect(g, r.x, r.y + r.h - 1, r.w, 1, Theme.hair());
                 continue;
             }
             if (r.setting instanceof Setting.Note n) {
                 // A heading and its paragraph. No hover, nothing to click.
                 Draw.text(g, font, n.label(), r.x, r.y + 8, Theme.text());
                 int ly = r.y + 20;
-                for (String line : Draw.wrap(font, n.description(), r.w - 16, NOTE_LINES)) {
+                for (String line : noteLines(n, r.w)) {
                     Draw.text(g, font, line, r.x, ly, Theme.dim());
                     ly += 11;
                 }
@@ -264,10 +340,12 @@ public class SettingsScreen extends Screen {
                 continue;
             }
 
-            Draw.text(g, font, r.setting.label(), r.x, r.y + 8, Theme.text());
+            int textWidth = Math.max(20, r.w - controlWidth(r) - 10);
+            Draw.text(g, font, Draw.fit(font, r.setting.label(), textWidth), r.x, r.y + (embedded ? 5 : 8),
+                    r.matching ? Theme.accent() : Theme.text());
             if (!r.setting.description().isBlank()) {
-                Draw.text(g, font, Draw.fit(font, r.setting.description(), r.w - 70),
-                        r.x, r.y + 20, Theme.dim());
+                Draw.text(g, font, Draw.fit(font, r.setting.description(), textWidth),
+                        r.x, r.y + (embedded ? 17 : 20), Theme.dim());
             }
 
             if (r.setting instanceof Setting.Toggle t) {
@@ -277,13 +355,13 @@ public class SettingsScreen extends Screen {
                 drawSlider(g, font, r, s, mouseX, mouseY);
             } else if (r.setting instanceof Setting.Choice c) {
                 String v = c.get().get();
-                int w = font.width(v) + 20;
+                int w = valueWidth(r, v, 20);
                 int cx = r.x + r.w - w;
                 float a = anim("val:" + c.label())
                         .to(contains(cx, r.y + r.h / 2 - 10, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
                 Draw.roundedRect(g, cx, r.y + r.h / 2 - 10, w, 20, Theme.RADIUS - 2,
                         Draw.lerp(Theme.raised(), Theme.hover(), a));
-                Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
+                Draw.textCentered(g, font, Draw.fit(font, v, w - 12), cx + w / 2, r.y + r.h / 2 - 4,
                         Draw.lerp(Theme.muted(), Theme.text(), a));
             } else if (r.setting instanceof Setting.Color c) {
                 drawSwatch(g, font, r, c, mouseX, mouseY);
@@ -292,13 +370,13 @@ public class SettingsScreen extends Screen {
                 // accent-lettered at rest: a Choice shows a value you can change, this
                 // shows a verb you can press, and only the colour says which.
                 String v = act.button();
-                int w = font.width(v) + 20;
+                int w = valueWidth(r, v, 20);
                 int cx = r.x + r.w - w;
                 float a = anim("val:" + act.label())
                         .to(contains(cx, r.y + r.h / 2 - 10, w, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
                 Draw.roundedRect(g, cx, r.y + r.h / 2 - 10, w, 20, Theme.RADIUS - 2,
                         Draw.lerp(Draw.alpha(Theme.accent(), 0.18f), Theme.accent(), a));
-                Draw.textCentered(g, font, v, cx + w / 2, r.y + r.h / 2 - 4,
+                Draw.textCentered(g, font, Draw.fit(font, v, w - 12), cx + w / 2, r.y + r.h / 2 - 4,
                         Draw.lerp(Theme.accent(), Theme.bg(), a));
             } else if (r.setting instanceof Setting.KeyAction act) {
                 drawKeyAction(g, font, r, act, mouseX, mouseY);
@@ -306,8 +384,27 @@ public class SettingsScreen extends Screen {
         }
 
         g.disableScissor();
-        Draw.roundedRect(g, contentX(), bottom, contentW(), panelY() + panelH() - bottom,
-                Theme.RADIUS_LG, Theme.bg(), false, false, false, true);
+        if (!embedded) Draw.roundedRect(g, contentX(), bottom, contentW(), panelY() + panelH() - bottom,
+                    Theme.RADIUS_LG, Theme.bg(), false, false, false, true);
+    }
+
+    private int valueWidth(Row row, String text, int padding) {
+        return Math.min(font.width(text) + padding, Math.max(42, row.w / 2));
+    }
+
+    private int actionWidth(Row row, Setting.KeyAction action) {
+        return Math.min(font.width(action.button()) + 20, Math.max(38, row.w / 2 - CHIP_W - 8));
+    }
+
+    private int controlWidth(Row row) {
+        return switch (row.setting) {
+            case Setting.Toggle ignored -> 30;
+            case Setting.Choice choice -> valueWidth(row, choice.get().get(), 20);
+            case Setting.Color color -> valueWidth(row, Setting.Color.hex(color.get().getAsInt()), 34);
+            case Setting.Action action -> valueWidth(row, action.button(), 20);
+            case Setting.KeyAction action -> actionWidth(row, action) + CHIP_W + 8;
+            default -> 0;
+        };
     }
 
     /**
@@ -420,14 +517,14 @@ public class SettingsScreen extends Screen {
 
     // A keyed action row: label/description on the left, [ run ] [ key ] on the right.
     private void drawKeyAction(GuiGraphicsExtractor g, Font font, Row r, Setting.KeyAction a, int mouseX, int mouseY) {
-        int bw = font.width(a.button()) + 20;
+        int bw = actionWidth(r, a);
         int by = r.y + r.h / 2 - 10;
         int bx = r.x + r.w - CHIP_W - 8 - bw;
         float on = anim("keyact:" + a.id())
                 .to(contains(bx, by, bw, 20, mouseX, mouseY) ? 1f : 0f, Theme.EASE_FAST);
         Draw.roundedRect(g, bx, by, bw, 20, Theme.RADIUS - 2,
                 Draw.lerp(Draw.alpha(Theme.accent(), 0.18f), Theme.accent(), on));
-        Draw.textCentered(g, font, a.button(), bx + bw / 2, by + 6,
+        Draw.textCentered(g, font, Draw.fit(font, a.button(), bw - 12), bx + bw / 2, by + 6,
                 Draw.lerp(Theme.accent(), Theme.bg(), on));
 
         drawChip(g, font, a.id(), r.x + r.w - CHIP_W, r.y + r.h / 2 - CHIP_H / 2, mouseX, mouseY);
@@ -459,19 +556,21 @@ public class SettingsScreen extends Screen {
         // The picker is on top, so it sees the click first; one outside it closes it,
         // and the swatch that opened it is remembered so the same click does not reopen.
         Setting.Color wasPicking = picker.setting();
-        if (picker.open() && placePicker() && picker.click(mx, my)) return true;
+        if (picker.open() && placePicker()
+                && (!embedded || contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my))
+                && picker.click(mx, my)) return true;
         picker.close();
 
-        if (themeRow.click(mx, my)) return true;
+        if (!embedded && themeRow.click(mx, my)) return true;
 
         int bx = panelX() + 10, by = panelY() + Theme.HEADER_H + 22;
-        if (contains(bx, by, Theme.SIDEBAR_W - 20, 22, mx, my)) {
+        if (!embedded && contains(bx, by, Theme.SIDEBAR_W - 20, 22, mx, my)) {
             back();
             return true;
         }
 
         int sx = panelX() + 16, sy = panelY() + Theme.HEADER_H + 72;
-        if (module.implemented()) {
+        if (!embedded && module.implemented()) {
             int cw = Theme.SIDEBAR_W - 32;
             if (contains(sx + cw - CHIP_W, sy + 30, CHIP_W, CHIP_H, mx, my)) {
                 return listen(Keybinds.moduleId(module), event);
@@ -483,12 +582,17 @@ public class SettingsScreen extends Screen {
         }
 
         if (!contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my)) {
-            return super.mouseClicked(event, doubleClick);
+            return embedded ? false : super.mouseClicked(event, doubleClick);
         }
         for (Row r : rows) {
             if (r.y + r.h <= contentTop() || r.y >= contentBottom()) continue;
             if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
-            if (r.setting instanceof Setting.Note || r.setting instanceof Setting.Section) return true;
+            if (r.setting instanceof Setting.Note) return true;
+            if (r.setting instanceof Setting.Section) {
+                if (!collapsed.add(r.index)) collapsed.remove(r.index);
+                cancelInteractions();
+                return true;
+            }
             if (r.setting instanceof Setting.Command c) {
                 int fy = r.y + r.h / 2 - 10, fw = cmdFieldW(r);
                 if (contains(r.x, fy, fw, 20, mx, my)) {
@@ -522,7 +626,7 @@ public class SettingsScreen extends Screen {
                 return true;
             }
             if (r.setting instanceof Setting.KeyAction a) {
-                int bw = font.width(a.button()) + 20;
+                int bw = actionWidth(r, a);
                 int by2 = r.y + r.h / 2 - 10;
                 int bx2 = r.x + r.w - CHIP_W - 8 - bw;
                 if (contains(r.x + r.w - CHIP_W, r.y + r.h / 2 - CHIP_H / 2, CHIP_W, CHIP_H, mx, my)) {
@@ -536,7 +640,7 @@ public class SettingsScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseClicked(event, doubleClick);
+        return embedded ? false : super.mouseClicked(event, doubleClick);
     }
 
     @Override
@@ -551,14 +655,15 @@ public class SettingsScreen extends Screen {
                 }
             }
         }
-        return super.mouseDragged(event, dx, dy);
+        return embedded ? false : super.mouseDragged(event, dx, dy);
     }
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        boolean wasDragging = dragging != null || picker.open();
         dragging = null;
         picker.release();
-        return super.mouseReleased(event);
+        return embedded ? wasDragging : super.mouseReleased(event);
     }
 
     private void applyDrag(Row r, Setting.Slider s, int mx) {
@@ -570,6 +675,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (embedded) return false;
         scroll = Math.max(0, Math.min(scroll + (int) (-scrollY * 26), maxScroll()));
         return true;
     }
@@ -594,6 +700,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        if (binding != null) return true;
         if (picker.typing()) {
             for (char ch : event.codepointAsString().toCharArray()) picker.charTyped(ch);
             return true;
@@ -602,12 +709,13 @@ public class SettingsScreen extends Screen {
             if (event.isAllowedChatCharacter()) editing.command(editing.command() + event.codepointAsString());
             return true;
         }
-        return super.charTyped(event);
+        return embedded ? false : super.charTyped(event);
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (picker.keyPressed(event.key())) return true;
+        if (event.key() == 256 && picker.open()) { picker.close(); return true; }
         if (editing != null) {
             if (event.key() == 259 && !editing.command().isEmpty()) {          // backspace
                 editing.command(editing.command().substring(0, editing.command().length() - 1));
@@ -625,6 +733,7 @@ public class SettingsScreen extends Screen {
             binding = null;
             return true;
         }
+        if (embedded) return false;
         if (event.key() == 256) {                 // escape goes back, not out
             back();
             return true;

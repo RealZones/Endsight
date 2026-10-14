@@ -1,10 +1,12 @@
 package com.endsight.zealots;
 
 import com.endsight.dragons.DragonTimer;
+import com.endsight.dragons.DropPricesScreen;
 import com.endsight.hud.Area;
+import com.endsight.hud.HudCard;
 import com.endsight.hud.HudLayout;
-import com.endsight.hud.Readout;
-import com.endsight.ui.Draw;
+import com.endsight.hud.TrackerHud;
+import com.endsight.qol.NpcPrices;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
@@ -12,9 +14,13 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
+import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
@@ -30,10 +36,12 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 import java.util.Set;
 
 /**
- * Zealot kills and eye drops this session, with rates.
+ * Zealot kills, eye drops, Warden Catalysts and Rift Passes this session, with profit.
  *
  * Drops are easy: the server tells you, and only you, in chat. Kills are the hard part -
  * it announces nothing when a zealot dies, and a dozen people farm the same nest, so a
@@ -83,6 +91,8 @@ public final class ZealotTracker {
     private static final long REFUSE_MS = 400;
     private static final String EYE = "RARE DROP! (Summoning Eye)";
     private static final String GOLDEN = "EPIC DROP! Golden Eye";
+    private static final String CATALYST = "EPIC DROP! Warden Catalyst";
+    private static final String RIFT_PASS = "LEGENDARY DROP! Rift Pass";
 
     /** A swing kills what it hit and what stood within this of it, inside this long. */
     private static final double SWEEP = 6.0;
@@ -125,8 +135,12 @@ public final class ZealotTracker {
     private static boolean enabled = true;
 
     private static int kills;
+    private static int sinceSpecial;
     private static int eyes;
     private static int golden;
+    private static int catalysts;
+    private static int riftPasses;
+    private static int endermanPets, spicyWarts;
     private static long sessionStart;
     private static long lastActivity;
 
@@ -214,9 +228,13 @@ public final class ZealotTracker {
 
     public static Module module() {
         return new Module("zealot.tracker", "Zealot Tracker",
-                "Zealot kills, eyes and golden eyes, with rates.", "Trackers",
+                "Zealot kills and drops, with session profit and profit per hour.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Action("Drop prices", "Set each item's value. Golden Eyes and Rift Passes default to 50M each.",
+                                "Edit", DropPricesScreen::openZealot),
+                        new Setting.Toggle("Learn drop sale prices", "Use your sale value when no custom price is set; shared with Slayer trackers.",
+                                NpcPrices::learning, NpcPrices::learning),
                         new Setting.Action("Reset session",
                                 "Zero the counts and the clock.",
                                 "Reset", ZealotTracker::resetSession)));
@@ -224,8 +242,12 @@ public final class ZealotTracker {
 
     private static void resetSession() {
         kills = 0;
+        sinceSpecial = 0;
         eyes = 0;
         golden = 0;
+        catalysts = 0;
+        riftPasses = 0;
+        endermanPets = spicyWarts = 0;
         sessionStart = 0;
         lastActivity = 0;
     }
@@ -263,6 +285,13 @@ public final class ZealotTracker {
         });
         ClientTickEvents.END_CLIENT_TICK.register(ZealotTracker::tick);
 
+        ScreenEvents.AFTER_INIT.register((mc, screen, width, height) -> {
+            if (!(screen instanceof AbstractContainerScreen<?>)) return;
+            ScreenEvents.afterExtract(screen).register((current, g, mx, my, delta) -> {
+                if (mc.screen == current) drawProfitTooltip(g, mx, my);
+            });
+        });
+
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "zealots"),
                 (g, delta) -> draw(g));
         HudLayout.register("zealot.tracker", "Zealot Tracker", 0.006f, 0.26f,
@@ -287,12 +316,49 @@ public final class ZealotTracker {
             if (mc.player != null) drop(mc.player);
         } else if (line.contains(EYE)) {
             eyes++;
+            sinceSpecial = 0;
             touch();
         } else if (line.contains(GOLDEN)) {
             golden++;
+            sinceSpecial = 0;
+            touch();
+        } else if (line.equals(CATALYST)) {
+            // The same kill also names its catalyst in debug and the compact roll.
+            // Only the personal announcement counts, so those companions cannot add it twice.
+            catalysts++;
+            touch();
+        } else if (line.equals(RIFT_PASS)) {
+            riftPasses++;
+            touch();
+        } else {
+            ExtraDrop extra = extraDrop(line);
+            if (extra == null) return;
+            if (extra.item().equals("Enderman")) endermanPets = addCount(endermanPets, extra.count());
+            else spicyWarts = addCount(spicyWarts, extra.count());
             touch();
         }
     }
+
+    record ExtraDrop(String item, int count) { }
+    private static final Pattern EXTRA_DROP = Pattern.compile(
+            "^[A-Z][A-Z ]*?DROP!\\s+(?:([0-9,]+)x\\s+)?(?:\\[Lvl \\d+\\]\\s+)?"
+                    + "(Enderman|Spicy Wart)(?:\\s+[x×]([\\d,]+))?(?:\\s+\\([^\\r\\n]*\\))?$");
+
+    static ExtraDrop extraDrop(String line) {
+        if (line == null) return null;
+        var match = EXTRA_DROP.matcher(Zealots.strip(line).trim());
+        if (!match.matches() || match.group(1) != null && match.group(3) != null) return null;
+        String count = match.group(1) != null ? match.group(1) : match.group(3);
+        try {
+            int amount = count == null ? 1 : Integer.parseInt(count.replace(",", ""));
+            return amount > 0 ? new ExtraDrop(match.group(2), amount) : null;
+        } catch (NumberFormatException ex) { return null; }
+    }
+
+    private static int addCount(int current, int added) {
+        return (int) Math.min(Integer.MAX_VALUE, (long) current + added);
+    }
+
 
     /** A cast down your aim: the line from your eyes to whatever your aim lands on. */
     private static Strike bolt(Player player, double radius, long window, int credits, boolean chains) {
@@ -374,9 +440,16 @@ public final class ZealotTracker {
         }
         boolean mine = ours(e.getId(), e.position(), System.currentTimeMillis());
         if (mine) {
-            kills++;
+            recordKill(e.getCustomName() != null && Zealots.strip(e.getCustomName().getString()).contains("Special Zealot"));
             touch();
         }
+    }
+
+    static void recordKill(boolean special) {
+        kills++;
+        // Special deaths do not start the next dry streak at one. Personal eye drops
+        // also reset it when the server removes that entity before its name is seen.
+        sinceSpecial = special ? 0 : sinceSpecial + 1;
     }
 
     /**
@@ -439,12 +512,11 @@ public final class ZealotTracker {
         return (gap > AFK_MS ? lastActivity : now) - sessionStart;
     }
 
-    /** Per hour, or "-" while the sample is too short to mean anything. */
-    private static String perHour(int count) {
-        long elapsed = elapsedMs();
+    /** Per hour, or "—" while the sample is too short to mean anything. */
+    private static String perHour(int count, long elapsed) {
         if (elapsed < 60_000) return "-";
         double rate = count / (elapsed / 3_600_000.0);
-        return (rate < 10 ? String.format("%.1f", rate) : String.valueOf(Math.round(rate))) + "/h";
+        return (rate < 10 ? String.format(Locale.ROOT, "%.1f", rate) : String.valueOf(Math.round(rate))) + "/h";
     }
 
     // ── drawing ───────────────────────────────────────────────────────────────
@@ -462,44 +534,135 @@ public final class ZealotTracker {
         HudLayout.draw("zealot.tracker", g, mc.font, false);
     }
 
-    /**
-     * Three counters, each with its rate beside it, and the clock.
-     *
-     * Rate on the same row as its count rather than in rows of its own, as the slayer
-     * tracker does: that one has one thing to count, this has three, and six rows of
-     * numbers stops being a glance.
-     */
+    /** The item list and profit use the same prices as Slayer HUDs and their editor. */
     private static int[] drawAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        String[][] rows = sample
-                ? new String[][]{{"Kills", "736/h", "148"}, {"Eyes", "458/h", "92"},
-                                 {"Golden", "14.9/h", "3"}, {"Elapsed", "", "12m04s"}}
-                : new String[][]{{"Kills", perHour(kills), String.valueOf(kills)},
-                                 {"Eyes", perHour(eyes), String.valueOf(eyes)},
-                                 {"Golden", perHour(golden), String.valueOf(golden)},
-                                 {"Elapsed", "", sessionStart == 0 ? "-" : secs(elapsedMs())}};
+        return TrackerHud.draw(g, font, x, y, "Zealots", "Session", Theme.muted(), hudRows(sample), -1);
+    }
 
-        String title = "ZEALOT TRACKER";
-        int labelW = 0, rateW = 0, valueW = 0;
-        for (String[] r : rows) {
-            labelW = Math.max(labelW, font.width(r[0]));
-            rateW = Math.max(rateW, font.width(r[1]));
-            valueW = Math.max(valueW, font.width(r[2]));
-        }
-        int w = Math.max(font.width(title) + 20, 8 + labelW + 12 + rateW + 10 + valueW);
-        int h = Readout.ROW_H + 3 + rows.length * (Readout.ROW_H + 2);
+    private record HudState(boolean sample, int kills, int sinceSpecial, int golden, int riftPasses, int eyes,
+                            int catalysts, int endermanPets, int spicyWarts, long elapsedQuarter, boolean started,
+                            long prices, Object palette) { }
+    private static HudState shownState;
+    private static List<HudCard.Row> shownRows;
 
-        if (g != null) {
-            Readout.tick(g, x, y, w, Theme.accent());
-            Draw.text(g, font, title, Readout.left(x), y, Theme.muted());
-            int ry = y + Readout.ROW_H + 3;
-            for (String[] r : rows) {
-                Draw.text(g, font, r[0], x + 8, ry, Theme.dim());
-                Draw.textRight(g, font, r[1], x + w - valueW - 10, ry, Theme.muted());
-                Draw.textRight(g, font, r[2], x + w, ry, Theme.text());
-                ry += Readout.ROW_H + 2;
-            }
+    private static List<HudCard.Row> hudRows(boolean sample) {
+        long elapsed = sample ? 724_000 : elapsedMs();
+        HudState state = new HudState(sample, kills, sinceSpecial, golden, riftPasses, eyes, catalysts,
+                endermanPets, spicyWarts, elapsed / 250, sessionStart != 0, NpcPrices.revision(), Theme.palette());
+        if (state.equals(shownState)) return shownRows;
+        shownRows = List.copyOf(buildHudRows(sample, elapsed));
+        shownState = state;
+        return shownRows;
+    }
+
+    private static List<HudCard.Row> buildHudRows(boolean sample, long elapsed) {
+        // Rates only need four updates a second. Keeping the rows between updates
+        // avoids running Formatter and price lookups in every measure/draw pass.
+        int[] counts = sample ? new int[]{3, 1, 92, 1, 1, 2} : profitCounts();
+        List<HudCard.Row> rows = new ArrayList<>();
+        rows.add(new HudCard.Row("Kills", (sample ? "148" : number(kills)) + " §8· §7" + perHour(sample ? 148 : kills, elapsed)));
+        rows.add(new HudCard.Row("Since Special", sample ? "18" : number(sinceSpecial)));
+        // Counts and hourly rates share one column; coin values belong in the totals.
+        String[] colours = {"§d", "§6", "§9", "§d"};
+        for (int i = 0; i < NpcPrices.ZEALOT_ITEMS.size(); i++) {
+            String item = NpcPrices.ZEALOT_ITEMS.get(i);
+            String value = number(counts[i]);
+            value += " §8· §7" + perHour(counts[i], elapsed);
+            rows.add(new HudCard.Row(colours[i] + item, value));
         }
-        return new int[]{w, h};
+        long profit = profitValue(counts);
+        boolean missing = missingPrices(counts);
+        // A single marker keeps unknown prices visible after the item rows become rates.
+        rows.add(new HudCard.Row("Profit", coins(profit) + (missing ? " §7+ ?" : ""), Theme.pos()));
+        rows.add(new HudCard.Row("Profit/h", elapsed < 60_000 ? "—"
+                : coins(Math.round(profit * (3_600_000.0 / elapsed))) + (missing ? " §7+ ?" : ""), Theme.pos()));
+        rows.add(new HudCard.Row("Time farmed", sessionStart == 0 && !sample ? "—" : secs(elapsed), Theme.muted()));
+        return rows;
+    }
+
+    static long profitValue(int[] counts) {
+        long total = 0;
+        for (int i = 0; i < Math.min(counts.length, NpcPrices.ZEALOT_PROFIT_ITEMS.size()); i++) {
+            long value = NpcPrices.value(NpcPrices.ZEALOT_PROFIT_ITEMS.get(i), counts[i]);
+            total = value > Long.MAX_VALUE - total ? Long.MAX_VALUE : total + value;
+        }
+        return total;
+    }
+
+    static boolean missingPrices(int[] counts) {
+        for (int i = 0; i < Math.min(counts.length, NpcPrices.ZEALOT_PROFIT_ITEMS.size()); i++)
+            if (counts[i] > 0 && NpcPrices.priceInfo(NpcPrices.ZEALOT_PROFIT_ITEMS.get(i)) == null) return true;
+        return false;
+    }
+
+    private static int[] profitCounts() {
+        return new int[]{golden, riftPasses, eyes, catalysts, endermanPets, spicyWarts};
+    }
+
+    static List<String> profitBreakdown(int[] counts) {
+        List<String> lines = new ArrayList<>();
+        lines.add("§fZealot profit · Session");
+        boolean any = false;
+        for (int i = 0; i < Math.min(counts.length, NpcPrices.ZEALOT_PROFIT_ITEMS.size()); i++) {
+            if (counts[i] <= 0) continue;
+            any = true;
+            String item = NpcPrices.ZEALOT_PROFIT_ITEMS.get(i);
+            var price = NpcPrices.priceInfo(item);
+            lines.add("§7" + item + " §f×" + number(counts[i]) + " §8· §f"
+                    + (price == null ? "?" : coins(NpcPrices.value(item, counts[i]))));
+            lines.add("§8  " + (price == null ? "Set a price in Drop prices" : coins(price.coins()) + "/each"));
+        }
+        if (!any) lines.add("§7No drops counted yet");
+        lines.add("§7Profit §a" + coins(profitValue(counts)) + (missingPrices(counts) ? " §7+ unpriced drops" : ""));
+        return List.copyOf(lines);
+    }
+
+    static boolean profitHovered(int[] bounds, float scale, double mx, double my) {
+        if (bounds == null || scale <= 0) return false;
+        int row = 2 + NpcPrices.ZEALOT_ITEMS.size();
+        double top = bounds[1] + scale * (TrackerHud.PAD + TrackerHud.HEADER_H + row * TrackerHud.ROW_H);
+        return mx >= bounds[0] && mx < bounds[0] + bounds[2]
+                && my >= top && my < Math.min(bounds[1] + bounds[3], top + scale * TrackerHud.ROW_H * 2);
+    }
+
+    private static void drawProfitTooltip(GuiGraphicsExtractor g, int mx, int my) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!enabled || mc.player == null || mc.level == null || mc.options.hideGui || !Area.end()) return;
+        if (lastActivity == 0 || System.currentTimeMillis() - lastActivity > HIDE_IDLE_MS
+                || com.endsight.storage.MiningSession.lastActive() > lastActivity) return;
+        if (!profitHovered(HudLayout.bounds("zealot.tracker"), HudLayout.scale("zealot.tracker"), mx, my)) return;
+        // HudLayout supplies the drawn, scaled bounds and excludes inventory/recipe
+        // occlusion. A hidden tracker must never leave a floating tooltip behind it.
+        var lines = profitTooltip();
+        // afterExtract runs AFTER vanilla's deferred tooltip flush. Queuing another
+        // tooltip here never displays it; draw the native tooltip immediately instead.
+        g.nextStratum();
+        g.tooltip(mc.font, lines, mx, my, DefaultTooltipPositioner.INSTANCE, null);
+    }
+
+    private record TooltipState(int golden, int riftPasses, int eyes, int catalysts, int endermanPets,
+                                int spicyWarts, long prices) { }
+    private static TooltipState shownTooltipState;
+    private static List<ClientTooltipComponent> shownTooltip;
+
+    private static List<ClientTooltipComponent> profitTooltip() {
+        TooltipState state = new TooltipState(golden, riftPasses, eyes, catalysts, endermanPets,
+                spicyWarts, NpcPrices.revision());
+        if (!state.equals(shownTooltipState)) {
+            shownTooltip = profitBreakdown(profitCounts()).stream().map(Component::literal)
+                    .map(c -> ClientTooltipComponent.create(c.getVisualOrderText())).toList();
+            shownTooltipState = state;
+        }
+        return shownTooltip;
+    }
+
+    private static String number(int count) { return String.format(Locale.ROOT, "%,d", count); }
+
+    private static String coins(long amount) {
+        if (amount >= 1_000_000_000L) return String.format(Locale.ROOT, "%.1fb", amount / 1_000_000_000.0);
+        if (amount >= 1_000_000L) return String.format(Locale.ROOT, "%.1fm", amount / 1_000_000.0);
+        if (amount >= 1_000L) return String.format(Locale.ROOT, "%.1fk", amount / 1_000.0);
+        return String.valueOf(amount);
     }
 
     private static String secs(long ms) {

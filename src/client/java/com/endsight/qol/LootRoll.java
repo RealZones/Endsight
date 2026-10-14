@@ -26,8 +26,8 @@ import java.util.regex.Pattern;
  * chance the mob carries (a Special Zealot, a Goop). Eight to ten lines a kill, the
  * same lines every kill, and a few kills a second at the nest. The block is caught as
  * it arrives and put back as one line - the mob, the roll, what it gave, the rare
- * rolls - with the server's whole block as its hover text, so nothing is thrown away.
- * A dragon's block is folded the same way into two lines.
+ * rolls - with the exact adjusted chances and ranges in its hover and details panel.
+ * The base comparison is omitted from those views. A dragon's block folds to two lines.
  *
  * The block has no closing line, and it is not contiguous: in the log a "RARE DROP!"
  * for the Summoning Eye lands between a kill's result and its rare roll. So other
@@ -56,18 +56,20 @@ public final class LootRoll {
     // "mob: ?" means the server did not identify the source. This also occurs on
     // Voidgloom boss loot, so the line's context must supply a useful label.
     private static final Pattern MOB = Pattern.compile("^mob:\\s+(\\S+)\\s+magic find:\\s*([\\d.]+)(?:.*?pet luck:\\s*([\\d.]+))?");
-    private static final Pattern ROW = Pattern.compile("^(▶\\s*)?[\\d.]+%\\s*[\\[(]([\\d.]+),\\s*([\\d.]+)[\\])]\\s*(.+)$");
+    // October's server format includes base and effective chances before the slice.
+    // Keep the slice captures unchanged: close-call colour uses the adjusted bounds.
+    private static final Pattern ROW = Pattern.compile("^(▶\\s*)?(?:base\\s+[\\d.]+%\\s*→\\s*effective\\s+)?[\\d.]+%\\s*[\\[(]([\\d.]+),\\s*([\\d.]+)[\\])]\\s*(.+)$");
     private static final Pattern RARE = Pattern.compile("^(▶\\s*)?rare roll\\s+(.+?)\\s*\\(1 in ([\\d,]+),\\s*([\\d.]+)%\\)\\s*rolled\\s*([\\d.]+)\\s*(\\w+)");
     // Both. Only a bare number: "loot number: 7 → Golden Eye" is the drop trackers'
     // line and is never taken.
-    private static final Pattern LOOT = Pattern.compile("^loot number:\\s*([\\d.]+)\\s*(?:\\(0-100[^)]*\\))?\\s*$");
+    private static final Pattern LOOT = Pattern.compile("^loot number:\\s*([\\d.]+)\\s*(?:\\((?:0-100[^)]*|the rare table, lower\\s*=\\s*rarer)\\))?\\s*$");
     private static final Pattern RESULT = Pattern.compile("^result:\\s*(.+?)(?:\\s+frags:\\s*(\\d+))?\\s*(?:\\(.*)?$");
     // A dragon.
     private static final Pattern DRAGON = Pattern.compile("^dragon:\\s*(.+?)\\s+rank:\\s*#?(\\d+)\\s+damage:\\s*([\\d,]+)");
     private static final Pattern SCORE = Pattern.compile("^drag score:\\s*([\\d,]+)");
-    private static final Pattern MF = Pattern.compile("^magic find:\\s*([\\d.]+)");
+    private static final Pattern MF = Pattern.compile("^magic find:\\s*([\\d.]+)(?:.*?pet luck:\\s*([\\d.]+))?");
     private static final Pattern PET = Pattern.compile("^pet luck:\\s*([\\d.]+)");
-    private static final Pattern ARMOR = Pattern.compile("^armor roll:\\s*(?:([\\d.]+)\\s*\\(needs\\s*[≤<=]*\\s*([\\d.]+)|skipped)");
+    private static final Pattern ARMOR = Pattern.compile("^armor roll:\\s*(?:([\\d.]+)\\s*\\(needs\\s*([≤<=]*)\\s*([\\d.]+)(?:\\s+and\\s*[≤<=]+\\s*([\\d.]+))?|skipped)");
     private static final Pattern METER = Pattern.compile("^rng meter:\\s*(\\S+)");
     private static final Pattern FROZEN = Pattern.compile("^frozen/crystal roll:\\s*([\\d.]+)");
     private static final Pattern BITS = Pattern.compile("^\\+([\\d,]+) Bits from the .*?\\(([\\d,]+) carrot bits left\\)");
@@ -93,6 +95,7 @@ public final class LootRoll {
     }
 
     public static void init() {
+        LootRollDetails.init();
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
             if (overlay || sending || !(enabled || LootFilter.on())) return true;
             String line = Zealots.strip(message.getString()).trim();
@@ -175,48 +178,44 @@ public final class LootRoll {
         return v < 1 ? "§d" : v < 5 ? "§e" : "§f";
     }
 
-    /** Your place, your damage, the score, MF and pet luck. The dragon's name is the line above already. */
+    /** Only the loot-relevant stats; placement and damage already appear in the server's recap. */
     static String dragonTop(Block b) {
         Map<String, String> d = b.dragon;
-        StringBuilder a = new StringBuilder("§8▍ ");
-        if (d.containsKey("rank")) a.append("§6#").append(d.get("rank")).append("  ");
-        if (d.containsKey("damage")) a.append("§f").append(compact(d.get("damage"))).append("  ");
-        if (d.containsKey("score")) a.append("§8score §f").append(d.get("score")).append("  ");
-        if (d.containsKey("mf")) a.append("§8MF §f").append(Math.round(num(d.get("mf")))).append("  ");
-        if (d.containsKey("pet")) a.append("§8PL §f").append(Math.round(num(d.get("pet"))));
-        return a.toString();
+        List<String> parts = new ArrayList<>();
+        if (d.containsKey("score")) parts.add("§7Score §f" + d.get("score"));
+        if (d.containsKey("mf")) parts.add("§7MF §b" + Math.round(num(d.get("mf"))));
+        if (d.containsKey("pet")) parts.add("§7PL §d" + Math.round(num(d.get("pet"))));
+        return "§8▍ " + String.join(" §8· ", parts);
     }
 
     /** The roll and what it bought. */
     static String dragonRoll(Block b) {
         Map<String, String> d = b.dragon;
-        StringBuilder s = new StringBuilder("§8▍ ");
-        if (b.loot >= 0) s.append("§8loot ").append(lootColour(b)).append(fmt(b.loot));
-        if (d.containsKey("armor")) {
-            double roll = num(d.get("armor")), need = num(d.get("armorNeeds"));
-            s.append("  §8armor ").append(roll <= need ? "§a" : "§c").append(d.get("armor"))
-                    .append("§8/").append(d.get("armorNeeds"));
-        }
-        if (b.dropped()) {
-            s.append("  §8→ §a").append(b.result);
-            if (d.containsKey("frags")) s.append(" §7×").append(d.get("frags"));
-        }
-        if (d.containsKey("bits")) s.append("  §b+").append(d.get("bits")).append(" bits");
-        return s.toString();
+        List<String> parts = new ArrayList<>();
+        if (b.loot >= 0) parts.add("§7Loot " + lootColour(b) + fmt(b.loot));
+        String line = "§8▍ " + String.join(" §8· ", parts);
+        // The old ×N suffix was the fragment share, making one pair of boots read as six.
+        if (b.dropped()) line += (parts.isEmpty() ? "" : " ") + "§8→ §a" + b.result;
+        if (d.containsKey("bits")) line += " §8· §b+" + d.get("bits") + " bits";
+        return line;
     }
 
-    /** The server's block, banner and rules left out, as the line's hover text. */
-    private static Component hover(String text, Block b) {
+    /** Clicking pins the normal hover so its individual lines can be selected. */
+    static Component hover(String text, Block b) {
         MutableComponent all = Component.empty();
         boolean first = true;
         for (Component c : b.raw) {
             String plain = Zealots.strip(c.getString()).trim();
             if (plain.isEmpty() || plain.contains(HEADER) || plain.matches("^[═=\\-▬]+$")) continue;
             if (!first) all.append("\n");
-            all.append(c);
+            all.append(LootRollDetails.displayLine(c));
             first = false;
         }
-        return Component.literal(text).withStyle(s -> s.withHoverEvent(new HoverEvent.ShowText(all)));
+        if (!first) all.append("\n\n");
+        all.append(Component.literal("§eClick to pin this hover"));
+        return Component.literal(text).withStyle(s -> s
+                .withHoverEvent(new HoverEvent.ShowText(all))
+                .withClickEvent(LootRollDetails.action(b.raw)));
     }
 
     private static void send(Component c) {
@@ -257,6 +256,8 @@ public final class LootRoll {
                 rares.add(new Rare(m.group(2), num(m.group(4)), num(m.group(5)),
                         m.group(6).equalsIgnoreCase("hit")));
             } else if ((m = LOOT.matcher(line)).find()) {
+                // Dragon rolls now carry the rare-table annotation too. Letting it
+                // through raw also left the folded summary without its loot number.
                 loot = num(m.group(1));
             } else if ((m = RESULT.matcher(line)).find()) {
                 result = m.group(1).trim();
@@ -268,13 +269,16 @@ public final class LootRoll {
                 dragon.put("score", m.group(1));
             } else if ((m = MF.matcher(line)).find()) {
                 dragon.put("mf", m.group(1));
+                if (m.group(2) != null) dragon.put("pet", m.group(2));
             } else if ((m = PET.matcher(line)).find()) {
                 dragon.put("pet", m.group(1));
             } else if ((m = ARMOR.matcher(line)).find()) {
                 // "skipped (table hit or score < 350 with no eyes)" has no numbers to show.
                 if (m.group(1) != null) {
                     dragon.put("armor", m.group(1));
-                    dragon.put("armorNeeds", m.group(2));
+                    dragon.put("armorOp", m.group(2));
+                    dragon.put("armorNeeds", m.group(3));
+                    if (m.group(4) != null) dragon.put("armorCap", m.group(4));
                 }
             } else if (METER.matcher(line).find() || FROZEN.matcher(line).find()) {
                 // Kept in the hover only: the meter is a word nobody asked for, and the
@@ -340,17 +344,4 @@ public final class LootRoll {
         }
     }
 
-    /** 57,861,010 → 57.9M, the way the server itself writes damage elsewhere. */
-    private static String compact(String s) {
-        double n = num(s);
-        if (n >= 1e9) return trim(n / 1e9) + "B";
-        if (n >= 1e6) return trim(n / 1e6) + "M";
-        if (n >= 1e3) return trim(n / 1e3) + "k";
-        return s;
-    }
-
-    private static String trim(double v) {
-        String t = String.format(Locale.ROOT, "%.1f", v);
-        return t.endsWith(".0") ? t.substring(0, t.length() - 2) : t;
-    }
 }

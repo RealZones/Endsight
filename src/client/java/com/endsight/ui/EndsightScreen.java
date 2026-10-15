@@ -26,6 +26,7 @@ public class EndsightScreen extends Screen {
     private static ModuleRegistry activeRegistry;
 
     private String binding;
+    private boolean suppressCharacter;
     private boolean searchFocused = true;
     private int contentHeight, navScroll, refreshTicks, resultCount;
     private SettingsScreen editor;
@@ -65,6 +66,8 @@ public class EndsightScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        suppressCharacter = false;
+        if (editor != null) editor.tick();
         // Most settings are immutable descriptors. Only live notes/command text need
         // a bounded refresh while searching; a frame must not refilter fifty modules.
         if (++refreshTicks >= 10) {
@@ -91,9 +94,11 @@ public class EndsightScreen extends Screen {
     private int contentBottom() { return panelY() + panelH() - 10; }
     private int navTop() { return contentTop() + 20; }
     private int navBottom() { return Math.max(navTop() + 20, moveButtonY() - 8); }
+    private boolean compactFooter() { return panelH() < 260; }
     private int moveButtonY() {
+        if (compactFooter()) return panelY() + panelH() - 47;
         int paletteRows = (Theme.palettes().size() + 4) / 5;
-        return panelY() + panelH() - (paletteRows * 25 - 7) - 52;
+        return panelY() + panelH() - (paletteRows * 25 - 7) - 78;
     }
     private int searchX() { return contentX() + INSET; }
     private int searchY() { return panelY() + 31; }
@@ -169,7 +174,10 @@ public class EndsightScreen extends Screen {
                 int bodyY = y + geometry.row().h();
                 int bodyH = module == editingModule && editor != null ? editor.embeddedHeight(w - 8, query) : 0;
                 rows.add(new Placed(module, geometry, bodyY, bodyH));
-                if (bodyH > 0) editor.embeddedBounds(x + 4, bodyY + 3, w - 8, contentTop(), contentBottom(), query);
+                if (bodyH > 0) {
+                    editor.embeddedBounds(x + 4, bodyY + 3, w - 8, contentTop(), contentBottom(), query);
+                    editor.embeddedPopupBounds(panelX() + 4, contentTop(), panelX() + panelW() - 4, contentBottom());
+                }
                 y = bodyY + bodyH + (bodyH > 0 ? 10 : 4);
             }
             y += 5;
@@ -206,23 +214,33 @@ public class EndsightScreen extends Screen {
                 float a = anim("nav:" + item.title()).to(selected ? 1 : hot ? .55f : 0, Theme.EASE_FAST);
                 if (a > .01f) Draw.roundedRect(g, x + 8, item.y(), w - 16, 23, 5, Draw.alpha(Theme.accent(), .14f * a));
                 if (selected) Draw.rect(g, x + 8, item.y() + 6, 2, 11, Theme.accent());
-                Draw.text(g, font, Draw.fit(font, item.title(), w - 40), x + 20, item.y() + 7,
+                MenuIcons.draw(g, item.category() == null ? "" : item.category(), x + 19, item.y() + 6,
+                        selected ? Theme.accent() : Theme.muted());
+                Draw.text(g, font, Draw.fit(font, item.title(), w - 58), x + 38, item.y() + 7,
                         selected ? Theme.accent() : Draw.lerp(Theme.muted(), Theme.text(), a));
             }
         } finally { g.disableScissor(); }
         if (maxNavScroll() > 0) {
-            if (navScroll > 0) Draw.text(g, font, "^", x + w - 14, navTop(), Theme.dim());
-            if (navScroll < maxNavScroll()) Draw.text(g, font, "v", x + w - 14, navBottom() - 10, Theme.dim());
+            if (navScroll > 0) MenuIcons.arrow(g, x + w - 19, navTop(), MenuIcons.Arrow.UP, Theme.muted());
+            if (navScroll < maxNavScroll())
+                MenuIcons.arrow(g, x + w - 19, navBottom() - 12, MenuIcons.Arrow.DOWN, Theme.muted());
         }
         int moveY = moveButtonY();
         boolean moveHot = contains(x + 10, moveY, w - 20, 18, mx, my);
         Draw.roundedRect(g, x + 10, moveY, w - 20, 18, 5, moveHot ? Theme.hover() : Theme.raised());
         Draw.textCentered(g, font, "Move readouts", x + w / 2, moveY + 5, moveHot ? Theme.text() : Theme.muted());
-        // The shared palette row uses the desktop sidebar width. Clip its separator
-        // when a small window narrows this sidebar; the five swatches still fit.
-        g.enableScissor(x, y, x + w, y + panelH());
-        try { themeRow.draw(g, font, x, mx, my); }
-        finally { g.disableScissor(); }
+        if (compactFooter()) {
+            int themeY = panelY() + panelH() - 25;
+            boolean themeHot = contains(x + 10, themeY, w - 20, 18, mx, my);
+            Draw.roundedRect(g, x + 10, themeY, w - 20, 18, 5, themeHot ? Theme.hover() : Theme.raised());
+            Draw.text(g, font, Draw.fit(font, "Theme: " + Theme.palette().name(), w - 34), x + 17, themeY + 5, Theme.muted());
+        } else {
+            // The shared palette row uses the desktop sidebar width. Clip its
+            // separator on narrow windows; all five swatches still fit.
+            g.enableScissor(x, y, x + w, y + panelH());
+            try { themeRow.draw(g, font, x, mx, my); }
+            finally { g.disableScissor(); }
+        }
     }
 
     private void drawHeader(GuiGraphicsExtractor g) {
@@ -235,7 +253,9 @@ public class EndsightScreen extends Screen {
         Draw.roundedOutline(g, searchX(), searchY(), searchW(), 23, 5,
                 searchFocused || !query.isEmpty() ? Theme.accent() : Theme.line(), Theme.input());
         String shown = query.isEmpty() ? "Search modules and settings..." : query;
-        Draw.text(g, font, Draw.fit(font, shown, searchW() - 32), searchX() + 8, searchY() + 7,
+        MenuIcons.search(g, searchX() + 8, searchY() + 5,
+                searchFocused || !query.isEmpty() ? Theme.accent() : Theme.muted());
+        Draw.text(g, font, Draw.fit(font, shown, searchW() - 49), searchX() + 25, searchY() + 7,
                 query.isEmpty() ? Theme.dim() : Theme.text());
         if (!query.isEmpty()) Draw.text(g, font, "x", searchX() + searchW() - 14, searchY() + 7, Theme.muted());
         Draw.rect(g, contentX(), contentTop() - 1, contentW(), 1, Theme.line());
@@ -277,11 +297,16 @@ public class EndsightScreen extends Screen {
         float a = anim("row:" + module.id()).to(hot ? 1 : 0, Theme.EASE_FAST);
         Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5,
                 open ? Theme.surface() : Draw.lerp(Theme.bg(), Theme.hover(), a));
+        int iconY = row.y() + (geometry.stacked() ? 10 : 15);
+        int iconColor = open ? Theme.accent() : module.implemented() ? Theme.muted() : Theme.dim();
+        Draw.roundedRect(g, row.x() + 9, iconY - 4, 18, 18, 4,
+                open ? Draw.alpha(Theme.accent(), .16f) : Theme.raised());
+        MenuIcons.feature(g, module, row.x() + 9, iconY - 4, iconColor);
         Draw.text(g, font, Draw.fit(font, module.title(), label.w()), label.x(), label.y(),
                 module.implemented() ? Theme.text() : Theme.dim());
         String description = matchSummaries.getOrDefault(module.id(), module.description());
         Draw.text(g, font, Draw.fit(font, description, label.w()), label.x(), label.y() + 13,
-                matchSummaries.containsKey(module.id()) ? Theme.accent() : Theme.dim());
+                matchSummaries.containsKey(module.id()) ? Theme.accent() : Theme.muted());
         if (!open) Draw.rect(g, row.x() + 8, row.y() + row.h() - 1, row.w() - 16, 1, Theme.hair());
         if (module.implemented()) {
             ModuleRowLayout.Rect key = geometry.key(), toggle = geometry.toggle();
@@ -296,7 +321,10 @@ public class EndsightScreen extends Screen {
         if (module.hasSettings()) {
             ModuleRowLayout.Rect expand = geometry.expand();
             if (expand.contains(mx, my)) Draw.roundedRect(g, expand.x(), expand.y(), expand.w(), expand.h(), 4, Theme.hover());
-            Draw.textCentered(g, font, open ? "v" : ">", expand.x() + expand.w() / 2, expand.y() + 6,
+            Draw.gearIcon(g, font, expand.x() + 10, expand.y() + 10,
+                    open ? Theme.accent() : Theme.muted());
+            MenuIcons.arrow(g, expand.x() + 19, expand.y() + 4,
+                    open ? MenuIcons.Arrow.DOWN : MenuIcons.Arrow.RIGHT,
                     open ? Theme.accent() : Theme.muted());
         }
     }
@@ -348,8 +376,12 @@ public class EndsightScreen extends Screen {
         }
         layout();
         int mx = (int) event.x(), my = (int) event.y();
+        int previousSettings = editingModule == null || editingModule.settings() == null ? 0 : editingModule.settings().size();
         if (editor != null && editor.mouseClicked(event, doubleClick)) {
             binding = null;
+            // New command rows need to be editable immediately even if the search
+            // that found their module would not match a freshly empty command.
+            if (editingModule.settings().size() > previousSettings) query = "";
             registry.invalidateSearch();
             return true;
         }
@@ -359,7 +391,13 @@ public class EndsightScreen extends Screen {
             return true;
         }
         searchFocused = false;
-        if (themeRow.click(mx, my)) return true;
+        if (compactFooter()) {
+            if (contains(panelX() + 10, panelY() + panelH() - 25, sidebarW() - 20, 18, mx, my)) {
+                List<Palette> palettes = Theme.palettes();
+                Theme.set(palettes.get(Math.floorMod(palettes.indexOf(Theme.palette()) + (event.button() == 1 ? -1 : 1), palettes.size())));
+                return true;
+            }
+        } else if (themeRow.click(mx, my)) return true;
         if (contains(panelX() + 10, moveButtonY(), sidebarW() - 20, 18, mx, my)) {
             com.endsight.hud.HudPlacementScreen.open(); return true;
         }
@@ -393,6 +431,7 @@ public class EndsightScreen extends Screen {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        if (suppressCharacter) { suppressCharacter = false; return true; }
         if (binding != null) return true;
         if (editor != null && editor.capturesKeyboard() && editor.charTyped(event)) return true;
         if (event.isAllowedChatCharacter() && query.length() < 120) { search(query + event.codepointAsString()); return true; }
@@ -403,9 +442,17 @@ public class EndsightScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (binding != null) {
             if (event.key() == 256) Keybinds.clear(binding); else Keybinds.set(binding, event.key());
-            binding = null; return true;
+            binding = null; suppressCharacter = true; return true;
         }
-        if (editor != null && editor.keyPressed(event)) { registry.invalidateSearch(); return true; }
+        if (event.key() == 70 && (event.modifiers() & 2) != 0) {
+            searchFocused = true;
+            if (editor != null) editor.cancelInteractions();
+            return true;
+        }
+        if (editor != null && editor.keyPressed(event)) {
+            if (!editor.capturesKeyboard()) registry.invalidateSearch();
+            return true;
+        }
         if (event.key() == 259 && !query.isEmpty()) {
             search(query.substring(0, query.offsetByCodePoints(query.length(), -1))); return true;
         }
@@ -416,7 +463,7 @@ public class EndsightScreen extends Screen {
         if (event.key() == 258) { searchFocused = true; return true; }
         if ((event.key() == 257 || event.key() == 335) && resultCount > 0 && !query.isEmpty()) {
             Module first = groups.values().iterator().next().getFirst();
-            if (first.hasSettings()) expand(first);
+            if (first.hasSettings() && !first.id().equals(expandedId)) expand(first);
             return true;
         }
         return super.keyPressed(event);

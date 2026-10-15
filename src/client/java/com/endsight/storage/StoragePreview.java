@@ -150,7 +150,7 @@ public final class StoragePreview {
                     });
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
                 if (click.button() != 0 || !enderNextHit(container, click.x(), click.y())) return true;
-                if (client.getConnection() != null) client.getConnection().sendCommand("storage 1");
+                StorageOverview.openPage(container, 1);
                 return false;
             });
         });
@@ -531,10 +531,18 @@ public final class StoragePreview {
         return plain(c);
     }
 
+    static String plainText(String text) {
+        return text == null ? "" : LEGACY_FORMAT.matcher(text).replaceAll("").trim();
+    }
+
+    static int pageNumber(String title) {
+        Matcher m = PAGE_ITEM.matcher(plainText(title));
+        return m.matches() ? parse(m.group(1)) : -1;
+    }
+
     private static int pageOf(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return -1;
-        Matcher m = PAGE_ITEM.matcher(plain(stack.getHoverName()));
-        return m.matches() ? parse(m.group(1)) : -1;
+        return pageNumber(stack.getHoverName().getString());
     }
 
     /**
@@ -546,7 +554,7 @@ public final class StoragePreview {
      */
     private static String plain(Component c) {
         if (c == null) return "";
-        return LEGACY_FORMAT.matcher(c.getString()).replaceAll("").trim();
+        return plainText(c.getString());
     }
 
     private static final Pattern LEGACY_FORMAT = Pattern.compile("§[0-9A-Fa-fK-Ok-orRxX]");

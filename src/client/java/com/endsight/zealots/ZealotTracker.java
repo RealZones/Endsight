@@ -93,6 +93,12 @@ public final class ZealotTracker {
     private static final String GOLDEN = "EPIC DROP! Golden Eye";
     private static final String CATALYST = "EPIC DROP! Warden Catalyst";
     private static final String RIFT_PASS = "LEGENDARY DROP! Rift Pass";
+    // This is the personal successful spawn roll, observed in the server's detailed
+    // debug output. Seeing another player's Special entity proves no ownership.
+    private static final Pattern SPECIAL_SPAWN = Pattern.compile(
+            "^(?:▶\\s*)?rare roll Special Zealot \\(1 in [\\d,]+, [\\d.]+%\\) rolled [\\d.]+ HIT$");
+    private static String lastSpecialSpawnLine;
+    private static long lastSpecialSpawnAt;
 
     /** A swing kills what it hit and what stood within this of it, inside this long. */
     private static final double SWEEP = 6.0;
@@ -140,7 +146,7 @@ public final class ZealotTracker {
     private static int golden;
     private static int catalysts;
     private static int riftPasses;
-    private static int endermanPets, spicyWarts;
+    private static int endermanPets, spicyWarts, warpedStones, wolfPets, infiniEyes, nullOvoids;
     private static long sessionStart;
     private static long lastActivity;
 
@@ -247,9 +253,11 @@ public final class ZealotTracker {
         golden = 0;
         catalysts = 0;
         riftPasses = 0;
-        endermanPets = spicyWarts = 0;
+        endermanPets = spicyWarts = warpedStones = wolfPets = infiniEyes = nullOvoids = 0;
         sessionStart = 0;
         lastActivity = 0;
+        lastSpecialSpawnLine = null;
+        lastSpecialSpawnAt = 0;
     }
 
     public static void init() {
@@ -302,7 +310,9 @@ public final class ZealotTracker {
 
     private static void onLine(String line) {
         if (DragonTimer.isPlayerChat(line)) return;
-        if (line.startsWith(COOLDOWN)) {
+        if (recordSpecialSpawn(line, System.currentTimeMillis())) {
+            touch();
+        } else if (line.startsWith(COOLDOWN)) {
             // The click the server just refused did not fire. Withdrawn, so nothing that
             // dies in front of you in the next three seconds gets pinned on it.
             if (provisional != null && System.currentTimeMillis() - provisional.at() <= REFUSE_MS) {
@@ -316,11 +326,9 @@ public final class ZealotTracker {
             if (mc.player != null) drop(mc.player);
         } else if (line.contains(EYE)) {
             eyes++;
-            sinceSpecial = 0;
             touch();
         } else if (line.contains(GOLDEN)) {
             golden++;
-            sinceSpecial = 0;
             touch();
         } else if (line.equals(CATALYST)) {
             // The same kill also names its catalyst in debug and the compact roll.
@@ -331,18 +339,51 @@ public final class ZealotTracker {
             riftPasses++;
             touch();
         } else {
+            // Null Ovoid has no personal DROP! announcement on this server. Its
+            // compact Zealot result is the only confirmed personal signal; the
+            // preceding loot-number debug and Slayer ovoids must not count here.
+            if (zealotOvoid(line)) {
+                nullOvoids = addCount(nullOvoids, 1);
+                touch();
+                return;
+            }
             ExtraDrop extra = extraDrop(line);
             if (extra == null) return;
-            if (extra.item().equals("Enderman")) endermanPets = addCount(endermanPets, extra.count());
-            else spicyWarts = addCount(spicyWarts, extra.count());
+            switch (extra.item()) {
+                case "Enderman" -> endermanPets = addCount(endermanPets, extra.count());
+                case "Spicy Wart" -> spicyWarts = addCount(spicyWarts, extra.count());
+                case "Warped Stone" -> warpedStones = addCount(warpedStones, extra.count());
+                case "Wolf" -> wolfPets = addCount(wolfPets, extra.count());
+                case "InfiniEye™" -> infiniEyes = addCount(infiniEyes, extra.count());
+                default -> { return; }
+            }
             touch();
         }
+    }
+
+    private static boolean recordSpecialSpawn(String raw, long now) {
+        if (raw == null || !raw.contains("Special Zealot")) return false;
+        String line = Zealots.strip(raw).trim();
+        if (!SPECIAL_SPAWN.matcher(line).matches()) return false;
+        // One folded/raw signal can be delivered again within the same server tick.
+        // A repeated copy must not wipe ordinary kills counted after that spawn.
+        if (line.equals(lastSpecialSpawnLine) && now >= lastSpecialSpawnAt && now - lastSpecialSpawnAt < 250) return true;
+        lastSpecialSpawnLine = line;
+        lastSpecialSpawnAt = now;
+        sinceSpecial = 0;
+        return true;
     }
 
     record ExtraDrop(String item, int count) { }
     private static final Pattern EXTRA_DROP = Pattern.compile(
             "^[A-Z][A-Z ]*?DROP!\\s+(?:([0-9,]+)x\\s+)?(?:\\[Lvl \\d+\\]\\s+)?"
-                    + "(Enderman|Spicy Wart)(?:\\s+[x×]([\\d,]+))?(?:\\s+\\([^\\r\\n]*\\))?$");
+                    + "(Enderman|Spicy Wart|Warped Stone|Wolf|InfiniEye™)(?:\\s+[x×]([\\d,]+))?(?:\\s+\\([^\\r\\n]*\\))?$");
+    private static final Pattern ZEALOT_OVOID = Pattern.compile(
+            "^▍\\s+Zealot\\s+[\\d.]+\\s+→\\s+Null Ovoid(?:\\s+·\\s+Special Zealot\\s+[\\d.]+)?$");
+
+    static boolean zealotOvoid(String line) {
+        return line != null && ZEALOT_OVOID.matcher(Zealots.strip(line).trim()).matches();
+    }
 
     static ExtraDrop extraDrop(String line) {
         if (line == null) return null;
@@ -447,9 +488,9 @@ public final class ZealotTracker {
 
     static void recordKill(boolean special) {
         kills++;
-        // Special deaths do not start the next dry streak at one. Personal eye drops
-        // also reset it when the server removes that entity before its name is seen.
-        sinceSpecial = special ? 0 : sinceSpecial + 1;
+        // The dry streak ends when YOUR Special spawns. Its later death or eye
+        // payout can happen after more ordinary kills, and must not reset them.
+        if (!special) sinceSpecial++;
     }
 
     /**
@@ -540,7 +581,8 @@ public final class ZealotTracker {
     }
 
     private record HudState(boolean sample, int kills, int sinceSpecial, int golden, int riftPasses, int eyes,
-                            int catalysts, int endermanPets, int spicyWarts, long elapsedQuarter, boolean started,
+                            int catalysts, int endermanPets, int spicyWarts, int warpedStones, int wolfPets,
+                            int infiniEyes, int nullOvoids, long elapsedQuarter, boolean started,
                             long prices, Object palette) { }
     private static HudState shownState;
     private static List<HudCard.Row> shownRows;
@@ -548,7 +590,8 @@ public final class ZealotTracker {
     private static List<HudCard.Row> hudRows(boolean sample) {
         long elapsed = sample ? 724_000 : elapsedMs();
         HudState state = new HudState(sample, kills, sinceSpecial, golden, riftPasses, eyes, catalysts,
-                endermanPets, spicyWarts, elapsed / 250, sessionStart != 0, NpcPrices.revision(), Theme.palette());
+                endermanPets, spicyWarts, warpedStones, wolfPets, infiniEyes, nullOvoids,
+                elapsed / 250, sessionStart != 0, NpcPrices.revision(), Theme.palette());
         if (state.equals(shownState)) return shownRows;
         shownRows = List.copyOf(buildHudRows(sample, elapsed));
         shownState = state;
@@ -558,7 +601,7 @@ public final class ZealotTracker {
     private static List<HudCard.Row> buildHudRows(boolean sample, long elapsed) {
         // Rates only need four updates a second. Keeping the rows between updates
         // avoids running Formatter and price lookups in every measure/draw pass.
-        int[] counts = sample ? new int[]{3, 1, 92, 1, 1, 2} : profitCounts();
+        int[] counts = sample ? new int[]{3, 1, 92, 1, 1, 2, 1, 1, 1, 2} : profitCounts();
         List<HudCard.Row> rows = new ArrayList<>();
         rows.add(new HudCard.Row("Kills", (sample ? "148" : number(kills)) + " §8· §7" + perHour(sample ? 148 : kills, elapsed)));
         rows.add(new HudCard.Row("Since Special", sample ? "18" : number(sinceSpecial)));
@@ -596,7 +639,8 @@ public final class ZealotTracker {
     }
 
     private static int[] profitCounts() {
-        return new int[]{golden, riftPasses, eyes, catalysts, endermanPets, spicyWarts};
+        return new int[]{golden, riftPasses, eyes, catalysts, endermanPets, spicyWarts,
+                warpedStones, wolfPets, infiniEyes, nullOvoids};
     }
 
     static List<String> profitBreakdown(int[] counts) {
@@ -641,13 +685,14 @@ public final class ZealotTracker {
     }
 
     private record TooltipState(int golden, int riftPasses, int eyes, int catalysts, int endermanPets,
-                                int spicyWarts, long prices) { }
+                                int spicyWarts, int warpedStones, int wolfPets, int infiniEyes,
+                                int nullOvoids, long prices) { }
     private static TooltipState shownTooltipState;
     private static List<ClientTooltipComponent> shownTooltip;
 
     private static List<ClientTooltipComponent> profitTooltip() {
         TooltipState state = new TooltipState(golden, riftPasses, eyes, catalysts, endermanPets,
-                spicyWarts, NpcPrices.revision());
+                spicyWarts, warpedStones, wolfPets, infiniEyes, nullOvoids, NpcPrices.revision());
         if (!state.equals(shownTooltipState)) {
             shownTooltip = profitBreakdown(profitCounts()).stream().map(Component::literal)
                     .map(c -> ClientTooltipComponent.create(c.getVisualOrderText())).toList();

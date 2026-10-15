@@ -18,6 +18,7 @@ public final class CompactModuleChecks {
         moduleSearch();
         settingsOutline();
         duplicateHeadings();
+        rowTargets();
         System.out.println(checks + " compact module checks passed");
     }
 
@@ -275,6 +276,41 @@ public final class CompactModuleChecks {
 
     private static Module module(String id, String title, String category) {
         return Module.placeholder(id, title, "Test module", category);
+    }
+
+    private static void rowTargets() {
+        for (int width : List.of(126, 240, 260, 600)) for (boolean implemented : List.of(false, true))
+            for (boolean settings : List.of(false, true)) {
+                ModuleRowLayout row = ModuleRowLayout.of(20, 30, width, implemented, settings);
+                equal(row.row().h(), ModuleRowLayout.height(width));
+                equal(row.stacked(), width < 260);
+                equal(row.target(19.9, 35), ModuleRowLayout.Target.NONE);
+                equal(row.target(20 + width, 35), ModuleRowLayout.Target.NONE);
+                equal(row.target(25, 30 + row.row().h()), ModuleRowLayout.Target.NONE);
+                ModuleRowLayout.Rect label = row.label();
+                yes(label.w() > 0, "module name has no visible space at width " + width);
+                equal(row.target(label.x() + .5, label.y() + .5), ModuleRowLayout.Target.ROW);
+                List<ModuleRowLayout.Rect> controls = List.of(row.key(), row.toggle(), row.expand());
+                List<ModuleRowLayout.Target> targets = List.of(ModuleRowLayout.Target.KEY,
+                        ModuleRowLayout.Target.TOGGLE, ModuleRowLayout.Target.EXPAND);
+                for (int i = 0; i < controls.size(); i++) {
+                    ModuleRowLayout.Rect control = controls.get(i);
+                    boolean present = i == 2 ? settings : implemented;
+                    equal(control.w() > 0, present);
+                    if (!present) continue;
+                    yes(row.row().contains(control.x(), control.y())
+                                    && row.row().contains(control.x() + control.w() - .01, control.y() + control.h() - .01),
+                            "click target extends outside its row at width " + width);
+                    for (double dx : List.of(.01, control.w() / 2.0, control.w() - .01))
+                        for (double dy : List.of(.01, control.h() - .01))
+                            equal(row.target(control.x() + dx, control.y() + dy), targets.get(i));
+                    for (int other = 0; other < controls.size(); other++) if (other != i) {
+                        ModuleRowLayout.Rect second = controls.get(other);
+                        yes(!second.contains(control.x() + control.w() / 2.0, control.y() + control.h() / 2.0),
+                                "one click could activate two module controls");
+                    }
+                }
+            }
     }
 
     private static List<Setting> settings() {

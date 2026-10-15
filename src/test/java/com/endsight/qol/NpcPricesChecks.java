@@ -26,6 +26,12 @@ public final class NpcPricesChecks {
         equal(NpcPrices.price("Rift Pass"), 50_000_000L);
         equal(NpcPrices.price("Enderman"), 50_000_000L);
         equal(NpcPrices.price("Spicy Wart"), 15_000_000L);
+        equal(NpcPrices.price("Warped Stone"), 50_000_000L);
+        equal(NpcPrices.price("[Lvl 1] Wolf"), 20_000_000L);
+        equal(NpcPrices.price("InfiniEye™"), 35_000_000L);
+        equal(NpcPrices.price("InfiniEye"), 35_000_000L);
+        equal(NpcPrices.price("Null Ovoid"), 1_000_000L);
+        equal(NpcPrices.priceInfo("Null Ovoid").source(), "Default");
         equal(NpcPrices.priceInfo("Spicy Wart").source(), "Built-in NPC");
         equal(NpcPrices.parseSale("You sold 2x Spicy Wart for 30,000,000 coins!"),
                 new NpcPrices.Sale("Spicy Wart", 2, 15_000_000));
@@ -35,11 +41,13 @@ public final class NpcPricesChecks {
         equal(NpcPrices.price("[Lvl 1] Enderman (Epic)"), 0L);
         equal(NpcPrices.price("[Lvl 1] Golden Dragon"), 0L);
         equal(NpcPrices.ambiguousPet("[Lvl 1] Enderman"), false);
+        equal(NpcPrices.ambiguousPet("[Lvl 1] Wolf"), false);
         equal(NpcPrices.ambiguousPet("[Lvl 1] Golden Dragon"), true);
         equal(NpcPrices.priceInfo("Enderman").source(), "Built-in NPC");
         equal(NpcPrices.observedPrice("[Lvl 1] Enderman").coins(), 50_000_000L);
         equal(NpcPrices.ZEALOT_ITEMS, List.of("Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst"));
-        equal(NpcPrices.ZEALOT_PROFIT_ITEMS.containsAll(List.of("Enderman", "Spicy Wart")), true);
+        equal(NpcPrices.ZEALOT_PROFIT_ITEMS.containsAll(List.of("Enderman", "Spicy Wart",
+                "Warped Stone", "Wolf", "InfiniEye™", "Null Ovoid")), true);
         equal(NpcPrices.knownNames().stream().filter("Enderman"::equals).count(), 1L);
         equal(NpcPrices.priceInfo("Golden Eye").source(), "Default");
         equal(NpcPrices.observedPrice("Rift Pass"), null);

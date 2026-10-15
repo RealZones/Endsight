@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
  * rolls - with the exact adjusted chances and ranges in its hover and details panel.
  * The base comparison is omitted from those views. A dragon's block folds to two lines.
  *
- * The block has no closing line, and it is not contiguous: in the log a "RARE DROP!"
+ * Older blocks have no closing line, and they are not contiguous: in the log a "RARE DROP!"
  * for the Summoning Eye lands between a kill's result and its rare roll. So other
  * lines are let through as they come, the block stays open around them, and it closes
  * on the next banner or a few ticks of quiet - every line of one arrives in the same
@@ -52,6 +52,8 @@ public final class LootRoll {
 
     private static final String HEADER = "LOOT DEBUG";
     private static final String FOOTER = "Detailed loot debug disabled";
+    private static final Pattern BANNER = Pattern.compile("^[═=\\-▬─━\\s]*LOOT DEBUG[═=\\-▬─━\\s]*$");
+    private static final Pattern END = Pattern.compile("^[═=\\-▬─━\\s]*(?:END LOOT DEBUG|LOOT DEBUG END)[═=\\-▬─━\\s]*$");
 
     // "mob: ?" means the server did not identify the source. This also occurs on
     // Voidgloom boss loot, so the line's context must supply a useful label.
@@ -59,7 +61,11 @@ public final class LootRoll {
     // October's server format includes base and effective chances before the slice.
     // Keep the slice captures unchanged: close-call colour uses the adjusted bounds.
     private static final Pattern ROW = Pattern.compile("^(▶\\s*)?(?:base\\s+[\\d.]+%\\s*→\\s*effective\\s+)?[\\d.]+%\\s*[\\[(]([\\d.]+),\\s*([\\d.]+)[\\])]\\s*(.+)$");
-    private static final Pattern RARE = Pattern.compile("^(▶\\s*)?rare roll\\s+(.+?)\\s*\\(1 in ([\\d,]+),\\s*([\\d.]+)%\\)\\s*rolled\\s*([\\d.]+)\\s*(\\w+)");
+    private static final Pattern RARE = Pattern.compile("^(▶\\s*)?rare roll:?\\s+(.+?)\\s*\\(1 in ([\\d,]+),\\s*([\\d.]+)%\\)\\s*rolled\\s*([\\d.]+)\\s*(\\w+)");
+    // A streak's extra drop also has the server's short, hit-only annotation. It
+    // carries no rolled value and must never become the primary table result.
+    private static final Pattern BONUS_RARE = Pattern.compile("^(?:▶\\s*)?rare roll:?\\s+(bonus\\s+.+?)\\s*\\(1 in ([\\d,]+)\\)\\s*$");
+    private static final Pattern BONUS_RESULT = Pattern.compile("^bonus(?:\\s*:\\s*|\\s+)(.+)$", Pattern.CASE_INSENSITIVE);
     // Both. Only a bare number: "loot number: 7 → Golden Eye" is the drop trackers'
     // line and is never taken.
     private static final Pattern LOOT = Pattern.compile("^loot number:\\s*([\\d.]+)\\s*(?:\\((?:0-100[^)]*|the rare table, lower\\s*=\\s*rarer)\\))?\\s*$");
@@ -101,7 +107,7 @@ public final class LootRoll {
             String line = Zealots.strip(message.getString()).trim();
             long now = System.currentTimeMillis();
 
-            if (line.contains(HEADER)) {
+            if (debugHeader(line)) {
                 flush();
                 open = new Block();
                 open.raw.add(message);
@@ -112,10 +118,17 @@ public final class LootRoll {
                 flush();
                 return true;
             }
+            if (debugEnd(line)) {
+                boolean hadBlock = open != null;
+                if (hadBlock) open.raw.add(message);
+                flush();
+                return !hadBlock;
+            }
+            if (open != null && open.startsNext(line)) flush();
             if (open == null) {
                 // A kill printed without its banner still gets folded; anything else
                 // outside a block is not ours.
-                if (!MOB.matcher(line).find()) return true;
+                if (!rollAnchor(line)) return true;
                 open = new Block();
             }
             open.observe(line);
@@ -130,6 +143,18 @@ public final class LootRoll {
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (open != null && System.currentTimeMillis() - lastLine > QUIET_MS) flush();
         });
+    }
+
+    static boolean debugHeader(String line) {
+        return BANNER.matcher(line).matches();
+    }
+
+    static boolean debugEnd(String line) {
+        return END.matcher(line).matches();
+    }
+
+    static boolean rollAnchor(String line) {
+        return MOB.matcher(line).find() || DRAGON.matcher(line).find();
     }
 
     private static void flush() {
@@ -245,6 +270,11 @@ public final class LootRoll {
         /** Whether any line of the roll itself was read - a banner alone is not a kill. */
         boolean read;
 
+        boolean startsNext(String line) {
+            if (MOB.matcher(line).find()) return mob != null || !dragon.isEmpty();
+            return DRAGON.matcher(line).find() && (mob != null || dragon.containsKey("rank"));
+        }
+
         /** One line into its field; false if it is not one of ours. */
         boolean read(String line) {
             Matcher m;
@@ -253,15 +283,30 @@ public final class LootRoll {
             } else if ((m = ROW.matcher(line)).find()) {
                 rows.add(new double[]{num(m.group(2)), num(m.group(3))});
             } else if ((m = RARE.matcher(line)).find()) {
-                rares.add(new Rare(m.group(2), num(m.group(4)), num(m.group(5)),
+                addRare(new Rare(m.group(2), num(m.group(4)), num(m.group(5)),
                         m.group(6).equalsIgnoreCase("hit")));
+            } else if ((m = BONUS_RARE.matcher(line)).matches()) {
+                double odds = num(m.group(2));
+                if (odds <= 0) return false;
+                addBonus(m.group(1), 100.0 / odds);
             } else if ((m = LOOT.matcher(line)).find()) {
                 // Dragon rolls now carry the rare-table annotation too. Letting it
                 // through raw also left the folded summary without its loot number.
                 loot = num(m.group(1));
             } else if ((m = RESULT.matcher(line)).find()) {
-                result = m.group(1).trim();
-                if (m.group(2) != null) dragon.put("frags", m.group(2));
+                String found = m.group(1).trim();
+                Matcher bonus = BONUS_RESULT.matcher(found);
+                if (bonus.matches()) {
+                    addBonus("bonus " + bonus.group(1), Double.NaN);
+                } else if (result == null) {
+                    result = found;
+                    if (m.group(2) != null) dragon.put("frags", m.group(2));
+                } else if (!result.equalsIgnoreCase(found) && !isBonusResult(found)) {
+                    // A second unexplained result is not permission to replace the
+                    // real drop (or to label another kill's result as a streak bonus).
+                    // Leave it visible as received until its own anchor arrives.
+                    return false;
+                }
             } else if ((m = DRAGON.matcher(line)).find()) {
                 dragon.put("rank", m.group(2));
                 dragon.put("damage", m.group(3));
@@ -292,8 +337,34 @@ public final class LootRoll {
             return true;
         }
 
+        private boolean isBonusResult(String item) {
+            for (Rare rare : rares) {
+                Matcher bonus = BONUS_RESULT.matcher(rare.name());
+                if (rare.hit() && bonus.matches() && bonus.group(1).equalsIgnoreCase(item)) return true;
+            }
+            return false;
+        }
+
+        private void addBonus(String name, double chance) {
+            // NaN is deliberate: a short hit annotation never reported a rolled value.
+            // Hit rendering and filter decisions use the confirmed outcome directly.
+            addRare(new Rare(name, chance, Double.NaN, true));
+        }
+
+        private void addRare(Rare rare) {
+            if (rare.hit() && BONUS_RESULT.matcher(rare.name()).matches()) {
+                for (int i = 0; i < rares.size(); i++) {
+                    Rare old = rares.get(i);
+                    if (!old.hit() || !old.name().equalsIgnoreCase(rare.name())) continue;
+                    if (Double.isNaN(old.rolled()) && !Double.isNaN(rare.rolled())) rares.set(i, rare);
+                    return;
+                }
+            }
+            rares.add(rare);
+        }
+
         void observe(String line) {
-            if (line.contains("SLAYER BOSS SLAIN!")) slayerLoot = true;
+            if (line.startsWith("NICE! SLAYER BOSS SLAIN!") || line.startsWith("SLAYER BOSS SLAIN!")) slayerLoot = true;
         }
 
         boolean dropped() {

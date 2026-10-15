@@ -31,6 +31,7 @@ public class SettingsScreen extends Screen {
     private final Module module;
     private final boolean embedded;
     private int embeddedX, embeddedY, embeddedW, clipTop, clipBottom;
+    private int overlayLeft, overlayTop, overlayRight, overlayBottom;
     private String settingsQuery = "";
     private final Set<Integer> collapsed = new HashSet<>();
 
@@ -39,6 +40,7 @@ public class SettingsScreen extends Screen {
     private Setting.Slider dragging;
     /** The id waiting for a key, or null. One at a time - two would race for the press. */
     private String binding;
+    private boolean suppressCharacter;
     /** The command row being typed into, or null. */
     private Setting.Command editing;
     /** The colour picker; open when a Color row's swatch was clicked. */
@@ -80,6 +82,7 @@ public class SettingsScreen extends Screen {
      * Cleared by Back and Escape, which are you leaving the page on purpose.
      */
     private static final Map<String, Integer> scrolls = new HashMap<>();
+    private static final Map<String, Set<Integer>> sectionViews = new HashMap<>();
     private static String openModule;
 
     public SettingsScreen(Screen parent, String brand, Module module) {
@@ -92,8 +95,10 @@ public class SettingsScreen extends Screen {
         this.brand = brand;
         this.module = module;
         this.embedded = embedded;
-        if (embedded) collapsed.addAll(SettingsOutline.initiallyCollapsed(module.settings()));
-        else {
+        Set<Integer> previousSections = sectionViews.get(module.id());
+        if (previousSections != null) collapsed.addAll(previousSections);
+        else if (embedded) collapsed.addAll(SettingsOutline.initiallyCollapsed(module.settings()));
+        if (!embedded) {
             this.scroll = scrolls.getOrDefault(module.id(), 0);
             openModule = module.id();
         }
@@ -109,6 +114,9 @@ public class SettingsScreen extends Screen {
         wrappedNotes.clear();
     }
 
+    @Override
+    public void tick() { suppressCharacter = false; }
+
     int embeddedHeight(int width, String query) {
         embeddedW = width;
         settingsQuery = query;
@@ -122,22 +130,26 @@ public class SettingsScreen extends Screen {
         layout();
     }
 
+    void embeddedPopupBounds(int left, int top, int right, int bottom) {
+        overlayLeft = left; overlayTop = top; overlayRight = right; overlayBottom = bottom;
+    }
+
     void renderEmbedded(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         drawRows(g, font, mouseX, mouseY);
     }
 
     void renderEmbeddedOverlay(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         if (!picker.open() || !placePicker()) return;
-        g.enableScissor(contentX(), contentTop(), contentX() + contentW(), contentBottom());
+        g.enableScissor(popupLeft(), popupTop(), popupRight(), popupBottom());
         try { picker.draw(g, font, mouseX, mouseY); }
         finally { g.disableScissor(); }
     }
 
-    boolean capturesKeyboard() { return binding != null || editing != null || picker.typing(); }
+    boolean capturesKeyboard() { return binding != null || editing != null || picker.typing() || suppressCharacter; }
     boolean bindingKey() { return binding != null; }
 
     void cancelInteractions() {
-        dragging = null; binding = null; editing = null; picker.close();
+        dragging = null; binding = null; editing = null; suppressCharacter = false; picker.close();
     }
 
     /** The id of the settings page that was open when the GUI last closed, or null. */
@@ -259,11 +271,29 @@ public class SettingsScreen extends Screen {
         for (Row r : rows) {
             if (r.setting != picker.setting()) continue;
             if (r.y + r.h < contentTop() || r.y > contentBottom()) break;
-            picker.layout(r.x, r.y, r.w, r.h, contentX() + 4, contentX() + contentW() - 4, contentBottom());
+            // The module body can be narrower than the picker at a large GUI scale.
+            // Its popup may use the panel's full width, while its drawing and input
+            // remain below the pinned header. Clamp vertically before laying it out
+            // so flipping above a low row cannot put its controls under the header.
+            int bottom = popupBottom(), top = popupTop();
+            int y = r.y + r.h + 2;
+            if (y + ColorPicker.H > bottom) y = r.y - ColorPicker.H - 2;
+            y = Math.max(top, Math.min(y, Math.max(top, bottom - ColorPicker.H)));
+            picker.layout(r.x, y - r.h - 2, r.w, r.h, popupLeft(), popupRight(),
+                    Math.max(bottom, y + ColorPicker.H));
             return true;
         }
         picker.close();
         return false;
+    }
+
+    private int popupLeft() { return embedded ? overlayLeft : contentX() + 4; }
+    private int popupRight() { return embedded ? overlayRight : contentX() + contentW() - 4; }
+    private int popupTop() { return embedded ? overlayTop : contentTop(); }
+    private int popupBottom() { return embedded ? overlayBottom : contentBottom(); }
+
+    private boolean inPopupViewport(int x, int y) {
+        return contains(popupLeft(), popupTop(), popupRight() - popupLeft(), popupBottom() - popupTop(), x, y);
     }
 
     /**
@@ -290,7 +320,9 @@ public class SettingsScreen extends Screen {
         if (a > 0.01f) {
             Draw.roundedRect(g, x, y, w, h, Theme.RADIUS, Draw.alpha(Theme.accent(), 0.16f * a));
         }
-        Draw.text(g, font, "< Back", x + 12, y + 7, Draw.lerp(Theme.muted(), Theme.text(), a));
+        int color = Draw.lerp(Theme.muted(), Theme.text(), a);
+        MenuIcons.arrow(g, x + 9, y + 5, MenuIcons.Arrow.LEFT, color);
+        Draw.text(g, font, "Back", x + 26, y + 7, color);
     }
 
     private void drawRows(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
@@ -312,9 +344,10 @@ public class SettingsScreen extends Screen {
 
             if (r.setting instanceof Setting.Section sec) {
                 int ty = r.y + (r.h - 9) / 2;
-                String title = (r.expanded ? "v  " : ">  ") + sec.label();
-                Draw.text(g, font, Draw.fit(font, title, r.w - 30), r.x, ty,
-                        r.matching ? Theme.accent() : Theme.muted());
+                int color = r.matching ? Theme.accent() : Theme.muted();
+                MenuIcons.arrow(g, r.x, ty - 2,
+                        r.expanded ? MenuIcons.Arrow.DOWN : MenuIcons.Arrow.RIGHT, color);
+                Draw.text(g, font, Draw.fit(font, sec.label(), r.w - 46), r.x + 16, ty, color);
                 Draw.textRight(g, font, Integer.toString(r.children), r.x + r.w, ty, Theme.dim());
                 Draw.rect(g, r.x, r.y + r.h - 1, r.w, 1, Theme.hair());
                 continue;
@@ -345,7 +378,7 @@ public class SettingsScreen extends Screen {
                     r.matching ? Theme.accent() : Theme.text());
             if (!r.setting.description().isBlank()) {
                 Draw.text(g, font, Draw.fit(font, r.setting.description(), textWidth),
-                        r.x, r.y + (embedded ? 17 : 20), Theme.dim());
+                        r.x, r.y + (embedded ? 17 : 20), embedded ? Theme.muted() : Theme.dim());
             }
 
             if (r.setting instanceof Setting.Toggle t) {
@@ -557,7 +590,7 @@ public class SettingsScreen extends Screen {
         // and the swatch that opened it is remembered so the same click does not reopen.
         Setting.Color wasPicking = picker.setting();
         if (picker.open() && placePicker()
-                && (!embedded || contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my))
+                && (!embedded || inPopupViewport(mx, my))
                 && picker.click(mx, my)) return true;
         picker.close();
 
@@ -590,6 +623,7 @@ public class SettingsScreen extends Screen {
             if (r.setting instanceof Setting.Note) return true;
             if (r.setting instanceof Setting.Section) {
                 if (!collapsed.add(r.index)) collapsed.remove(r.index);
+                sectionViews.put(module.id(), Set.copyOf(collapsed));
                 cancelInteractions();
                 return true;
             }
@@ -700,6 +734,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        if (suppressCharacter) { suppressCharacter = false; return true; }
         if (binding != null) return true;
         if (picker.typing()) {
             for (char ch : event.codepointAsString().toCharArray()) picker.charTyped(ch);
@@ -731,6 +766,7 @@ public class SettingsScreen extends Screen {
             if (event.key() == 256) Keybinds.clear(binding);
             else Keybinds.set(binding, event.key());
             binding = null;
+            suppressCharacter = true;
             return true;
         }
         if (embedded) return false;

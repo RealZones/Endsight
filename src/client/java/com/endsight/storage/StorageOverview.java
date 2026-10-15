@@ -3,6 +3,8 @@ package com.endsight.storage;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
+import com.endsight.hud.Toast;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
@@ -13,7 +15,10 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.Container;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
@@ -21,9 +26,13 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /** A full-page index over the server's Storage menu, backed by visited page snapshots. */
 public final class StorageOverview {
@@ -46,6 +55,8 @@ public final class StorageOverview {
     private static double backgroundOpacity = 90;
     private static AbstractContainerScreen<?> pagesScreen;
     private static List<Integer> pageCache = List.of();
+    private static Map<Integer, MenuPage> menuPages = Map.of();
+    private static PageRequest pendingPage;
 
     public static Setting opacitySetting() {
         return new Setting.Slider("Overview opacity", "Darkness behind the all-page storage view; zero is clear.",
@@ -62,6 +73,7 @@ public final class StorageOverview {
     }
 
     public static void init() {
+        ClientTickEvents.END_CLIENT_TICK.register(StorageOverview::tickPageRequest);
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
             boolean root = isRoot(container);
@@ -125,6 +137,7 @@ public final class StorageOverview {
                     search = null;
                     pagesScreen = null;
                     pageCache = List.of();
+                    menuPages = Map.of();
                 }
             });
         });
@@ -146,10 +159,14 @@ public final class StorageOverview {
         found.add(StoragePreview.ENDER_CHEST);
         Container playerInv = Minecraft.getInstance().player == null
                 ? null : Minecraft.getInstance().player.getInventory();
-        for (Slot slot : screen.getMenu().slots) {
+        Map<Integer, MenuPage> targets = new HashMap<>();
+        for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+            Slot slot = screen.getMenu().slots.get(i);
             if (slot.container == playerInv) continue;
-            int page = StoragePreview.pageOfItem(slot.getItem());
-            if (page > 0 && page <= 54) found.add(page);
+            MenuPage page = menuPage(slot.getItem(), i);
+            if (page == null) continue;
+            found.add(page.page());
+            mergePage(targets, page);
         }
         int count = 0;
         for (PageSnapshot snap : StoragePreview.snapshots().values()) {
@@ -158,7 +175,116 @@ public final class StorageOverview {
         count = Math.min(count, 54);
         for (int p = 1; p <= count; p++) found.add(p);
         pagesScreen = screen;
+        menuPages = Map.copyOf(targets);
         return pageCache = List.copyOf(found);
+    }
+
+    enum PageAccess { OPEN, LOCKED, UNKNOWN }
+    record MenuPage(int page, int menuSlot, PageAccess access) { }
+    private static final Pattern BLOCKED_PAGE = Pattern.compile(
+            "\\b(?:lock|locked|unlock|buy|purchase|cost|price|requires?)\\b|community shop");
+    private static final Pattern VIEW_PAGE = Pattern.compile("^click to (?:view|open)\\b.*$");
+
+    /** Only the live menu can grant access; a remembered page is never permission. */
+    static MenuPage menuPage(String name, String itemId, List<String> lore, int menuSlot) {
+        int page = StoragePreview.pageNumber(name);
+        if (page <= 0 || page > 54 || menuSlot < 0) return null;
+        String id = itemId == null ? "" : itemId.toLowerCase(Locale.ROOT);
+        boolean locked = id.equals("minecraft:red_stained_glass_pane") || id.equals("minecraft:barrier");
+        boolean view = false;
+        for (String line : lore) {
+            String plain = StoragePreview.plainText(line).toLowerCase(Locale.ROOT);
+            if (BLOCKED_PAGE.matcher(plain).find()) locked = true;
+            if (VIEW_PAGE.matcher(plain).matches()) view = true;
+        }
+        return new MenuPage(page, menuSlot, locked ? PageAccess.LOCKED : view ? PageAccess.OPEN : PageAccess.UNKNOWN);
+    }
+
+    private static MenuPage menuPage(ItemStack stack, int menuSlot) {
+        if (stack.isEmpty()) return null;
+        String name = StoragePreview.plainText(stack.getHoverName());
+        // The root also contains a community-shop purchase button named Locked Page.
+        // Never derive its page from the slot's position or from an old snapshot.
+        if (StoragePreview.pageNumber(name) <= 0) return null;
+        var lore = stack.get(DataComponents.LORE);
+        List<String> lines = lore == null ? List.of() : lore.lines().stream().map(Component::getString).toList();
+        return menuPage(name, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), lines, menuSlot);
+    }
+
+    private static void mergePage(Map<Integer, MenuPage> pages, MenuPage page) {
+        MenuPage old = pages.putIfAbsent(page.page(), page);
+        if (old != null) pages.put(page.page(), new MenuPage(page.page(), -1, PageAccess.UNKNOWN));
+    }
+
+    /** Re-read before clicking; metadata used to draw the card may be one tick old. */
+    private static MenuPage livePage(AbstractContainerScreen<?> screen, int page) {
+        Container playerInv = Minecraft.getInstance().player == null
+                ? null : Minecraft.getInstance().player.getInventory();
+        MenuPage found = null;
+        for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+            Slot slot = screen.getMenu().slots.get(i);
+            if (slot.container == playerInv) continue;
+            MenuPage candidate = menuPage(slot.getItem(), i);
+            if (candidate == null || candidate.page() != page) continue;
+            if (found != null) return new MenuPage(page, -1, PageAccess.UNKNOWN);
+            found = candidate;
+        }
+        return found;
+    }
+
+    enum OpenAction { WAIT, CLICK, LOCKED, CANCEL, EXPIRED }
+
+    /** One user request, bound to its source screen/world and the arriving root menu. */
+    static final class PageRequest {
+        final int page;
+        private final Object world, source;
+        private final long started;
+        private Object root;
+
+        PageRequest(int page, Object world, Object source, long started) {
+            this.page = page; this.world = world; this.source = source; this.started = started;
+        }
+
+        OpenAction advance(Object world, Object screen, boolean isRoot, MenuPage target, long now) {
+            if (world == null || world != this.world || screen == null) return OpenAction.CANCEL;
+            if (now < started || now - started >= 5000) return OpenAction.EXPIRED;
+            if (!isRoot) return root == null && screen == source ? OpenAction.WAIT : OpenAction.CANCEL;
+            if (root != null && root != screen) return OpenAction.CANCEL;
+            root = screen;
+            if (target == null || target.page() != page || target.menuSlot() < 0) return OpenAction.WAIT;
+            if (target.access() == PageAccess.LOCKED) return OpenAction.LOCKED;
+            return target.access() == PageAccess.OPEN ? OpenAction.CLICK : OpenAction.WAIT;
+        }
+    }
+
+    static void openPage(AbstractContainerScreen<?> source, int page) {
+        Minecraft mc = Minecraft.getInstance();
+        if (page <= 0 || page > 54 || mc.screen != source || mc.player == null || mc.level == null
+                || mc.getConnection() == null || mc.gameMode == null) return;
+        pendingPage = new PageRequest(page, mc.level, source, System.currentTimeMillis());
+        if (isRoot(source)) tickPageRequest(mc);
+        else mc.getConnection().sendCommand("storage");
+    }
+
+    private static void tickPageRequest(Minecraft mc) {
+        PageRequest request = pendingPage;
+        if (request == null) return;
+        if (mc.player == null || mc.gameMode == null) { pendingPage = null; return; }
+        AbstractContainerScreen<?> screen = mc.screen instanceof AbstractContainerScreen<?> container ? container : null;
+        boolean root = screen != null && isRoot(screen);
+        MenuPage target = root ? livePage(screen, request.page) : null;
+        OpenAction action = request.advance(mc.level, mc.screen, root, target, System.currentTimeMillis());
+        if (action == OpenAction.WAIT) return;
+        // Consume before sending the click: local prediction can replace the screen.
+        pendingPage = null;
+        if (action == OpenAction.CLICK && mc.player != null && mc.gameMode != null) {
+            mc.gameMode.handleContainerInput(screen.getMenu().containerId, target.menuSlot(), 0,
+                    ContainerInput.PICKUP, mc.player);
+        } else if (action == OpenAction.LOCKED) {
+            Toast.warn("Storage", "Page " + request.page + " is locked");
+        } else if (action == OpenAction.EXPIRED) {
+            Toast.warn("Storage", "Page " + request.page + " is not available in the Storage menu");
+        }
     }
 
     static Layout layout(int width, int height, int pages) {
@@ -253,11 +379,16 @@ public final class StorageOverview {
     private static void drawPage(GuiGraphicsExtractor g, Font font, int page, PageSnapshot snap,
                                  String query, int x, int y, boolean hovered, int mx, int my) {
         boolean ec = page == StoragePreview.ENDER_CHEST;
+        MenuPage target = menuPages.get(page);
+        PageAccess access = ec ? PageAccess.OPEN : target == null ? PageAccess.UNKNOWN : target.access();
         BitSet matchingSlots = StoragePreview.searchMatches(snap, query);
         int matches = matchingSlots.cardinality();
         Draw.text(g, font, ec ? "Ender Chest" : "PV " + page, x + GRID_LEFT, y + 3,
                 matches > 0 ? Theme.obs() : hovered ? Theme.accent() : Theme.text());
-        String status = snap == null ? "Not visited" : query.isEmpty() ? "" : matches + " found";
+        String status = matches > 0 ? matches + " found" + (access == PageAccess.OPEN ? ""
+                : access == PageAccess.LOCKED ? " · locked" : " · unavailable")
+                : access == PageAccess.LOCKED ? "Locked" : access == PageAccess.UNKNOWN ? "Unavailable"
+                : snap == null ? "Not visited" : query.isEmpty() ? "" : "0 found";
         if (matches > 0) {
             int badgeW = font.width(status) + 8;
             Draw.roundedRect(g, x + CARD_W - GRID_LEFT - badgeW, y, badgeW, 13, 3, Theme.obs());
@@ -304,7 +435,8 @@ public final class StorageOverview {
         }
         if (hovered && !itemTooltip) {
             List<Component> tip = new ArrayList<>();
-            tip.add(Component.literal(ec ? "Open Ender Chest" : "Open PV " + page));
+            tip.add(Component.literal(ec ? "Open Ender Chest" : access == PageAccess.OPEN ? "Open PV " + page
+                    : access == PageAccess.LOCKED ? "Locked storage page" : "Page unavailable in the current Storage menu"));
             tip.add(Component.literal(snap == null ? "Visit this page to remember its items"
                     : "Last seen " + snap.age(System.currentTimeMillis())).withColor(Theme.muted() & 0xFFFFFF));
             g.setTooltipForNextFrame(font, tip, Optional.empty(), mx, my);
@@ -352,10 +484,12 @@ public final class StorageOverview {
         if (!StoragePreview.overviewEnabled()) return false;
         Minecraft mc = Minecraft.getInstance();
         if (backButton(screen, mx, my) && button == 0) {
+            pendingPage = null;
             if (mc.getConnection() != null) mc.getConnection().sendCommand("storage");
             return true;
         }
         if (button == 0 && isPage(screen) && clickedGoBack(screen, mx, my)) {
+            pendingPage = null;
             if (mc.getConnection() != null) mc.getConnection().sendCommand("storage");
             return true;
         }
@@ -371,6 +505,7 @@ public final class StorageOverview {
         if (button != 0) return true;
 
         if (within(mx, my, screen.width - 91, 6, 79, 15)) {
+            pendingPage = null;
             vanilla = true;
             if (search != null) search.setFocused(false);
             return true;
@@ -398,8 +533,11 @@ public final class StorageOverview {
             if (row >= scrollRow + l.visibleRows()) break;
             if (!within(mx, my, l.x(i % l.cols()), l.y(row, scrollRow), CARD_W, CARD_H)) continue;
             int page = pages.get(i);
-            if (mc.getConnection() != null) {
-                mc.getConnection().sendCommand(page == StoragePreview.ENDER_CHEST ? "ec" : "storage " + page);
+            if (page == StoragePreview.ENDER_CHEST) {
+                pendingPage = null;
+                if (mc.getConnection() != null) mc.getConnection().sendCommand("ec");
+            } else {
+                openPage(screen, page);
             }
             return true;
         }

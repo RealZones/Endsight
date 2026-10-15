@@ -349,4 +349,14 @@ tasks.register('compactModuleChecks', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.endsight.ui.CompactModuleChecks'
 }
-tasks.named('check') { dependsOn 'compactModuleChecks' }
+tasks.register('colourStripChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.zealots.ColourStripChecks'
+}
+tasks.register('beamGeometryChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.visual.BeamGeometryChecks'
+}
+tasks.named('check') { dependsOn 'compactModuleChecks', 'colourStripChecks', 'beamGeometryChecks' }

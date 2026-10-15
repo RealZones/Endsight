@@ -56,9 +56,9 @@ public final class Protector {
             "(?i)^Protector:\\s*Resting(?:\\s*\\((\\d+)\\))?\\s*$");
     private static final Pattern STATUS_SPAWNED = Pattern.compile(
             "(?i)^(Protector|Warden):\\s*(?:Spawned|Alive)\\s*$");
-    private static final int KILLS_PER_STAGE = 200;
-    // Stage five is the spawned boss, so only four stage transitions need kills.
-    private static final int KILL_GOAL = KILLS_PER_STAGE * 4;
+    // Tab's counter falls from 200 to zero across the whole rise. Tiers are
+    // milestones in that one climb, not separate 200-kill counters.
+    private static final int KILL_GOAL = 200;
     private static final String SPAWNED = "Endstone Protector has spawned";
     private static final String DEAD = "The Endstone Protector has been defeated";
 
@@ -240,15 +240,12 @@ public final class Protector {
     }
 
     private static int completedKills(int stage, int max, int left) {
-        // The server's bare comma number is kills LEFT until the next stage, as
-        // confirmed for the current server: four transitions of 200 kills, then
-        // stage five spawns the boss. Its counter must not start a fifth climb.
-        // Old recordings used another threshold, so neither their denominator nor the old percent
-        // interpretation belongs in the current HUD. Personal kills never add here.
+        // The server's number is kills LEFT to spawn across the entire rise.
+        // Tier can change while that number continues to count down. Personal
+        // kills never add to this server-wide counter.
         if (max != 5 || stage < 1 || stage > max) return -1;
-        if (stage == max) return KILL_GOAL;
-        if (left < 0 || left > KILLS_PER_STAGE) return -1;
-        return Math.clamp((stage - 1) * KILLS_PER_STAGE + KILLS_PER_STAGE - left, 0, KILL_GOAL);
+        if (left < 0 || left > KILL_GOAL) return stage == max && left < 0 ? KILL_GOAL : -1;
+        return KILL_GOAL - left;
     }
 
     private static boolean counterFresh(long now) {
@@ -277,11 +274,12 @@ public final class Protector {
         long now = System.currentTimeMillis();
         boolean fresh = sample || counterFresh(now);
         int completed = alive ? KILL_GOAL : completedKills(tier, tierMax, remaining);
-        // The kill count already says how far along it is; a Stage row repeated it.
-        String counter = sample ? "769 / 800"
-                : fresh && completed >= 0 && killGoal > 0 ? String.format(Locale.ROOT, "%,d / 800", completed) : "— / 800";
+        String counter = sample ? "169 / 200"
+                : fresh && completed >= 0 && killGoal > 0 ? String.format(Locale.ROOT, "%,d / 200", completed) : "— / 200";
         List<HudCard.Row> rows = List.of(new HudCard.Row("Kills", counter, Theme.obs()));
-        return TrackerHud.draw(g, font, x, y, label, alive ? "Alive" : !sample && resting ? "Resting" : "Rising",
+        String status = alive ? "Alive" : !sample && resting ? "Resting"
+                : (sample || tier > 0) ? "Rising " + (sample ? 4 : tier) + "/5" : "Rising";
+        return TrackerHud.draw(g, font, x, y, label, status,
                 alive ? Theme.pos() : Theme.obs(), rows, -1f);
     }
 

@@ -194,11 +194,28 @@ public final class BossDropsChecks {
                 List.of("Aspect of the Dragons", "4x Old Dragon Fragment".substring(3)), "Wise Dragon"), "Old Dragon");
         equal(call("summaryBoss", new Class<?>[]{List.class, String.class},
                 List.of("Aspect of the Dragons", "Crystal Fragment"), "Wise Dragon"), "Wise Dragon");
+        dragonEyeExclusion();
         familyProfitChecks();
         pendingDropChecks();
         BossDropsBoundaryChecks.main(args);
         familyHudChecks();
         System.out.println(checks + " Boss Drops preservation checks passed");
+    }
+
+    private static void dragonEyeExclusion() throws Exception {
+        equal(BossDrops.auditCounted("Strong Dragon", "Golden Eye"), false);
+        equal(BossDrops.auditCounted("Golden Dragon", "Golden Eye"), false);
+        equal(BossDrops.auditCounted("Riftborn", "Golden Eye"), true);
+        read(List.of(SCHEMA, "kill\tStrong Dragon\t3", "drop\tStrong Dragon\tGolden Eye\t1",
+                "drop\tRiftborn\tGolden Eye\t2"));
+        equal(((Map<?, ?>) value(map("loaded").get("Strong Dragon"), "drops")).containsKey("Golden Eye"), false);
+        equal(((Map<?, ?>) value(map("loaded").get("Riftborn"), "drops")).get("Golden Eye"), 2);
+        equal(saved().contains("drop\tStrong Dragon\tGolden Eye\t1"), false);
+        equal(saved().contains("drop\tRiftborn\tGolden Eye\t2"), true);
+        map("session").clear();
+        call("drop", new Class<?>[]{String.class, Drops.Drop.class},
+                "Golden Dragon", new Drops.Drop("Golden Eye", 2));
+        equal(map("session").containsKey("Golden Dragon"), false);
     }
 
     private static void familyHudChecks() throws Exception {

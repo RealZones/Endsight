@@ -114,7 +114,9 @@ public final class Keybinds {
         if (key == NONE && !listening) {
             Draw.roundedOutline(g, x, y, CHIP_W, CHIP_H, Theme.RADIUS - 2, Theme.line(), Theme.bg());
         }
-        String text = listening ? "..." : label(key);
+        // A bare dash looked like a disabled control in the module list. "Bind"
+        // makes an empty, clickable key slot understandable without a tooltip.
+        String text = listening ? "..." : key == NONE ? "Bind" : label(key);
         Draw.textCentered(g, font, text, x + CHIP_W / 2, y + 4,
                 listening ? Theme.accent()
                         : key == NONE ? Draw.lerp(Theme.dim(), Theme.muted(), hover)

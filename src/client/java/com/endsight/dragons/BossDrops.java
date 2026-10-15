@@ -273,9 +273,10 @@ public final class BossDrops {
     /**
      * The same measurement for Null Atoms. A T5 Voidgloom pays atoms every kill the way
      * a normal one pays Ovoids - straight into the inventory, with no drop message - so
-     * the tracker, which only listened for drop lines, counted none of them (reported by
-     * Secrets, a T5 player, 2026-10-14). Measured on every Voidgloom: a T4's announced
-     * atom also lands in the inventory, and the larger of the two is what is counted.
+     * the tracker, which only listened for drop lines, counted none of them. T5 is
+     * identified as Riftborn (13,750 quest XP and the observed Riftborn Seraph entity),
+     * so measuring Voidgloom alone missed the very family that needed this baseline.
+     * A T4's announced atom also lands in the inventory; count the larger observation.
      */
     private static RewardWindow atomWindow;
     /** Every nearby drop line, for a kill line that arrives just after its loot. */
@@ -381,9 +382,10 @@ public final class BossDrops {
 
     public static Module module() {
         return new Module("dragon.bossdrops", "Boss Drops",
-                "Warden, Protector and Revenant loot; Enderman Slayers have their own profit trackers.", "Trackers",
+                "Dragon, Warden and Protector loot; Slayer quests have their own profit tracker.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of(
+                        new Setting.Section("Display"),
                         new Setting.Toggle("Show on HUD", "Show the latest boss's kills and drops.",
                                 () -> showHud, v -> showHud = v),
                         new Setting.Choice("Period", "Switch the counts shown on the HUD.",
@@ -393,6 +395,7 @@ public final class BossDrops {
                         new Setting.Choice("Show from",
                                 "Lowest dragon drop tier printed by /drops.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v),
+                        new Setting.Section("Prices"),
                         new Setting.Toggle("Learn Slayer sale prices", "Use a Slayer drop's value after its first sale; off uses custom or built-in prices.",
                                 NpcPrices::learning, NpcPrices::learning),
                         new Setting.Action("Slayer drop prices", "Edit prices and reload a shared Slayer price file.",
@@ -911,7 +914,7 @@ public final class BossDrops {
 
     /** The second item a kill pays straight into the inventory, or null. See {@link #atomWindow}. */
     private static String atomItem(String boss) {
-        return VOIDGLOOM.equals(boss) || UNKNOWN_ENDERMAN.equals(boss) ? "Null Atom" : null;
+        return VOIDGLOOM.equals(boss) || RIFTBORN.equals(boss) || UNKNOWN_ENDERMAN.equals(boss) ? "Null Atom" : null;
     }
 
     private static void atomSpawned(String boss, String item, int baseline, Object level, long at) {
@@ -1102,7 +1105,12 @@ public final class BossDrops {
 
     /** Whether a drop of this boss's gets a row: its loot, less the fodder. */
     private static boolean counted(String boss, String item) {
-        return belongs(boss, item) && !(LOOT.containsKey(boss) && FODDER.contains(lootName(item)));
+        String name = lootName(item);
+        // A Golden Eye can land during a dragon's payout window, but it comes from
+        // zealots or a Slayer roll. This guard is also used when loading old saves,
+        // so an eye previously attributed to Strong/Golden Dragon leaves /drops.
+        if (isDragon(boss) && "golden eye".equals(name)) return false;
+        return belongs(boss, item) && !(LOOT.containsKey(boss) && FODDER.contains(name));
     }
 
     /** The log audit uses the same exclusions as the live tracker without mutating it. */
@@ -1158,8 +1166,14 @@ public final class BossDrops {
 
     private static boolean bossHudVisible() {
         String boss = hudBoss();
-        return enabled && showHud && !isDragon(boss) && !endermanSlayer(boss) && (Area.end() || Area.crypts())
-                && (!isSlayer(boss) || profitQuestActive);
+        return enabled && showHud && bossHudMatches(boss) && Area.end();
+    }
+
+    private static boolean bossHudMatches(String boss) {
+        // The generic card is the dragon/lobby-boss tracker. Excluding dragons
+        // removed its original job, while permitting Revenant duplicated Slayer
+        // Profit with the same costs and profit rows under a second title.
+        return !isSlayer(boss);
     }
 
     private static boolean profitHudVisible(ProfitHud hud) {
@@ -1269,7 +1283,13 @@ public final class BossDrops {
     }
 
     private static Count hudCount(String boss, String period) {
-        if (DRAGON.equals(boss)) return dragons(period.equals("All Time") ? totals() : session);
+        if (DRAGON.equals(boss)) {
+            if (!period.equals("All Time")) return dragons(session);
+            Count total = dragons(loaded), fresh = dragons(unsaved);
+            total.kills += fresh.kills;
+            fresh.drops.forEach((item, n) -> total.drops.merge(item, n, Integer::sum));
+            return total;
+        }
         String key = bossKey(boss);
         if (!period.equals("All Time")) return of(session, key);
         Count base = loaded.get(key), fresh = unsaved.get(key);
@@ -1301,7 +1321,8 @@ public final class BossDrops {
     }
 
     private record CountsHudState(String boss, String period, boolean compact, boolean sample,
-                                  long prices, Object palette, long quarterSecond, CountState base, CountState fresh) { }
+                                  long prices, Object palette, long quarterSecond, CountState base, CountState fresh,
+                                  List<CountState> dragons) { }
     private record CountsHudContext(String boss, String period, boolean compact, boolean sample) { }
     private record CountsHudRows(CountsHudState state, List<HudCard.Row> rows) { }
     // Boss Drops and Slayer Profit can both be visible, with separate periods and
@@ -1316,9 +1337,17 @@ public final class BossDrops {
     private static CountsHudState countsHudState(String boss, String period, boolean compact, boolean sample,
                                                  long now, boolean snapshot) {
         boolean allTime = period.equals("All Time");
+        List<CountState> dragons = List.of();
+        if (DRAGON.equals(boss)) {
+            List<CountState> counts = new ArrayList<>();
+            for (Map<String, Count> source : allTime ? List.of(loaded, unsaved) : List.of(session))
+                for (Map.Entry<String, Count> entry : source.entrySet())
+                    if (isDragon(entry.getKey())) counts.add(CountState.of(entry.getValue(), snapshot));
+            dragons = List.copyOf(counts);
+        }
         return new CountsHudState(boss, period, compact, sample, NpcPrices.revision(), Theme.palette(), now / 250,
                 CountState.of((allTime ? loaded : session).get(bossKey(boss)), snapshot),
-                allTime ? CountState.of(unsaved.get(bossKey(boss)), snapshot) : null);
+                allTime ? CountState.of(unsaved.get(bossKey(boss)), snapshot) : null, dragons);
     }
 
     private static List<HudCard.Row> countsHudRows(String boss, String period, boolean compact, boolean sample, long now) {
@@ -1327,7 +1356,7 @@ public final class BossDrops {
         CountsHudRows shown = shownHudRows.get(context);
         // The short refresh also catches newly seen item rarity and a reloaded tier
         // list. Counts, period, prices and palette edits invalidate immediately.
-        if (!DRAGON.equals(boss) && shown != null && state.equals(shown.state())) return shown.rows();
+        if (shown != null && state.equals(shown.state())) return shown.rows();
         List<HudCard.Row> rows = List.copyOf(buildCountsHudRows(boss, period, compact, sample));
         shownHudRows.put(context, new CountsHudRows(countsHudState(boss, period, compact, sample, now, true), rows));
         return rows;

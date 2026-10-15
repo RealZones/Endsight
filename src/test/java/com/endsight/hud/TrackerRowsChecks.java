@@ -57,6 +57,18 @@ public final class TrackerRowsChecks {
         equal(map(BossDrops.class, "session").size(), before);
         Object warden = call(BossDrops.class, "hudCount", new Class<?>[]{String.class, String.class}, "Warden", "All Time");
         equal(field(warden.getClass(), "kills").get(warden), 0);
+        Object dragon = call(BossDrops.class, "hudCount", new Class<?>[]{String.class, String.class}, "Dragon", "All Time");
+        equal(field(dragon.getClass(), "kills").get(dragon), 9);
+        Object rows = bossRows("Dragon", "All Time", false, 1_000);
+        same(rows, bossRows("Dragon", "All Time", false, 1_001), "aggregate dragon rows rebuilt every pass");
+        set(count("unsaved", "Golden Dragon"), "kills", 2);
+        equal(row(bossRows("Dragon", "All Time", false, 1_001), "Kills").value(), "10");
+        // Only the original lobby-boss card handles dragons. Every Slayer has the
+        // dedicated profit card, avoiding the former duplicate Revenant readout.
+        for (String boss : List.of("Dragon", "Golden Dragon", "Warden", "Golem"))
+            equal(call(BossDrops.class, "bossHudMatches", new Class<?>[]{String.class}, boss), true);
+        for (String boss : List.of("Revenant", "Voidgloom", "Riftborn", "Enderman (legacy)", "Enderman (unidentified)"))
+            equal(call(BossDrops.class, "bossHudMatches", new Class<?>[]{String.class}, boss), false);
         map(BossDrops.class, "loaded").remove("Revenant");
     }
 

@@ -19,19 +19,18 @@ public final class ProtectorChecks {
         alertsEnabled.setBoolean(null, false);
         reset.invoke(null);
 
-        // The user confirmed the current server's 200 kills per stage and comma
-        // value as kills remaining until the next stage. Stage five is the spawn,
-        // so stage 3,65 is 535/800 and every stage-five counter stays at 800.
-        int[][] observed = {{1, 200, 0}, {1, 191, 9}, {1, 0, 200}, {2, 200, 200},
-                {2, 101, 299}, {3, 200, 400}, {3, 65, 535}, {3, 0, 600},
-                {4, 31, 769}, {4, 1, 799}, {4, 0, 800}, {5, 200, 800}, {5, 1, 800}, {5, 0, 800}};
+        // Tab's number counts down from 200 to zero across all tiers. Changing
+        // tier must not add another 200 kills to the HUD.
+        int[][] observed = {{1, 200, 0}, {1, 191, 9}, {2, 160, 40},
+                {2, 101, 99}, {3, 100, 100}, {3, 65, 135},
+                {4, 31, 169}, {4, 1, 199}, {4, 0, 200}, {5, 0, 200}};
         for (int[] pair : observed) {
             yes((boolean) read.invoke(null,
                     "Protector: Rising (Tier " + pair[0] + "/5, " + pair[1] + ")", 1_000L),
                     "rising row rejected");
             eq(number("tier"), pair[0], "wrong stage");
             eq(number("remaining"), pair[1], "remaining value treated as percentage");
-            eq(number("killGoal"), 800, "current server rule lost its denominator");
+            eq(number("killGoal"), 200, "current server rule lost its denominator");
             eq(completed(), pair[2], "wrong total kills");
         }
         yes((boolean) fresh.invoke(null, 5_999L), "fresh server count hidden");
@@ -40,8 +39,8 @@ public final class ProtectorChecks {
         yes((boolean) read.invoke(null, "Protector: Spawned", 2_000L), "spawned tab row rejected");
         eq(number("tier"), 5, "spawned did not reach stage five");
         eq(number("remaining"), 0, "spawned kept the last remaining count");
-        eq(number("killGoal"), 800, "spawned did not complete the four stage transitions");
-        eq(completed(), 800, "spawned began an extra stage of kills");
+        eq(number("killGoal"), 200, "spawned did not complete the 200-kill climb");
+        eq(completed(), 200, "spawned began an extra stage of kills");
         yes(Protector.protectorActive(), "existing Protector API stopped working");
         line.invoke(null, "The Warden unleashes a shockwave!");
         yes(Protector.wardenUp(), "Warden action did not transform the readout");
@@ -57,23 +56,24 @@ public final class ProtectorChecks {
         eq(number("killGoal"), -1, "resting row reused previous cycle progress");
         read.invoke(null, "Protector: Rising (Tier 1/5, 191)", 3_500L);
         yes(!bool("resting"), "rising did not end resting");
-        eq(number("killGoal"), 800, "next cycle did not recover its known goal");
+        eq(number("killGoal"), 200, "next cycle did not recover its known goal");
 
         // An incompatible counter must be unknown, never silently clamped or converted.
         read.invoke(null, "Protector: Rising (Tier 3/5, 650)", 4_000L);
         eq(number("remaining"), 650, "unknown-format remaining count changed");
         eq(number("killGoal"), -1, "oversized remaining count became a valid counter");
+        eq(completed(), -1, "invalid tab counter became visible progress");
         read.invoke(null, "Protector: Rising (Tier 4/5, 65)", 4_500L);
-        eq(number("killGoal"), 800, "valid remaining count was rejected");
-        eq(completed(), 735, "stage four used old recording thresholds");
+        eq(number("killGoal"), 200, "valid remaining count was rejected");
+        eq(completed(), 135, "stage four added previous tiers to the kill count");
         read.invoke(null, "Protector: Rising (Tier 3/6, 65)", 4_750L);
         eq(number("killGoal"), -1, "different stage maximum invented progress");
         read.invoke(null, "Protector: Rising (Tier 3/5)", 5_000L);
         eq(number("remaining"), -1, "stage-only row reused stale remaining kills");
         eq(number("killGoal"), -1, "stage-only row invented total kills");
         read.invoke(null, "Protector: Rising (Tier 5/5)", 5_250L);
-        eq(number("killGoal"), 800, "stage-five row without a counter lost its completed goal");
-        eq(completed(), 800, "stage-five row without a counter became an unknown climb");
+        eq(number("killGoal"), 200, "stage-five row without a counter lost its completed goal");
+        eq(completed(), 200, "stage-five row without a counter became an unknown climb");
         yes(!(boolean) read.invoke(null, "Protector: Rising (Tier 6/5, 0)", 5_500L),
                 "out-of-range stage accepted");
         yes(!(boolean) read.invoke(null, "Protector: Rising (Tier 3/5, 65%)", 5_500L),
@@ -90,7 +90,7 @@ public final class ProtectorChecks {
         line.invoke(null, "Endstone Protector has spawned.");
         yes(bool("up"), "chat spawn did not activate Protector");
         eq(number("remaining"), 0, "chat spawn did not complete known progress");
-        eq(number("killGoal"), 800, "last tier announcement erased the known goal");
+        eq(number("killGoal"), 200, "last tier announcement erased the known goal");
         line.invoke(null, "The Endstone Protector has been defeated!");
         yes(!Protector.protectorActive(), "Protector death left beacon API active");
         read.invoke(null, "Warden: Spawned", 7_000L);

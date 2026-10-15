@@ -63,12 +63,15 @@ public final class NpcPrices {
             "spicy wart", "Spicy Wart");
     // Farming defaults are editable valuations, not claimed NPC sale evidence.
     private static final Map<String, Long> FARMING_DEFAULTS = Map.of(
-            "golden eye", 50_000_000L, "rift pass", 50_000_000L);
+            "golden eye", 50_000_000L, "rift pass", 50_000_000L,
+            "warped stone", 50_000_000L, "wolf", 20_000_000L,
+            "infinieye™", 35_000_000L, "null ovoid", 1_000_000L);
     public static final List<String> ZEALOT_ITEMS = List.of("Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst");
     // The compact HUD keeps its four familiar rows; these extra drops still count
     // toward profit and remain available in the price editor and breakdown.
     public static final List<String> ZEALOT_PROFIT_ITEMS = List.of(
-            "Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst", "Enderman", "Spicy Wart");
+            "Golden Eye", "Rift Pass", "Summoning Eye", "Warden Catalyst", "Enderman", "Spicy Wart",
+            "Warped Stone", "Wolf", "InfiniEye™", "Null Ovoid");
     private static final Set<String> FARMING_KEYS = ZEALOT_PROFIT_ITEMS.stream()
             .map(name -> name.toLowerCase(Locale.ROOT)).collect(java.util.stream.Collectors.toUnmodifiableSet());
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
@@ -131,14 +134,16 @@ public final class NpcPrices {
         if (cached != null) return cached;
         String name = WHITESPACE.matcher(Zealots.strip(item).trim()).replaceAll(" ");
         Matcher level = PET.matcher(name);
-        // Enderman has an explicit NPC value independent of the printed level.
+        // Only Enderman and Wolf are priced as level-independent Zealot drops.
         // Other pets stay ambiguous rather than inheriting a species-wide price.
         boolean pet = level.find();
-        boolean enderman = pet && name.substring(level.end()).equalsIgnoreCase("Enderman");
-        if (enderman) name = "Enderman";
+        boolean knownPet = pet && (name.substring(level.end()).equalsIgnoreCase("Enderman")
+                || name.substring(level.end()).equalsIgnoreCase("Wolf"));
+        if (knownPet) name = name.substring(level.end());
         String key = name.replace('\u2019', '\'').toLowerCase(Locale.ROOT);
+        if (key.equals("infinieye")) key = "infinieye™";
         if (key.equals("seraph plating")) key = "seraph's plating";
-        Normalized result = new Normalized(name, key, pet && !enderman);
+        Normalized result = new Normalized(name, key, pet && !knownPet);
         if (item.length() <= 256) normalizedNames.put(item, result);
         return result;
     }

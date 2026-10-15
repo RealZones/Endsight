@@ -171,12 +171,80 @@ public final class LootRollChecks {
         equal(none.read("[DRAGON] NotSecrets: base 0.05000000% → effective 0.16199000% [0.09085070, 0.25284070) Null Ovoid"), false);
         equal(none.read("base 0.05% → effective unknown [0, 1) Null Ovoid"), false);
 
+        streakBonusAndBoundaries();
+
         // Decimals follow how close the roll is to an end.
         equal(LootRoll.fmt(0.00480), "0.0048");
         equal(LootRoll.fmt(54.15717), "54.16");
         equal(LootRoll.fmt(99.98), "99.98");
 
         System.out.println(checks + " loot roll checks passed");
+    }
+
+    private static void streakBonusAndBoundaries() {
+        // The short bonus annotation is the reported streak format. The local logs
+        // confirm the same short `rare roll: Name (1 in N)` form for other side drops;
+        // the bonus itself is independent of the table's result and loot number.
+        LootRoll.Block streak = block("mob: ? magic find: 354.59 pet luck: 59.95",
+                "loot number: 55.81765 (0-100, lower = rarer)", "result: Summoning Eye",
+                "rare roll: bonus Null Atom (1 in 4)");
+        streak.observe("NICE! SLAYER BOSS SLAIN!");
+        equal(streak.result, "Summoning Eye");
+        equal(streak.rares.size(), 1);
+        equal(streak.rares.getFirst().needs(), 25.0);
+        equal(streak.rares.getFirst().hit(), true);
+        equal(Double.isNaN(streak.rares.getFirst().rolled()), true);
+        equal(Zealots.strip(LootRoll.kill(streak)), "▍ Slayer loot 55.82 → Summoning Eye · ✔ bonus Null Atom");
+        equal(streak.read("result: bonus Null Atom"), true);
+        equal(streak.read("result: Null Atom"), true);
+        equal(streak.result, "Summoning Eye");
+        equal(streak.rares.size(), 1);
+        equal(streak.read("result: nothing"), false);
+        equal(streak.result, "Summoning Eye");
+
+        // Detailed and short annotations can describe the same extra outcome. Keep
+        // one bonus, and prefer its actual rolled value when it is supplied.
+        equal(streak.read("▶ rare roll: bonus Null Atom (1 in 4, 25%) rolled 12.5 HIT"), true);
+        equal(streak.rares.size(), 1);
+        equal(streak.rares.getFirst().rolled(), 12.5);
+        equal(streak.read("rare roll: bonus Null Atom (1 in 4)"), true);
+        equal(streak.rares.size(), 1);
+
+        LootRoll.Block bonusBeforeMain = block("mob: ? magic find: 354.59",
+                "result: bonus: Null Atom", "result: Transmission Tuner");
+        equal(bonusBeforeMain.result, "Transmission Tuner");
+        equal(bonusBeforeMain.rares.size(), 1);
+        equal(Zealots.strip(LootRoll.kill(bonusBeforeMain)), "▍ Loot roll → Transmission Tuner · ✔ bonus Null Atom");
+        LootRoll.Block emptyMain = block("mob: ? magic find: 354.59", "loot number: 50", "result: nothing");
+        boolean previousFilter = LootFilter.on();
+        try {
+            LootFilter.module().setEnabled().accept(true);
+            equal(emptyMain.worthShowing(), false);
+            equal(emptyMain.read("rare roll: bonus Null Atom (1 in 4)"), true);
+            equal(emptyMain.result, "nothing");
+            equal(emptyMain.worthShowing(), true);
+        } finally {
+            LootFilter.module().setEnabled().accept(previousFilter);
+        }
+        equal(emptyMain.read("[MVP+] Someone: rare roll: bonus Null Atom (1 in 4)"), false);
+        equal(emptyMain.read("rare roll: bonus Null Atom (1 in 0)"), false);
+        equal(LootRoll.rollAnchor("rare roll: bonus Null Atom (1 in 4)"), false);
+
+        // Observed headers are anchored. A player paste cannot flush another kill,
+        // and compatibility end markers close a block rather than open a new one.
+        equal(LootRoll.debugHeader("------------ LOOT DEBUG ------------"), true);
+        equal(LootRoll.debugHeader("[MVP+] Someone: LOOT DEBUG"), false);
+        equal(LootRoll.debugHeader("------------ END LOOT DEBUG ------------"), false);
+        equal(LootRoll.debugEnd("------------ END LOOT DEBUG ------------"), true);
+        equal(LootRoll.debugEnd("------------ LOOT DEBUG END ------------"), true);
+        equal(LootRoll.debugEnd("[MVP+] Someone: END LOOT DEBUG"), false);
+        equal(LootRoll.rollAnchor("[MVP+] Someone: mob: ? magic find: 354.59"), false);
+        equal(streak.startsNext("mob: NEST_ZEALOT magic find: 223.98 pet luck: 59.95"), true);
+        equal(streak.startsNext("[MVP+] Someone: mob: NEST_ZEALOT magic find: 223.98"), false);
+        equal(streak.startsNext("result: Null Atom"), false);
+        equal(new LootRoll.Block().startsNext("mob: ? magic find: 354.59"), false);
+        LootRoll.Block firstDragon = block("dragon: Golden Dragon rank: #3 damage: 196,340,213");
+        equal(firstDragon.startsNext("dragon: Berserk Dragon rank: #3 damage: 67,286,137"), true);
     }
 
     private static LootRoll.Block block(String... lines) {

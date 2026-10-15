@@ -81,15 +81,43 @@ public final class ZealotTrackerChecks {
         ZealotTracker.recordKill(false);
         eq(count("sinceSpecial"), 2, "ordinary kills did not advance dry streak");
         ZealotTracker.recordKill(true);
-        eq(count("sinceSpecial"), 0, "special kill did not reset dry streak");
+        eq(count("sinceSpecial"), 2, "special death reset or advanced the spawn streak");
         ZealotTracker.recordKill(false);
         line.invoke(null, "[VIP+] Someone: EPIC DROP! Golden Eye");
-        eq(count("sinceSpecial"), 1, "quoted drop reset dry streak");
+        eq(count("sinceSpecial"), 3, "quoted drop reset dry streak");
         line.invoke(null, "EPIC DROP! Golden Eye");
-        eq(count("sinceSpecial"), 0, "personal Golden Eye did not reset dry streak");
-        ZealotTracker.recordKill(false);
+        eq(count("sinceSpecial"), 3, "Golden Eye payout reset the spawn streak");
         line.invoke(null, "RARE DROP! (Summoning Eye)");
-        eq(count("sinceSpecial"), 0, "personal Summoning Eye did not reset dry streak");
+        eq(count("sinceSpecial"), 3, "ordinary Summoning Eye reset the spawn streak");
+        eq(count("golden"), 1, "Golden Eye payout stopped being counted");
+        eq(count("eyes"), 1, "Summoning Eye payout stopped being counted");
+
+        // Exact successful personal roll from 2026-10-04-2.log.gz:1873. Another
+        // player pasted a matching roll on October 12; an anchored parser rejects it.
+        Method spawn = ZealotTracker.class.getDeclaredMethod("recordSpecialSpawn", String.class, long.class);
+        spawn.setAccessible(true);
+        String personalSpawn = "§a▶ §7rare roll §fSpecial Zealot §8(1 in 383, 0.26139%) §7rolled §f0.13772 §aHIT";
+        yes((boolean) spawn.invoke(null, personalSpawn, 1_000L), "recorded personal Special spawn was not recognized");
+        eq(count("sinceSpecial"), 0, "personal spawn did not reset the streak");
+        ZealotTracker.recordKill(false);
+        yes((boolean) spawn.invoke(null, personalSpawn, 1_100L), "duplicate personal signal was not consumed");
+        eq(count("sinceSpecial"), 1, "duplicate spawn signal erased a later ordinary kill");
+        yes(!(boolean) spawn.invoke(null, "[MVP] Spirings: ▶ rare roll Special Zealot (1 in 383, 0.26139%) rolled 0.13772 HIT", 1_200L),
+                "another player's pasted spawn reset the streak");
+        yes(!(boolean) spawn.invoke(null, "rare roll Special Zealot (1 in 383, 0.26139%) rolled 3.13772 MISS", 1_200L),
+                "a missed spawn roll reset the streak");
+        yes(!(boolean) spawn.invoke(null, "Special Zealot has spawned nearby!", 1_200L),
+                "an unverified nearby-spawn message was treated as personal ownership");
+        eq(count("sinceSpecial"), 1, "nonpersonal spawn text changed the streak");
+        // The real network receiver also handles hidden detailed lines. Later eye
+        // payouts and the Special's own death preserve kills since its spawn.
+        line.invoke(null, "rare roll Special Zealot (1 in 383, 0.26139%) rolled 0.10010 HIT");
+        eq(count("sinceSpecial"), 0, "chat receiver ignored the successful spawn flag");
+        ZealotTracker.recordKill(false);
+        line.invoke(null, "EPIC DROP! Golden Eye");
+        line.invoke(null, "RARE DROP! (Summoning Eye)");
+        ZealotTracker.recordKill(true);
+        eq(count("sinceSpecial"), 1, "later Special death or eye payout reset the spawn streak");
         ZealotTracker.recordKill(false);
         reset.invoke(null);
         eq(count("sinceSpecial"), 0, "dry streak survived session reset");
@@ -125,6 +153,31 @@ public final class ZealotTrackerChecks {
         yes(breakdown.stream().anyMatch(v -> v.contains("/each")), "tooltip lost each-item price");
         yes(breakdown.stream().noneMatch(v -> v.contains("Built-in NPC") || v.contains("Learned sale") || v.contains("Custom")),
                 "profit tooltip exposed price provenance");
+        // Only the first four items stay on the HUD. These additions must still
+        // reach profit through personal announcements or a personal Zealot result.
+        line.invoke(null, "EPIC DROP! Warped Stone");
+        line.invoke(null, "RNGESUS DROP! [Lvl 1] Wolf");
+        line.invoke(null, "RNGESUS DROP! InfiniEye™");
+        line.invoke(null, "§8▍ §fZealot §a0.116 §8→ §aNull Ovoid §8· §7Special Zealot §837.47");
+        eq(count("warpedStones"), 1, "Warped Stone announcement was ignored");
+        eq(count("wolfPets"), 1, "Wolf announcement was ignored");
+        eq(count("infiniEyes"), 1, "InfiniEye announcement was ignored");
+        eq(count("nullOvoids"), 1, "personal compact Null Ovoid result was ignored");
+        line.invoke(null, "loot number: 0.11660 → Null Ovoid");
+        line.invoke(null, "[DRAGON] Someone: EPIC DROP! Warped Stone");
+        line.invoke(null, "[VIP+] Someone: RNGESUS DROP! [Lvl 1] Wolf");
+        line.invoke(null, "[DRAGON] Someone: RNGESUS DROP! InfiniEye™");
+        line.invoke(null, "RARE DROP! Null Ovoid");
+        line.invoke(null, "▍ Voidgloom 0.116 → Null Ovoid");
+        eq(count("warpedStones"), 1, "pasted Warped Stone drop was counted");
+        eq(count("wolfPets"), 1, "pasted Wolf drop was counted");
+        eq(count("infiniEyes"), 1, "pasted InfiniEye drop was counted");
+        eq(count("nullOvoids"), 1, "debug or Slayer ovoid was counted as a Zealot drop");
+        yes(ZealotTracker.profitValue(new int[]{0, 0, 0, 0, 0, 0, 1, 1, 1, 1}) == 106_000_000,
+                "new hidden drops did not use Eggy's editable default prices");
+        var newBreakdown = ZealotTracker.profitBreakdown(new int[]{0, 0, 0, 0, 0, 0, 1, 1, 1, 1});
+        yes(newBreakdown.stream().anyMatch(v -> v.contains("Warped Stone")), "tooltip lost Warped Stone");
+        yes(newBreakdown.stream().anyMatch(v -> v.contains("InfiniEye")), "tooltip lost InfiniEye");
         var partial = ZealotTracker.profitBreakdown(new int[]{0, 0, 1, 0, 1, 0});
         yes(partial.getLast().contains("unpriced"), "tooltip silently omitted unpriced contribution");
         yes(NpcPrices.ZEALOT_ITEMS.size() == 4, "hidden items expanded the compact item list");
@@ -139,6 +192,10 @@ public final class ZealotTrackerChecks {
         reset.invoke(null);
         eq(count("endermanPets"), 0, "hidden pet count survived session reset");
         eq(count("spicyWarts"), 0, "hidden wart count survived session reset");
+        eq(count("warpedStones"), 0, "Warped Stone count survived session reset");
+        eq(count("wolfPets"), 0, "Wolf count survived session reset");
+        eq(count("infiniEyes"), 0, "InfiniEye count survived session reset");
+        eq(count("nullOvoids"), 0, "Null Ovoid count survived session reset");
 
         System.out.println("Zealot tracker checks passed: " + checks);
     }

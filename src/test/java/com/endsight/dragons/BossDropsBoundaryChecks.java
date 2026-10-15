@@ -19,6 +19,7 @@ public final class BossDropsBoundaryChecks {
 
     public static void main(String[] args) throws Exception {
         Object oldDeath = staticValue("death"), oldReward = staticValue("rewardWindow"), oldWorld = staticValue("messageWorld");
+        Object oldSlayer = staticValue("slayer");
         Object oldAtoms = staticValue("atomWindow");
         List<?> oldHeld = List.copyOf((List<?>) staticValue("held"));
         try {
@@ -29,6 +30,7 @@ public final class BossDropsBoundaryChecks {
             setStatic("rewardWindow", oldReward);
             setStatic("atomWindow", oldAtoms);
             setStatic("messageWorld", oldWorld);
+            setStatic("slayer", oldSlayer);
             restoreHeld(oldHeld);
         }
         System.out.println("BossDropsBoundaryChecks: " + checks + " checks passed");
@@ -101,37 +103,62 @@ public final class BossDropsBoundaryChecks {
     }
 
     /**
-     * A T5 Voidgloom pays its atoms the way a normal one pays Ovoids: into the bag, with
-     * no drop line (Secrets, 2026-10-14). Fixture counts, not an assumed payout size.
+     * The recorded T5 entity is Riftborn Seraph. Its guaranteed atoms arrive in the
+     * bag, with no drop line. These are measured fixture deltas, not payout constants.
      */
     private static void t5Atoms() throws Exception {
         Object world = new Object();
         reset(world);
+        setStatic("slayer", "Riftborn");
         setStatic("atomWindow", null);
-        Ledger ledger = new Ledger("Voidgloom");
+        Ledger ledger = new Ledger("Riftborn");
 
         call("rewardSpawned", new Class<?>[]{String.class, String.class, int.class, Object.class, long.class},
-                "Voidgloom", "Null Ovoid", 100, world, 900L);
+                "Riftborn", "Null Ovoid", 100, world, 900L);
         call("atomSpawned", new Class<?>[]{String.class, String.class, int.class, Object.class, long.class},
-                "Voidgloom", "Null Atom", 40, world, 900L);
-        Object silent = slainWithAtoms("Voidgloom", 1_000L);
-        settle(silent, observed(value(silent, "reward"), "Voidgloom", "Null Ovoid", world, 104),
-                observed(value(silent, "atomReward"), "Voidgloom", "Null Atom", world, 43), ledger);
+                "Riftborn", "Null Atom", 40, world, 900L);
+        Object silent = slainWithAtoms("Riftborn", 1_000L);
+        equal(takePrevious(), silent);
+        equal(call("takeAtomReward", new Class<?>[]{}), null);
+        settle(silent, observed(value(silent, "reward"), "Riftborn", "Null Ovoid", world, 104),
+                observed(value(silent, "atomReward"), "Riftborn", "Null Atom", world, 43), ledger);
         equal(ledger.kills, 1);
         equal(ledger.drops.get("Null Atom"), 3);           // no drop line, still counted
         equal(ledger.drops.get("Null Ovoid"), 4);
 
-        // An announced atom lands in the bag too: the kill pays it once, not twice.
+        // A fifth-streak bonus does not replace the main rare item or get added
+        // twice when its atom is already included in the total inventory delta.
+        call("rewardSpawned", new Class<?>[]{String.class, String.class, int.class, Object.class, long.class},
+                "Riftborn", "Null Ovoid", 104, world, 1_500L);
         call("atomSpawned", new Class<?>[]{String.class, String.class, int.class, Object.class, long.class},
-                "Voidgloom", "Null Atom", 43, world, 1_500L);
-        hold(new Drops.Drop("Null Atom", 0, 1), 1_590L);
-        Object announced = slainWithAtoms("Voidgloom", 1_600L);
-        settle(announced, 0, observed(value(announced, "atomReward"), "Voidgloom", "Null Atom", world, 44), ledger);
-        equal(ledger.drops.get("Null Atom"), 4);
+                "Riftborn", "Null Atom", 43, world, 1_500L);
+        hold(new Drops.Drop("Riftstring", 1, 1), 1_589L);
+        call("hold", new Class<?>[]{Drops.Drop.class, long.class, boolean.class}, new Drops.Drop("Null Atom", 0, 1), 1_590L, true);
+        Object bonus = slainWithAtoms("Riftborn", 1_600L);
+        equal(takePrevious(), bonus);
+        settle(bonus, observed(value(bonus, "reward"), "Riftborn", "Null Ovoid", world, 106),
+                observed(value(bonus, "atomReward"), "Riftborn", "Null Atom", world, 47), ledger);
+        equal(ledger.kills, 2);
+        equal(ledger.drops.get("Null Atom"), 7);
+        equal(ledger.drops.get("Null Ovoid"), 6);
+        equal(ledger.drops.get("Riftstring"), 1);
 
-        // Atoms are measured for Voidgloom only; Riftborn's still count as announced.
-        equal(call("atomItem", new Class<?>[]{String.class}, "Riftborn"), null);
+        // If both the main roll and the independent bonus announce an atom, the
+        // two announcements count two, while the same two inventory items do not add two more.
+        call("atomSpawned", new Class<?>[]{String.class, String.class, int.class, Object.class, long.class},
+                "Riftborn", "Null Atom", 47, world, 2_000L);
+        hold(new Drops.Drop("Null Atom", 0, 1), 2_090L);
+        call("hold", new Class<?>[]{Drops.Drop.class, long.class, boolean.class}, new Drops.Drop("Null Atom", 0, 1), 2_091L, true);
+        Object announced = slainWithAtoms("Riftborn", 2_100L);
+        equal(takePrevious(), announced);
+        settle(announced, 0, observed(value(announced, "atomReward"), "Riftborn", "Null Atom", world, 49), ledger);
+        equal(ledger.drops.get("Null Atom"), 9);
+        equal(ledger.drops.get("Riftstring"), 1);
+        equal(observed(value(announced, "atomReward"), "Riftborn", "Null Atom", new Object(), 49), 0);
+
+        equal(call("atomItem", new Class<?>[]{String.class}, "Riftborn"), "Null Atom");
         equal(call("atomItem", new Class<?>[]{String.class}, "Voidgloom"), "Null Atom");
+        equal(call("atomItem", new Class<?>[]{String.class}, "Revenant"), null);
         reset(null);
         setStatic("atomWindow", null);
     }

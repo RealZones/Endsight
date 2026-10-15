@@ -9,6 +9,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.multiplayer.ClientLevel;
+import com.endsight.zealots.Zealots;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
@@ -44,6 +46,10 @@ public final class Beacon {
     private static double range = 128;
     private static double beamBlocks = 40;
     private static double brightness = 100;
+    private static ClientLevel targetWorld;
+    private static double targetRange;
+    private static final Entity[] targets = new Entity[2];
+    private static final long[] targetReadAt = new long[2];
 
     public static Module module() {
         return new Module("visual.beacon", "Boss Beacon",
@@ -72,15 +78,19 @@ public final class Beacon {
     }
 
     private static void draw(GuiGraphicsExtractor g) {
-        if (!enabled) return;
         Minecraft mc = Minecraft.getInstance();
+        if (targetWorld != mc.level || targetRange != range) {
+            targetWorld = mc.level; targetRange = range;
+            targets[0] = targets[1] = null; targetReadAt[0] = targetReadAt[1] = 0;
+        }
+        if (!enabled) return;
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.options.hideGui) return;
         if (!com.endsight.hud.Area.end()) return;
 
         // One beam each; both when both are up, which is exactly when you want them.
-        if (protector && Protector.protectorActive()) beam(g, mc, player, find(player, PROTECTOR), sw(mc), sh(mc));
-        if (warden && Protector.wardenUp()) beam(g, mc, player, find(player, WARDEN), sw(mc), sh(mc));
+        if (protector && Protector.protectorActive()) beam(g, mc, player, target(player, PROTECTOR, 0), sw(mc), sh(mc));
+        if (warden && Protector.wardenUp()) beam(g, mc, player, target(player, WARDEN, 1), sw(mc), sh(mc));
     }
 
     private static int sw(Minecraft mc) {
@@ -112,72 +122,58 @@ public final class Beacon {
     private static final int GLOW = 0xFFC24BFF;      // saturated purple around it
 
     /**
-     * The shaft: three layers per step - a wide soft glow, a mid body, a near-white core.
-     *
-     * One flat column read as a stray magenta thread rather than as light. What makes
-     * something look like a beam is the falloff: bright and narrow in the middle, dimmer
-     * and wider outside it. Three layers is the cheapest thing that reads that way with
-     * only fill to draw with.
-     *
-     * Stepped along whichever screen axis is LONGER, one pixel at a time. The first
-     * version walked a fixed count of steps capped at 1600, which is fine at range and
-     * became a ladder up close: a 40-block beam seen from a few metres away spans several
-     * thousand screen pixels, so consecutive steps landed two or three pixels apart and
-     * left gaps between them. Iterating the dominant axis guarantees exactly one step per
-     * pixel at any distance and any angle, and costs nothing extra because rows outside
-     * the viewport are skipped rather than drawn.
+     * Native transformed rectangles replace the former three fills per screen pixel.
+     * Clipping comes first: a near-camera projection can be millions of pixels long,
+     * and skipping invisible pixels inside that old loop still visited every one.
+     * Twenty-four small gradient sections retain the taper and glow with at most 72
+     * submitted rectangles, independent of resolution and projected beam length.
      */
-    private static void drawBeam(GuiGraphicsExtractor g, Vec3 baseView, double[] baseP,
-                                 int sw, int sh) {
-        Vec3 topView = baseView.add(0, beamBlocks, 0);
-        double[] topP = Project.viewToScreen(topView, sw, sh);
-
-        double x0 = baseP[0], y0 = baseP[1];
-        double x1 = topP != null ? topP[0] : x0;
-        // Behind the camera means you are underneath it looking up, and the beam still
-        // rises: send it off the top of the screen rather than dropping it downward.
-        double y1 = topP != null ? topP[1] : -sh;
-
-        double dx = x1 - x0, dy = y1 - y0;
-        boolean vertical = Math.abs(dy) >= Math.abs(dx);
-        int span = (int) Math.round(Math.abs(vertical ? dy : dx));
-        if (span <= 0) return;
-
-        double wide = Project.pixelsPerBlock(baseView.z, sh) * 0.5;
-        wide = Math.max(4, Math.min(70, wide));
+    private static void drawBeam(GuiGraphicsExtractor g, Vec3 baseView, double[] baseP, int sw, int sh) {
+        double[] topP = Project.viewToScreen(baseView.add(0, beamBlocks, 0), sw, sh);
+        double x1 = topP == null ? baseP[0] : topP[0];
+        double y1 = topP == null ? -sh : topP[1];
+        BeamGeometry.Visible visible = BeamGeometry.clip(baseP[0], baseP[1], x1, y1, sw, sh);
+        if (visible == null) return;
+        double wide = Math.clamp(Project.pixelsPerBlock(baseView.z, sh) * .5, 4, 70);
+        double length = visible.length();
+        int sections = visible.segments();
         float bright = (float) (brightness / 100.0);
-
-        for (int i = 0; i <= span; i++) {
-            double t = i / (double) span;
-            int x = (int) Math.round(x0 + dx * t);
-            int y = (int) Math.round(y0 + dy * t);
-            if (x < -80 || x > sw + 80 || y < -2 || y > sh + 2) continue;
-
-            double w = wide * (1 - 0.25 * t);
-            float fade = (1 - (float) (t * t) * 0.85f) * bright;
-            if (fade <= 0.01f) continue;
-
-            if (vertical) {
-                span(g, x, y, w, Draw.alpha(GLOW, Math.min(1f, 0.20f * fade)));
-                span(g, x, y, w * 0.45, Draw.alpha(GLOW, Math.min(1f, 0.55f * fade)));
-                span(g, x, y, Math.max(2, w * 0.16), Draw.alpha(CORE, Math.min(1f, 0.95f * fade)));
-            } else {
-                // Looking almost along the beam, so its thickness runs vertically.
-                vspan(g, x, y, w, Draw.alpha(GLOW, Math.min(1f, 0.20f * fade)));
-                vspan(g, x, y, w * 0.45, Draw.alpha(GLOW, Math.min(1f, 0.55f * fade)));
-                vspan(g, x, y, Math.max(2, w * 0.16), Draw.alpha(CORE, Math.min(1f, 0.95f * fade)));
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate((float) visible.x(), (float) visible.y());
+        pose.rotate((float) (Math.atan2(visible.dy(), visible.dx()) - Math.PI / 2));
+        try {
+            for (int i = 0; i < sections; i++) {
+                double start = visible.from() + (visible.to() - visible.from()) * i / sections;
+                double end = visible.from() + (visible.to() - visible.from()) * (i + 1) / sections;
+                double width = wide * (1 - .25 * (start + end) / 2);
+                float alpha0 = (float) (1 - .85 * start * start) * bright;
+                float alpha1 = (float) (1 - .85 * end * end) * bright;
+                int y0 = (int) Math.round(length * i / sections);
+                int y2 = (int) Math.round(length * (i + 1) / sections);
+                if (y2 <= y0) continue;
+                gradient(g, width, y0, y2, GLOW, alpha0 * .20f, alpha1 * .20f);
+                gradient(g, width * .45, y0, y2, GLOW, alpha0 * .55f, alpha1 * .55f);
+                gradient(g, Math.max(2, width * .16), y0, y2, CORE, alpha0 * .95f, alpha1 * .95f);
             }
+        } finally { pose.popMatrix(); }
+    }
+
+    private static void gradient(GuiGraphicsExtractor g, double width, int y0, int y1, int colour, float start, float end) {
+        int half = Math.max(1, (int) Math.round(width / 2));
+        g.fillGradient(-half, y0, half, y1,
+                Draw.alpha(colour, Math.min(1, start)), Draw.alpha(colour, Math.min(1, end)));
+    }
+
+    private static Entity target(LocalPlayer player, String match, int index) {
+        long now = System.currentTimeMillis();
+        Entity known = targets[index];
+        if (now < targetReadAt[index] || now - targetReadAt[index] >= 100
+                || known != null && known.isRemoved()) {
+            targets[index] = known = find(player, match);
+            targetReadAt[index] = now;
         }
-    }
-
-    private static void span(GuiGraphicsExtractor g, int cx, int y, double w, int color) {
-        int half = (int) Math.max(1, Math.round(w / 2));
-        Draw.rect(g, cx - half, y, half * 2, 1, color);
-    }
-
-    private static void vspan(GuiGraphicsExtractor g, int x, int cy, double h, int color) {
-        int half = (int) Math.max(1, Math.round(h / 2));
-        Draw.rect(g, x, cy - half, 1, half * 2, color);
+        return known != null && known.distanceToSqr(player) <= range * range ? known : null;
     }
 
     /**
@@ -230,6 +226,6 @@ public final class Beacon {
         Component name = e.getCustomName();
         if (name == null) name = e.getDisplayName();
         if (name == null) return null;
-        return name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        return Zealots.strip(name.getString());
     }
 }

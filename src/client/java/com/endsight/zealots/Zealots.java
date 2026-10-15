@@ -69,6 +69,24 @@ public final class Zealots {
     }
 
     public static String strip(String s) {
-        return s == null ? "" : s.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        if (s == null) return "";
+        int marker = s.indexOf('§');
+        if (marker < 0) return s;
+        StringBuilder plain = null;
+        int from = 0;
+        for (int i = marker; i + 1 < s.length(); i++) {
+            if (s.charAt(i) != '§' || !formatCode(s.charAt(i + 1))) continue;
+            if (plain == null) plain = new StringBuilder(s.length());
+            plain.append(s, from, i);
+            from = ++i + 1;
+        }
+        // Names are stripped in entity scans as well as menus. Compiling a regex
+        // for each name dominated allocations in the recorded performance sample.
+        return plain == null ? s : plain.append(s, from, s.length()).toString();
+    }
+
+    private static boolean formatCode(char c) {
+        return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+                || c >= 'k' && c <= 'o' || c >= 'K' && c <= 'O' || c == 'r' || c == 'R' || c == 'x' || c == 'X';
     }
 }

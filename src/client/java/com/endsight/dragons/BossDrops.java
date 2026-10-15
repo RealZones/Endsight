@@ -63,8 +63,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * summary box the server prints puts you at #1, #2 or #3 - and the Warden pays whoever
  * placed its catalyst regardless, so a Warden Catalyst leaving your inventory just
  * before "the ground trembles" makes that Warden yours at any place. A slayer boss is
- * always yours; nobody else's quest says "SLAYER BOSS SLAIN". And a boss that gave you
- * a drop is yours whatever else was seen, because the drop is the proof.
+ * always yours; nobody else's quest says "SLAYER BOSS SLAIN". A dragon drop alone
+ * is not proof of an eye, so it never claims a dragon you did not place on.
  *
  * <h2>Reading the death</h2>
  * The kill line, the summary box with your place in it, and the drops all land inside
@@ -106,6 +106,7 @@ public final class BossDrops {
     private static final List<String> KINDS = List.of("Young", "Old", "Strong", "Wise", "Unstable", "Superior", "Protector", "Golden",
             "Berserk", "Chaotic", "Arcane");
     private static final Pattern DRAGON_DEAD = Pattern.compile("^☠ The (?:(.+?) )?Dragon has de-spawned");
+    private static final Pattern DRAGON_SPAWNED = Pattern.compile("^☠ The (?:(.+?) )?Dragon has spawned");
     private static final Pattern OBTAINED = Pattern.compile("^(?:\\[[^\\]]+\\] )?(\\S+?)(?: \\S)? has obtained (.+?)!$");
     /**
      * "Here is your loot from the last dragon:" and a line per item, ten seconds after the kill.
@@ -158,6 +159,8 @@ public final class BossDrops {
     private static final long BEFORE_MS = 2_000;
     /** A catalyst leaving your hands this long before the tremble was you placing it. */
     private static final long CATALYST_MS = 15_000;
+    private static final long DRAGON_LINGER_MS = 60_000;
+    private static final long DRAGON_PAYOUT_MS = 30_000;
     /** What zealots and the golden ones drop: never a boss's, whatever the timing says. */
     private static final Set<String> NEST = Set.of("summoning eye", "enderman", "null ovoid", "ender pearl",
             "spicy wart", "warped stone", "infinieye", "zealot talisman", "warden catalyst");
@@ -188,6 +191,9 @@ public final class BossDrops {
     private static boolean compactHud = true;
     private static String hudPeriod = "Session";
     private static String displayedBoss = DRAGON;
+    private static String dragonView = "Latest";
+    private static long dragonActivityAt;
+    private static Object dragonActivityWorld;
     private static String minTier = "Rare and up";
     /** Which drops make the command list - everything is counted. */
 
@@ -285,7 +291,8 @@ public final class BossDrops {
     private static final int HELD_LIMIT = 64;
     private static Object messageWorld;
     private static int eyes;
-    private static long summaryAt, dragonKillAt;
+    private static long summaryAt, dragonKillAt, ownedDragonPayoutAt;
+    private static Object summaryWorld, ownedDragonPayoutWorld;
     /**
      * Dragons since the last Superior and since the last Ender Dragon pet. A save from
      * before these existed has totals but no order, so each starts unknown and counts up
@@ -390,7 +397,9 @@ public final class BossDrops {
                                 () -> showHud, v -> showHud = v),
                         new Setting.Choice("Period", "Switch the counts shown on the HUD.",
                                 List.of("Session", "All Time"), () -> hudPeriod, v -> hudPeriod = v),
-                        new Setting.Toggle("Compact list", "Show the five highest-value items; /drops keeps the full list.",
+                        new Setting.Choice("Dragon view", "Latest dragon or all dragons; click the HUD title to switch.",
+                                List.of("Latest", "All Dragons"), () -> dragonView, v -> dragonView = v),
+                        new Setting.Toggle("Compact list", "Show the first five ordered items; /drops keeps the full list.",
                                 () -> compactHud, v -> compactHud = v),
                         new Setting.Choice("Show from",
                                 "Lowest dragon drop tier printed by /drops.",
@@ -441,6 +450,7 @@ public final class BossDrops {
             if (line.startsWith(SUMMARY)) {
                 settleSummary();
                 summaryAt = now;
+                summaryWorld = messageWorld;
                 return;
             }
             if (summaryAt != 0 && now - summaryAt < SUMMARY_MS) {
@@ -516,9 +526,19 @@ public final class BossDrops {
                 show(DRAGON);
                 return;
             }
+            if (DRAGON_SPAWNED.matcher(line).find()) {
+                // A new dragon closes the previous payout window even if its
+                // summary was delayed or omitted.
+                clearOwnedDragonPayout();
+                if (eyes == 0) clearDragonActivity();
+                return;
+            }
             // "has awoken" is broadcast to the whole lobby, so it says nothing about who
             // placed an eye; counting it as one made every dragon yours.
             if (line.contains(EGG_SPAWNED)) {
+                // The loot summary follows the egg respawn. Keep proof of our eye
+                // across that boundary even when the de-spawn line was missed.
+                if (eyes > 0) rememberOwnedDragonPayout(now);
                 eyes = 0;
                 return;
             }
@@ -531,9 +551,13 @@ public final class BossDrops {
                 // Yours if you put an eye in. Its drops are announced by name, seconds
                 // later, or as a debug loot line right after the summary box.
                 if (eyes > 0) {
+                    rememberOwnedDragonPayout(now);
                     String boss = m.group(1) == null ? DRAGON : m.group(1) + " Dragon";
                     open(boss, now, false).place = 1;
                     show(boss);
+                } else {
+                    clearOwnedDragonPayout();
+                    clearDragonActivity();
                 }
                 eyes = 0;
                 return;
@@ -572,8 +596,9 @@ public final class BossDrops {
                     // one obtained line in six landed inside that wait (201 of 1,310 within 2 s).
                     // Dropped straight away, a pet reset "since pet" and the kill then made it
                     // 1. Held with the kill, it is counted after it.
-                    if (death != null && isDragon(death.boss)) death.drops.add(obtainedDrop(raw, item));
-                    else drop(lastDragon, obtainedDrop(raw, item));
+                    if (death != null && isDragon(death.boss) && death.place <= PLACES)
+                        death.drops.add(obtainedDrop(raw, item));
+                    else if (ownedDragonPayout(now, messageWorld)) drop(lastDragon, obtainedDrop(raw, item));
                 }
             }
         });
@@ -583,10 +608,15 @@ public final class BossDrops {
             if (mc.player != null && menuTicks % 5 == 0) observeQuestSidebar(mc, now);
             rewardWorld(mc.player == null ? null : mc.level);
             if (death != null && now - death.at > HOLD_MS) settle();
-            if (summaryAt != 0 && now - summaryAt >= SUMMARY_MS) settleSummary();
+            if (mc.player != null && summaryAt != 0 && now - summaryAt >= SUMMARY_MS) settleSummary();
             if (mc.player == null) {
                 catalysts = -1;
                 eyes = 0;
+                clearDragonActivity();
+                clearOwnedDragonPayout();
+                summaryAt = 0;
+                summaryWorld = null;
+                summary.clear();
                 rewardWindow = null;
                 atomWindow = null;
                 held.clear();
@@ -616,6 +646,13 @@ public final class BossDrops {
                     int[] bounds = HudLayout.bounds("dragon.bossdrops");
                     if (periodHit(bounds, HudLayout.scale("dragon.bossdrops"), event.x(), event.y(), client.font.width(periodText(hudPeriod)))) {
                         hudPeriod = hudPeriod.equals("Session") ? "All Time" : "Session";
+                        com.endsight.Config.save(com.endsight.EndsightClient.registry());
+                        return false;
+                    }
+                    String boss = hudBoss();
+                    if (isDragon(displayedBoss) && titleHit(bounds, HudLayout.scale("dragon.bossdrops"),
+                            event.x(), event.y(), client.font.width(boss + " Drops"))) {
+                        dragonView = dragonView.equals("All Dragons") ? "Latest" : "All Dragons";
                         com.endsight.Config.save(com.endsight.EndsightClient.registry());
                         return false;
                     }
@@ -887,7 +924,7 @@ public final class BossDrops {
                                java.util.function.ToIntFunction<String> tier) {
         if (d == null) return;
         boolean mine = d.place <= PLACES
-                || (d.dead && !d.drops.isEmpty())
+                || (!isDragon(d.boss) && d.dead && !d.drops.isEmpty())
                 || (d.dead && WARDEN.equals(d.boss) && catalyst);
         if (WARDEN.equals(d.boss)) catalyst = false;
         if (!mine) return;
@@ -987,15 +1024,42 @@ public final class BossDrops {
         return (int) Math.min(Integer.MAX_VALUE, quantity);
     }
 
-    /** Count what the dragon's loot summary listed, and the kill if the eye lines missed it. */
+    private static void rememberOwnedDragonPayout(long now) {
+        ownedDragonPayoutAt = now;
+        ownedDragonPayoutWorld = messageWorld;
+    }
+
+    private static void clearOwnedDragonPayout() {
+        ownedDragonPayoutAt = 0;
+        ownedDragonPayoutWorld = null;
+    }
+
+    private static void clearDragonActivity() {
+        dragonActivityAt = 0;
+        dragonActivityWorld = null;
+    }
+
+    private static boolean ownedDragonPayout(long now, Object world) {
+        return ownedDragonPayoutAt > 0 && world != null && world == ownedDragonPayoutWorld
+                && now >= ownedDragonPayoutAt && now - ownedDragonPayoutAt <= DRAGON_PAYOUT_MS;
+    }
+
+    /** Count a summary only when this client's eye placement identified that run as ours. */
     private static void settleSummary() {
         if (summaryAt == 0) return;
+        long at = summaryAt;
         summaryAt = 0;
+        Object world = summaryWorld;
+        summaryWorld = null;
+        if (!ownedDragonPayout(at, world)) {
+            summary.clear();
+            return;
+        }
         List<String> items = new ArrayList<>();
         for (String[] s : summary) items.add(s[1]);
         String boss = summaryBoss(items, lastDragon);
-        // The summary goes only to players the dragon paid, so it is a kill of yours. The
-        // usual kill is counted ~7 s before it arrives; one that was missed is counted here.
+        // The usual kill is counted ~7 s before this. The summary repairs a
+        // missed de-spawn line only when we observed our own eye placement.
         if (System.currentTimeMillis() - dragonKillAt > 15_000) kill(boss);
         for (String[] s : summary) {
             if (s[1].endsWith(" Fragment")) continue;
@@ -1154,7 +1218,11 @@ public final class BossDrops {
     /** Keep the last dragon kind for its later reward announcements. */
     private static void show(String boss) {
         displayedBoss = boss;
-        if (isDragon(boss)) lastDragon = boss;
+        if (isDragon(boss)) {
+            lastDragon = boss;
+            dragonActivityAt = System.currentTimeMillis();
+            dragonActivityWorld = messageWorld;
+        }
     }
 
     private static void drawHud(GuiGraphicsExtractor g) {
@@ -1166,14 +1234,21 @@ public final class BossDrops {
 
     private static boolean bossHudVisible() {
         String boss = hudBoss();
-        return enabled && showHud && bossHudMatches(boss) && Area.end();
+        return enabled && showHud && Area.end() && bossHudMatches(boss,
+                System.currentTimeMillis(), Area.where() == Area.Where.END, Minecraft.getInstance().level);
     }
 
-    private static boolean bossHudMatches(String boss) {
-        // The generic card is the dragon/lobby-boss tracker. Excluding dragons
-        // removed its original job, while permitting Revenant duplicated Slayer
-        // Profit with the same costs and profit rows under a second title.
-        return !isSlayer(boss);
+    private static boolean bossHudMatches(String boss, long now, boolean inEnd, Object world) {
+        if (isSlayer(boss)) return false;
+        // The card defaults to Dragon at startup. Without an owned-run gate it
+        // showed old totals immediately on join, including while area was unknown.
+        return !isDragon(boss) || dragonHudVisible(now, inEnd, world);
+    }
+
+    private static boolean dragonHudVisible(long now, boolean inEnd, Object world) {
+        return inEnd && world != null && world == dragonActivityWorld
+                && (eyes > 0 || dragonActivityAt > 0 && now >= dragonActivityAt
+                && now - dragonActivityAt < DRAGON_LINGER_MS);
     }
 
     private static boolean profitHudVisible(ProfitHud hud) {
@@ -1205,7 +1280,8 @@ public final class BossDrops {
      * until its first loot arrived. A quest whose family is not read yet keeps the last boss.
      */
     private static String hudBoss() {
-        return profitQuestActive && isSlayer(slayer) && !UNKNOWN_ENDERMAN.equals(slayer) ? slayer : displayedBoss;
+        String boss = profitQuestActive && isSlayer(slayer) && !UNKNOWN_ENDERMAN.equals(slayer) ? slayer : displayedBoss;
+        return isDragon(boss) && dragonView.equals("All Dragons") ? DRAGON : boss;
     }
 
     private static String periodText(String period) { return period.equals("All Time") ? "[Total]" : "[Session]"; }
@@ -1215,6 +1291,12 @@ public final class BossDrops {
         // Reserve only the header's small period label, never the rows or inventory slots beneath.
         return mouseX >= bounds[0] + bounds[2] - (textWidth + 4) * scale && mouseX < bounds[0] + bounds[2]
                 && mouseY >= bounds[1] && mouseY < bounds[1] + 12 * scale;
+    }
+
+    private static boolean titleHit(int[] bounds, float scale, double mouseX, double mouseY, int textWidth) {
+        return bounds != null && mouseX >= bounds[0] + TrackerHud.PAD * scale
+                && mouseX < bounds[0] + (TrackerHud.PAD + textWidth) * scale
+                && mouseY >= bounds[1] && mouseY < bounds[1] + (TrackerHud.PAD + TrackerHud.HEADER_H) * scale;
     }
 
     private static String itemColour(String item) {
@@ -1258,6 +1340,12 @@ public final class BossDrops {
                 }).map(e -> e.drop).toList();
     }
 
+    private static List<Map.Entry<String, Integer>> hudSorted(String boss, Map<String, Integer> drops) {
+        // Dragon rows follow the player's editable drops.txt tiers. Slayer and
+        // other boss rows retain their useful total-value ordering.
+        return isDragon(boss) ? sorted(boss, drops) : valueSorted(drops);
+    }
+
     private static boolean missingValues(Count c) {
         return c.drops.entrySet().stream().anyMatch(e -> e.getValue() > 0 && NpcPrices.priceInfo(e.getKey()) == null);
     }
@@ -1273,7 +1361,9 @@ public final class BossDrops {
 
     private static int[] drawHudAt(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
         String boss = sample ? GOLEM : hudBoss();
-        return drawCountsHudAt(g, font, x, y, sample, boss, hudPeriod, compactHud, boss + " Drops");
+        String title = boss + " Drops";
+        if (isDragon(boss) && HudLayout.interactiveScreen(Minecraft.getInstance().screen)) title = "§n" + title;
+        return drawCountsHudAt(g, font, x, y, sample, boss, hudPeriod, compactHud, title);
     }
 
     private static int[] drawProfitHudAt(ProfitHud hud, GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
@@ -1381,8 +1471,7 @@ public final class BossDrops {
         }
         List<HudCard.Row> rows = new ArrayList<>();
         rows.add(new HudCard.Row("Kills", sample ? "12" : String.format(Locale.ROOT, "%,d", c.kills)));
-        // Price order applies to the short HUD; the command retains the full rarity list.
-        List<Map.Entry<String, Integer>> list = valueSorted(c.drops);
+        List<Map.Entry<String, Integer>> list = hudSorted(boss, c.drops);
         int limit = compact ? 5 : 10;
         for (Map.Entry<String, Integer> drop : list.stream().limit(limit).toList()) {
             String value = String.format(Locale.ROOT, "%,d", drop.getValue());
@@ -1396,10 +1485,9 @@ public final class BossDrops {
         if (isSlayer(boss)) {
             rows.add(new HudCard.Row("Spawn costs", costText(c), Theme.neg()));
             long profit = profit(c);
-            String unknown = missingValues(c) || c.unknownCosts > 0 ? " + ?" : "";
-            rows.add(new HudCard.Row("Profit", compactCoins(profit) + unknown, profit < 0 ? Theme.neg() : Theme.pos()));
+            rows.add(new HudCard.Row("Profit", compactCoins(profit), profit < 0 ? Theme.neg() : Theme.pos()));
             rows.add(new HudCard.Row("Profit/h", c.activeMs == 0 || c.incompleteTime ? "—"
-                    : compactCoins(Math.round(profit * (3_600_000.0 / c.activeMs))) + unknown,
+                    : compactCoins(Math.round(profit * (3_600_000.0 / c.activeMs))),
                     profit < 0 ? Theme.neg() : Theme.pos()));
         }
         return rows;
@@ -1445,18 +1533,19 @@ public final class BossDrops {
         return Math.max(Drops.tierOf(item), seen.getOrDefault(item, 0));
     }
 
-    /**
-     * Where an item sorts: its own rarity when its lore has been seen, else the tier it
-     * was listed or announced at, on the same scale. Without the fallback an item never
-     * held - a talisman straight into the bag - ranked below everything, and a Golden
-     * Ghoul Talisman sat under a Zombie Talisman while drawn in epic purple.
-     */
+    /** Dragon HUD order uses the editable category; observed pet rarity colors the row only. */
+    private static int sortTier(String item) {
+        int listed = Drops.listedTierOf(item);
+        return listed >= 0 ? listed : tier(item);
+    }
+
+    /** Unlisted items fall back to their observed rarity. */
     private static int rankOf(String item) {
-        // The tier list is by rarity AND value and it wins when it names the item: the
-        // game's colour put a gold Tiger pet above a purple Dragon Horn.
-        int r = Drops.listed(item) ? -1 : Rarity.rank(item);
+        // A gold Tiger or Enderman pet must not jump ahead of items listed above it.
+        int listed = Drops.listedTierOf(item);
+        int r = listed >= 0 ? -1 : Rarity.rank(item);
         if (r > 0) return r;
-        return switch (tier(item)) {
+        return switch (listed >= 0 ? listed : tier(item)) {
             case 3 -> 5;
             case 2 -> 4;
             case 1 -> 3;
@@ -1487,7 +1576,13 @@ public final class BossDrops {
                 + (thisSession ? " §8(session)" : " §8(all time)")));
         if (boss.equals(LEGACY_ENDERMAN)) mc.player.sendSystemMessage(Component.literal(
                 "§7Saved before family separation; these kills and drops may include Voidgloom and Riftborn."));
-        if (isSlayer(boss)) mc.player.sendSystemMessage(Component.literal("§7Spawn costs: §c" + costText(c)));
+        if (isSlayer(boss)) {
+            mc.player.sendSystemMessage(Component.literal("§7Spawn costs: §c" + costText(c)));
+            if (missingValues(c) || c.unknownCosts > 0) mc.player.sendSystemMessage(Component.literal(
+                    "§8Profit excludes unpriced drops and unrecorded spawn fees."));
+            if (c.historicalCost > 0) mc.player.sendSystemMessage(Component.literal(
+                    "§8Older spawn fees are estimated from kills; past failures were not recorded."));
+        }
         if (DRAGON.equals(boss)) {
             StringBuilder kinds = new StringBuilder("§8  ");
             for (String k : KINDS) if (of(m, k + " Dragon").kills > 0) kinds.append(k).append(' ').append(of(m, k + " Dragon").kills).append("  ");
@@ -1735,8 +1830,9 @@ public final class BossDrops {
 
     private static String costText(Count c) {
         long coins = c.spawnCost + c.historicalCost;
-        String value = (c.historicalCost > 0 ? "~" : "") + "-" + compactCoins(coins);
-        return c.unknownCosts > 0 ? (coins == 0 ? "Unknown" : value + " + ?") : value;
+        // The estimate/unknown context belongs in the /drops explanation, not next
+        // to a number that already crowds the HUD's right column.
+        return c.unknownCosts > 0 && coins == 0 ? "Unknown" : "-" + compactCoins(coins);
     }
 
     private static String compactCoins(long coins) {
@@ -1759,13 +1855,17 @@ public final class BossDrops {
         int floor = isSlayer(boss) ? 0 : Drops.TIERS.indexOf(minTier);
         List<Map.Entry<String, Integer>> out = new ArrayList<>();
         for (Map.Entry<String, Integer> e : drops.entrySet()) {
-            if (tier(e.getKey()) >= floor && !hidden(e.getKey())) out.add(e);
+            if (sortTier(e.getKey()) >= floor && !hidden(e.getKey())) out.add(e);
         }
         out.sort((a, b) -> {
             int r = Integer.compare(rankOf(b.getKey()), rankOf(a.getKey()));
             if (r != 0) return r;
-            int t = Integer.compare(tier(b.getKey()), tier(a.getKey()));
+            int t = Integer.compare(sortTier(b.getKey()), sortTier(a.getKey()));
             if (t != 0) return t;
+            // drops.txt is an ordered preference list inside each tier. Its
+            // line position beats quantity and the game's item rarity.
+            int order = Integer.compare(Drops.orderOf(a.getKey()), Drops.orderOf(b.getKey()));
+            if (order != 0) return order;
             // Tied on the list, so let the item say: a common Warden pet is not a
             // Giant's Core, though the list calls both legendary.
             int q = Integer.compare(Rarity.rank(b.getKey()), Rarity.rank(a.getKey()));

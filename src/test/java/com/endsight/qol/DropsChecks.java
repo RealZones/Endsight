@@ -86,6 +86,18 @@ public final class DropsChecks {
         equal(matching.credit(new Drops.Drop("[Lvl 1] Ender Dragon", 2), DropDeduplicator.Source.DEBUG, 8_000), 1);
         equal(matching.credit(new Drops.Drop("[Lvl 1] Ender Dragon", 3), DropDeduplicator.Source.ANNOUNCEMENT, 8_001), 1);
 
+        // An older copied config reorders its entries ahead of new bundled
+        // entries, even though the bundle was read first for default coverage.
+        java.util.Map<String, Object> layered = new java.util.LinkedHashMap<>();
+        var readLayer = Drops.class.getDeclaredMethod("read", java.util.List.class, java.util.Map.class, boolean.class);
+        readLayer.setAccessible(true);
+        readLayer.invoke(null, java.util.List.of("epic Dragon Horn", "epic Golden Droplet", "epic New Scale"), layered, false);
+        readLayer.invoke(null, java.util.List.of("epic Golden Droplet", "epic Dragon Horn"), layered, true);
+        field.set(null, java.util.List.copyOf(layered.values()));
+        equal(Drops.orderOf("Golden Droplet") < Drops.orderOf("Dragon Horn"), true);
+        equal(Drops.orderOf("Dragon Horn") < Drops.orderOf("New Scale"), true);
+        equal(Drops.listing(2), "Golden Droplet, Dragon Horn, New Scale.");
+
         System.out.println("DropsChecks: " + checks + " checks passed");
     }
 

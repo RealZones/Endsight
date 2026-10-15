@@ -34,16 +34,10 @@ import java.util.Set;
 /**
  * The Quiz puzzle: three questions, a button under each answer.
  *
- * This solver ships knowing nothing. See {@link QuizLogic} for why - in short, every
- * other puzzle here was written against the other game's strings and had to be
- * corrected once the real ones showed up, and a wrong quiz answer fails the room
- * rather than merely showing nothing.
- *
- * What it does instead: read the question off the hologram, read the options off the
- * labels above the buttons, and say the answer when it has seen the question before.
- * When it has not, it says so plainly and watches. A press is remembered but not
- * believed; it is written down only when the counter moves on, because the puzzle
- * advancing is the server confirming the answer was right.
+ * The public jar includes answers confirmed in the current server, and a player's
+ * later discoveries or corrections override them in a local file. It reads the
+ * question and options from the room instead of trusting old A/B/C positions. A
+ * press is remembered but not believed until the server confirms it was right.
  */
 public final class Quiz {
     private static final String ID = "dungeon.quiz";

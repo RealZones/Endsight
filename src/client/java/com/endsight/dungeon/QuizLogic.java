@@ -1,6 +1,7 @@
 package com.endsight.dungeon;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,16 +16,9 @@ import java.util.regex.Pattern;
 /**
  * The Quiz puzzle's answer book, and the parsing around it.
  *
- * Deliberately NOT a table of answers shipped in the jar. Every other puzzle in this
- * package was first written against the other game's script and had to be fixed twice
- * in one evening - Three Weirdos only understood that game's clue wording, and Tic Tac
- * Toe matched its hint sentence so exactly that one reworded line disabled the solver
- * with no symptom at all. A hardcoded quiz would be the same mistake a third time, and
- * worse: a wrong answer here fails the room rather than just showing nothing.
- *
- * So it learns. A question whose answer is unknown is reported as unknown, the player
- * answers it themselves, and the pair is written down when the server confirms it. It
- * is wrong at most once per question and needs no maintenance when the questions change.
+ * Confirmed answers ship as defaults. Each player's own answers and exclusions stay in
+ * a separate file and override those defaults, so a corrected server answer can be
+ * learned without changing the jar or erasing the player's book.
  *
  * The book is plain text, one "question = answer" per line, so it can be read, edited
  * and shared by hand - a few players swapping files fills it far faster than any one
@@ -152,8 +146,10 @@ public final class QuizLogic {
         return Math.abs(dx) >= Math.abs(dz) ? new int[]{(int) Math.signum(dx), 0} : new int[]{0, (int) Math.signum(dz)};
     }
 
-    /** The learned question/answer pairs, backed by a file. */
+    /** Bundled answers with per-player corrections and discoveries backed by a file. */
     public static final class Book {
+        private static final String DEFAULT_RESOURCE = "/endsight-quiz-answers.txt";
+        private final Map<String, String> defaults = new LinkedHashMap<>();
         private final Map<String, String> answers = new LinkedHashMap<>();
         // Wrong answers are worth as much as right ones here. Three options and two
         // failures name the third by elimination, so a lost room still teaches
@@ -164,7 +160,11 @@ public final class QuizLogic {
 
         /** The stored answer for a question, or null when it has not been seen. */
         public String answer(String question) {
-            return answers.get(normalize(question));
+            String key = normalize(question);
+            String value = answers.getOrDefault(key, defaults.get(key));
+            if (value != null && wrong.getOrDefault(key, java.util.Set.of()).stream()
+                    .anyMatch(option -> rulesOut(option, value))) return null;
+            return value;
         }
 
         public boolean knows(String question) {
@@ -175,9 +175,13 @@ public final class QuizLogic {
         public boolean exclude(String question, String option) {
             String key = normalize(question);
             if (key.isEmpty() || option == null || option.isBlank()) return false;
+            // A confirmed wrong press must silence a stale saved/default answer.
+            // Otherwise the solver would keep pointing to the same failed button.
+            boolean removed = answer(key) != null && rulesOut(option, answer(key))
+                    && answers.remove(key) != null;
             boolean added = wrong.computeIfAbsent(key, k -> new java.util.LinkedHashSet<>()).add(option.trim());
-            dirty |= added;
-            return added;
+            dirty |= added || removed;
+            return added || removed;
         }
 
         public java.util.Set<String> excluded(String question) {
@@ -201,7 +205,9 @@ public final class QuizLogic {
         }
 
         public int size() {
-            return answers.size();
+            java.util.Set<String> names = new java.util.HashSet<>(defaults.keySet());
+            names.addAll(answers.keySet());
+            return names.size();
         }
 
         /**
@@ -214,41 +220,57 @@ public final class QuizLogic {
             String key = normalize(question);
             if (key.isEmpty() || answer == null || answer.isBlank()) return false;
             String value = answer.trim();
-            String old = answers.put(key, value);
-            boolean changed = !value.equals(old);
-            dirty |= changed;
+            String old = answer(key);
+            boolean hadExclusions = wrong.remove(key) != null;
+            // A confirmation of a bundled answer needs no local override; a
+            // different answer must survive a future bundled-data update.
+            String previousLocal = value.equals(defaults.get(key)) ? answers.remove(key) : answers.put(key, value);
+            boolean localChanged = previousLocal != null && !previousLocal.equals(answers.get(key))
+                    || previousLocal == null && answers.containsKey(key);
+            boolean changed = !value.equals(old) || hadExclusions;
+            dirty |= changed || localChanged;
             return changed;
         }
 
         public void load(Path from) {
             path = from;
+            defaults.clear();
             answers.clear();
             wrong.clear();
             dirty = false;
+            try (InputStream bundled = QuizLogic.class.getResourceAsStream(DEFAULT_RESOURCE)) {
+                if (bundled != null) readLines(new String(bundled.readAllBytes(), StandardCharsets.UTF_8).lines().toList(),
+                        defaults, new LinkedHashMap<>());
+            } catch (IOException unreadable) {
+                defaults.clear();
+            }
             if (from == null || !Files.isReadable(from)) return;
             try {
-                for (String line : Files.readAllLines(from, StandardCharsets.UTF_8)) {
-                    String text = line.strip();
-                    if (text.isEmpty() || text.startsWith("#")) continue;
-                    int no = text.indexOf("!=");
-                    if (no > 0 && no < text.length() - 2) {       // "question != a|b" - known wrong
-                        java.util.Set<String> set = new java.util.LinkedHashSet<>();
-                        for (String option : text.substring(no + 2)
-                                .split(java.util.regex.Pattern.quote("|"))) {
-                            if (!option.isBlank()) set.add(option.strip());
-                        }
-                        if (!set.isEmpty()) wrong.put(normalize(text.substring(0, no)), set);
-                        continue;
-                    }
-                    int split = text.indexOf('=');
-                    if (split <= 0 || split == text.length() - 1) continue;
-                    answers.put(normalize(text.substring(0, split)), text.substring(split + 1).strip());
-                }
+                readLines(Files.readAllLines(from, StandardCharsets.UTF_8), answers, wrong);
             } catch (IOException unreadable) {
-                // A broken book must not take the puzzle down with it: an empty book
-                // still works, it just learns everything again.
+                // A broken local book must not take the bundled answers down.
                 answers.clear();
                 wrong.clear();
+            }
+        }
+
+        private static void readLines(List<String> lines, Map<String, String> into,
+                                      Map<String, java.util.Set<String>> exclusions) {
+            for (String line : lines) {
+                String text = line.strip();
+                if (text.isEmpty() || text.startsWith("#")) continue;
+                int no = text.indexOf("!=");
+                if (no > 0 && no < text.length() - 2) {
+                    java.util.Set<String> set = new java.util.LinkedHashSet<>();
+                    for (String option : text.substring(no + 2).split(java.util.regex.Pattern.quote("|"))) {
+                        if (!option.isBlank()) set.add(option.strip());
+                    }
+                    if (!set.isEmpty()) exclusions.put(normalize(text.substring(0, no)), set);
+                    continue;
+                }
+                int split = text.indexOf('=');
+                if (split <= 0 || split == text.length() - 1) continue;
+                into.put(normalize(text.substring(0, split)), text.substring(split + 1).strip());
             }
         }
 
@@ -258,6 +280,7 @@ public final class QuizLogic {
             List<String> lines = new ArrayList<>();
             lines.add("# Endsight dungeon quiz answers, learned in game.");
             lines.add("# One 'question = answer' per line. Safe to edit or share.");
+            // Keep the player's file small and let future corrected defaults apply.
             answers.forEach((question, answer) -> lines.add(question + " = " + answer));
             wrong.forEach((question, options) -> {
                 if (!answers.containsKey(question) && !options.isEmpty()) {
@@ -275,7 +298,9 @@ public final class QuizLogic {
 
         /** Exposed for the checks; the live book is private to the feature. */
         public Map<String, String> entries() {
-            return Map.copyOf(answers);
+            Map<String, String> all = new LinkedHashMap<>(defaults);
+            all.putAll(answers);
+            return Map.copyOf(all);
         }
     }
 

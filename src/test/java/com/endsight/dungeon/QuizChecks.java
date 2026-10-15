@@ -39,14 +39,19 @@ public final class QuizChecks {
         Path file = Files.createTempDirectory("endsight-quiz").resolve("quiz-answers.txt");
         book.save();                       // no path yet: must not throw
         book.load(file);                   // missing file: must not throw
-        check(book.size() == 0, "loading a missing book leaves it empty");
-        book.learn("1/3 Which Wither Lord is crushed under pillars?", "Goldor");
+        check(book.size() == 17, "missing local file did not load all bundled answers");
+        check("Storm".equals(book.answer("Which Wither Lord is crushed under pillars?")),
+                "bundled answer was not available without a local file");
+        check("A chest".equals(book.answer("What does the mimic pretend to be?")),
+                "a bundled answer beginning with A lost part of its name");
+        book.learn("1/3 Which boss stands on the bridge?", "Goldor");
         book.learn("2/3 Who is the youngest?", "Maxor");
         book.save();
+        check(Files.readAllLines(file).size() == 4, "bundled defaults were copied into the player's book");
         QuizLogic.Book reopened = new QuizLogic.Book();
         reopened.load(file);
-        check(reopened.size() == 2, "both answers came back");
-        check("Goldor".equals(reopened.answer("3/3 Which Wither Lord is crushed under pillars?")),
+        check(reopened.size() == 19, "local answers did not merge with bundled defaults");
+        check("Goldor".equals(reopened.answer("3/3 Which boss stands on the bridge?")),
                 "an answer survives the round trip and ignores the counter");
 
         // a hand-edited book with comments and junk must still load
@@ -56,11 +61,25 @@ public final class QuizChecks {
                 "who is the oldest = Necron",
                 "malformed line with no separator",
                 "= dangling",
-                "trailing = Storm "));
+                "trailing = Storm ",
+                "which wither lord is crushed under pillars = Maxor"));
         reopened.load(file);
-        check(reopened.size() == 2, "comments and malformed lines are skipped");
+        check(reopened.size() == 19, "comments and malformed lines are skipped");
         check("Necron".equals(reopened.answer("1/3 Who is the oldest?")), "hand-written entry is readable");
         check("Storm".equals(reopened.answer("trailing")), "surrounding whitespace is trimmed");
+        check("Maxor".equals(reopened.answer("Which Wither Lord is crushed under pillars?")),
+                "a local correction did not override the bundled answer");
+
+        QuizLogic.Book stale = new QuizLogic.Book();
+        Path staleFile = Files.createTempDirectory("endsight-quiz-stale").resolve("quiz-answers.txt");
+        stale.load(staleFile);
+        check(stale.exclude("What opens the blood door?", "The Blood Key"), "wrong bundled answer was not rejected");
+        check(stale.answer("What opens the blood door?") == null, "wrong bundled answer stayed active");
+        stale.save();
+        QuizLogic.Book rememberedWrong = new QuizLogic.Book();
+        rememberedWrong.load(staleFile);
+        check(rememberedWrong.answer("What opens the blood door?") == null,
+                "wrong bundled answer returned after reload");
 
         // -- only commit an answer once the puzzle has moved on ------------------
         QuizLogic.Book fresh = new QuizLogic.Book();

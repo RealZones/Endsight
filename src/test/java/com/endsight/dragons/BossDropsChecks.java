@@ -3,6 +3,7 @@ package com.endsight.dragons;
 import com.endsight.qol.Drops;
 import com.endsight.qol.NpcPrices;
 import com.endsight.slayers.SlayerCostsChecks;
+import com.endsight.hud.HudCard;
 import com.endsight.ui.Setting;
 
 import java.lang.reflect.Field;
@@ -33,7 +34,7 @@ public final class BossDropsChecks {
         equal(value(loaded.get("Golden Dragon"), "historicalCost"), 0L);
         equal(((Map<?, ?>) value(loaded.get(LEGACY), "drops")).get("Judgement Core"), 2);
         equal(((Map<?, ?>) value(loaded.get("Revenant"), "drops")).get("Scythe Blade"), 3);
-        equal(call("costText", new Class<?>[]{loaded.get(LEGACY).getClass()}, loaded.get(LEGACY)), "~-180m");
+        equal(call("costText", new Class<?>[]{loaded.get(LEGACY).getClass()}, loaded.get(LEGACY)), "-180m");
 
         List<String> saved = saved();
         equal(saved.contains("kill\tRevenant\t125"), true);
@@ -96,7 +97,15 @@ public final class BossDropsChecks {
         equal(value(total, "kills"), 14);
         equal(value(total, "historicalCost"), 180_000_000L);
         equal(value(total, "spawnCost"), 30_000_000L);
-        equal(call("costText", new Class<?>[]{total.getClass()}, total), "~-210m + ?");
+        equal(call("costText", new Class<?>[]{total.getClass()}, total), "-210m");
+        // The test JVM has no Fabric config path, so keep this HUD formatting
+        // check independent of the drop-tier file loaded by item rows.
+        ((Map<?, ?>) value(total, "drops")).clear();
+        @SuppressWarnings("unchecked")
+        List<HudCard.Row> hud = (List<HudCard.Row>) call("buildCountsHudRows",
+                new Class<?>[]{String.class, String.class, boolean.class, boolean.class}, LEGACY, "All Time", true, false);
+        equal(hud.stream().filter(row -> row.label().equals("Spawn costs")).findFirst().orElseThrow().value(), "-210m");
+        equal(hud.stream().filter(row -> row.label().equals("Profit")).findFirst().orElseThrow().value().contains("?"), false);
         read(saved());
         equal(value(map("loaded").get(LEGACY), "historicalCost"), 180_000_000L);
 
@@ -195,6 +204,7 @@ public final class BossDropsChecks {
         equal(call("summaryBoss", new Class<?>[]{List.class, String.class},
                 List.of("Aspect of the Dragons", "Crystal Fragment"), "Wise Dragon"), "Wise Dragon");
         dragonEyeExclusion();
+        dragonOwnershipChecks();
         familyProfitChecks();
         pendingDropChecks();
         BossDropsBoundaryChecks.main(args);
@@ -216,6 +226,52 @@ public final class BossDropsChecks {
         call("drop", new Class<?>[]{String.class, Drops.Drop.class},
                 "Golden Dragon", new Drops.Drop("Golden Eye", 2));
         equal(map("session").containsKey("Golden Dragon"), false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void dragonOwnershipChecks() throws Exception {
+        Object world = new Object(), otherWorld = new Object();
+        long now = 100_000L;
+        setStatic("eyes", 0);
+        setStatic("dragonActivityAt", 0L);
+        setStatic("dragonActivityWorld", null);
+        equal(call("bossHudMatches", new Class<?>[]{String.class, long.class, boolean.class, Object.class},
+                "Dragon", now, true, world), false);
+        setStatic("eyes", 1);
+        setStatic("dragonActivityWorld", world);
+        equal(call("dragonHudVisible", new Class<?>[]{long.class, boolean.class, Object.class}, now, true, world), true);
+        equal(call("dragonHudVisible", new Class<?>[]{long.class, boolean.class, Object.class}, now, false, world), false);
+        setStatic("eyes", 0);
+        setStatic("dragonActivityAt", now);
+        equal(call("dragonHudVisible", new Class<?>[]{long.class, boolean.class, Object.class}, now + 59_999, true, world), true);
+        equal(call("dragonHudVisible", new Class<?>[]{long.class, boolean.class, Object.class}, now + 60_000, true, world), false);
+        equal(call("dragonHudVisible", new Class<?>[]{long.class, boolean.class, Object.class}, now + 1, true, otherWorld), false);
+
+        setStatic("ownedDragonPayoutAt", 0L);
+        setStatic("ownedDragonPayoutWorld", null);
+        equal(call("ownedDragonPayout", new Class<?>[]{long.class, Object.class}, now, world), false);
+        setStatic("ownedDragonPayoutAt", now);
+        setStatic("ownedDragonPayoutWorld", world);
+        equal(call("ownedDragonPayout", new Class<?>[]{long.class, Object.class}, now + 20_000, world), true);
+        equal(call("ownedDragonPayout", new Class<?>[]{long.class, Object.class}, now + 30_001, world), false);
+        equal(call("ownedDragonPayout", new Class<?>[]{long.class, Object.class}, now + 1, otherWorld), false);
+
+        // A personal loot summary is insufficient proof of an eye placement.
+        map("session").clear();
+        List<String[]> summary = (List<String[]>) staticValue("summary");
+        summary.clear();
+        summary.add(new String[]{"- 4x Wise Dragon Fragment", "Wise Dragon Fragment", "4"});
+        setStatic("summaryAt", now);
+        setStatic("summaryWorld", world);
+        setStatic("ownedDragonPayoutAt", 0L);
+        call("settleSummary", new Class<?>[]{});
+        equal(map("session").containsKey("Wise Dragon"), false);
+        equal(summary.isEmpty(), true);
+
+        setStatic("dragonActivityAt", 0L);
+        setStatic("dragonActivityWorld", null);
+        setStatic("ownedDragonPayoutAt", 0L);
+        setStatic("ownedDragonPayoutWorld", null);
     }
 
     private static void familyHudChecks() throws Exception {
@@ -438,6 +494,52 @@ public final class BossDropsChecks {
         List<Map.Entry<String, Integer>> list = (List<Map.Entry<String, Integer>>) call("valueSorted", new Class<?>[]{Map.class}, drops);
         equal(list.subList(0, 5).stream().map(Map.Entry::getKey).toList(),
                 List.of("Null Ovoid", "Judgement Core", "Whetstone", "Rift Pass", "Seraph Quill"));
+        // Dragon rows follow tiers, then exact file order within a tier;
+        // quantity and any future price source must not shuffle that preference.
+        Map<String, Object> rules = new java.util.LinkedHashMap<>();
+        Method readRules = Drops.class.getDeclaredMethod("read", List.class, Map.class);
+        readRules.setAccessible(true);
+        readRules.invoke(null, List.of("legendary Golden Droplet", "legendary Recombobulator 3000",
+                "epic Dragon Horn"), rules);
+        Field rulesField = Drops.class.getDeclaredField("rules");
+        rulesField.setAccessible(true);
+        Object previousRules = rulesField.get(null);
+        rulesField.set(null, List.copyOf(rules.values()));
+        prices.put("golden droplet", 1L);
+        prices.put("dragon horn", 100_000_000L);
+        Map<String, Integer> dragonDrops = Map.of("Golden Droplet", 1, "Recombobulator 3000", 25,
+                "Dragon Horn", 1);
+        List<Map.Entry<String, Integer>> dragonHud = (List<Map.Entry<String, Integer>>) call(
+                "hudSorted", new Class<?>[]{String.class, Map.class}, "Dragon", dragonDrops);
+        equal(dragonHud.stream().map(Map.Entry::getKey).toList(),
+                List.of("Golden Droplet", "Recombobulator 3000", "Dragon Horn"));
+        Map<String, Object> petRules = new java.util.LinkedHashMap<>();
+        readRules.invoke(null, List.of("legendary Ender Dragon (pet)", "epic Mythic Carrot",
+                "epic Dwarf Turtle Shelmet", "epic Enderman (pet)", "rare Tiger (pet)",
+                "rare Sheep (pet)"), petRules);
+        rulesField.set(null, List.copyOf(petRules.values()));
+        Map<String, Integer> observed = (Map<String, Integer>) staticValue("seen");
+        Map<String, Integer> previousObserved = new java.util.LinkedHashMap<>(observed);
+        observed.put("Enderman", 3);
+        observed.put("Tiger", 3);
+        observed.put("Sheep", 3);
+        equal(call("tier", new Class<?>[]{String.class}, "Enderman"), 3);
+        equal(call("sortTier", new Class<?>[]{String.class}, "Enderman"), 2);
+        equal(call("sortTier", new Class<?>[]{String.class}, "[Lvl 1] Ender Dragon (Epic)"), 3);
+        Map<String, Integer> petDrops = Map.of("Enderman", 1, "Tiger", 5, "Sheep", 1,
+                "[Lvl 1] Ender Dragon (Epic)", 2, "Mythic Carrot", 1, "Dwarf Turtle Shelmet", 1);
+        List<Map.Entry<String, Integer>> petHud = (List<Map.Entry<String, Integer>>) call(
+                "hudSorted", new Class<?>[]{String.class, Map.class}, "Dragon", petDrops);
+        equal(petHud.stream().map(Map.Entry::getKey).toList(),
+                List.of("[Lvl 1] Ender Dragon (Epic)", "Mythic Carrot", "Dwarf Turtle Shelmet",
+                        "Enderman", "Tiger", "Sheep"));
+        observed.clear();
+        observed.putAll(previousObserved);
+        List<Map.Entry<String, Integer>> slayerHud = (List<Map.Entry<String, Integer>>) call(
+                "hudSorted", new Class<?>[]{String.class, Map.class}, "Riftborn", drops);
+        equal(slayerHud.subList(0, 5).stream().map(Map.Entry::getKey).toList(),
+                List.of("Null Ovoid", "Judgement Core", "Whetstone", "Rift Pass", "Seraph Quill"));
+        rulesField.set(null, previousRules);
         set(count, "spawnCost", 15_000_000L);
         equal(call("profit", new Class<?>[]{count.getClass()}, count), 29_000_000L);
         equal(call("missingValues", new Class<?>[]{count.getClass()}, count), false);
@@ -451,6 +553,18 @@ public final class BossDropsChecks {
                 new int[]{20, 30, 220, 100}, 1f, 210d, 55d, 44), false);
         equal(call("periodHit", new Class<?>[]{int[].class, float.class, double.class, double.class, int.class},
                 new int[]{20, 30, 440, 200}, 2f, 410d, 42d, 44), true);
+        setStatic("profitQuestActive", false);
+        setStatic("displayedBoss", "Superior Dragon");
+        setStatic("dragonView", "Latest");
+        equal(call("hudBoss", new Class<?>[]{}), "Superior Dragon");
+        setStatic("dragonView", "All Dragons");
+        equal(call("hudBoss", new Class<?>[]{}), "Dragon");
+        equal(call("titleHit", new Class<?>[]{int[].class, float.class, double.class, double.class, int.class},
+                new int[]{20, 30, 220, 100}, 1f, 30d, 35d, 120), true);
+        equal(call("titleHit", new Class<?>[]{int[].class, float.class, double.class, double.class, int.class},
+                new int[]{20, 30, 220, 100}, 1f, 200d, 35d, 120), false);
+        setStatic("dragonView", "Latest");
+        setStatic("displayedBoss", "Dragon");
         prices.clear();
     }
 
@@ -488,6 +602,12 @@ public final class BossDropsChecks {
         Field field = BossDrops.class.getDeclaredField(name);
         field.setAccessible(true);
         field.set(null, value);
+    }
+
+    private static Object staticValue(String name) throws Exception {
+        Field field = BossDrops.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(null);
     }
 
     private static Object call(String name, Class<?>[] types, Object... args) throws Exception {

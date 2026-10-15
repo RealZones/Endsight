@@ -46,8 +46,8 @@ public final class Drops {
         public Drop(String item, int tier) { this(item, tier, 1); }
     }
 
-    /** {@code name} as written in the file, {@code needle} lowercased for matching. */
-    private record Rule(String name, String needle, int tier) {
+    /** Match longest name first, but retain the player's line order for HUD ties. */
+    private record Rule(String name, String needle, int tier, int order) {
     }
 
     /** Anchored: only tier words may come before DROP!, so a speaker in front fails it. */
@@ -215,14 +215,30 @@ public final class Drops {
 
     /** Whether the tier list names this item at all, as opposed to falling back to the game's colour. */
     public static boolean listed(String item) {
-        return tierOf(item, -1) >= 0;
+        return listedTierOf(item) >= 0;
+    }
+
+    /** Configured category, or -1 when the item is absent from the editable list. */
+    public static int listedTierOf(String item) {
+        return tierOf(item, -1);
     }
 
     private static int tierOf(String item, int fallback) {
+        Rule rule = ruleOf(item);
+        return rule == null ? fallback : rule.tier();
+    }
+
+    /** Position in drops.txt, for sorting items inside one tier; unlisted items come last. */
+    public static int orderOf(String item) {
+        Rule rule = ruleOf(item);
+        return rule == null ? Integer.MAX_VALUE : rule.order();
+    }
+
+    private static Rule ruleOf(String item) {
         if (rules == null) rules = load();
         String hay = item.toLowerCase(Locale.ROOT);
-        for (Rule r : rules) if (hay.contains(r.needle())) return r.tier();
-        return fallback;
+        for (Rule r : rules) if (hay.contains(r.needle())) return r;
+        return null;
     }
 
     /**
@@ -232,7 +248,9 @@ public final class Drops {
     public static String listing(int tier) {
         if (rules == null) rules = load();
         List<String> names = new ArrayList<>();
-        for (Rule r : rules) if (r.tier() == tier) names.add(r.name());
+        rules.stream().filter(r -> r.tier() == tier)
+                .sorted(java.util.Comparator.comparingInt(Rule::order))
+                .forEach(r -> names.add(r.name()));
         return names.isEmpty() ? "Nothing listed." : String.join(", ", names) + ".";
     }
 
@@ -262,7 +280,7 @@ public final class Drops {
     private static List<Rule> load() {
         Map<String, Rule> rules = new LinkedHashMap<>();
         try (InputStream in = Drops.class.getResourceAsStream("/endsight-drops.txt")) {
-            if (in != null) read(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList(), rules);
+            if (in != null) read(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList(), rules, false);
         } catch (IOException e) {
             System.err.println("[Endsight] could not read the bundled drops.txt: " + e);
         }
@@ -274,7 +292,7 @@ public final class Drops {
                     if (in != null) Files.copy(in, f);
                 }
             }
-            read(Files.readAllLines(f, StandardCharsets.UTF_8), rules);
+            read(Files.readAllLines(f, StandardCharsets.UTF_8), rules, true);
         } catch (IOException e) {
             System.err.println("[Endsight] could not read drops.txt: " + e);
         }
@@ -284,7 +302,12 @@ public final class Drops {
     }
 
     private static void read(List<String> lines, Map<String, Rule> into) {
-        for (String line : lines) {
+        read(lines, into, true);
+    }
+
+    private static void read(List<String> lines, Map<String, Rule> into, boolean userFile) {
+        for (int lineNumber = 0; lineNumber < lines.size(); lineNumber++) {
+            String line = lines.get(lineNumber);
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) continue;
             String[] parts = t.split("\\s+", 2);
@@ -302,7 +325,10 @@ public final class Drops {
             // legendaries reads like the boss.
             String name = parts[1].trim();
             String needle = name.replaceFirst("\\s*\\([^)]*\\)\\s*$", "").toLowerCase(Locale.ROOT);
-            into.put(needle, new Rule(name, needle, tier));
+            // The user's file wins both the tier and the position. A new shipped
+            // entry absent from an older config follows the user's listed items.
+            int order = (userFile ? 0 : 1_000_000) + lineNumber;
+            into.put(needle, new Rule(name, needle, tier, order));
         }
     }
 

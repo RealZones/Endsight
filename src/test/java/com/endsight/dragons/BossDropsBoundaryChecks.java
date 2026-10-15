@@ -36,6 +36,7 @@ public final class BossDropsBoundaryChecks {
         System.out.println("BossDropsBoundaryChecks: " + checks + " checks passed");
     }
 
+    @SuppressWarnings("unchecked")
     private static void boundaryChecks() throws Exception {
         Object world = new Object();
         reset(world);
@@ -99,6 +100,25 @@ public final class BossDropsBoundaryChecks {
         settle(unfinished, 20, ledger);
         equal(ledger.kills, 3);
         equal(ledger.drops.get("Null Ovoid"), 9);
+
+        // A dragon's personal loot line or top-damage result is not proof that
+        // we placed an eye. Only the placed-eye path sets its owned place.
+        reset(world);
+        Ledger dragons = new Ledger("Young Dragon");
+        Object unplaced = open("Young Dragon", 2_200L);
+        set(unplaced, "dead", true);
+        ((List<Drops.Drop>) value(unplaced, "drops")).add(new Drops.Drop("Dragon Claw", 2));
+        settle(unplaced, 0, dragons);
+        equal(dragons.kills, 0);
+        equal(dragons.drops.isEmpty(), true);
+        reset(world);
+        Object placed = open("Young Dragon", 2_300L);
+        set(placed, "dead", true);
+        set(placed, "place", 1);
+        ((List<Drops.Drop>) value(placed, "drops")).add(new Drops.Drop("Dragon Claw", 2));
+        settle(placed, 0, dragons);
+        equal(dragons.kills, 1);
+        equal(dragons.drops.get("Dragon Claw"), 1);
         reset(null);
     }
 

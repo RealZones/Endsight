@@ -1,0 +1,19 @@
+# Confirmed quiz answers collected in DragSim dungeons through 2026-10-15.
+# Values are option text, not A/B/C slots; the room can move them.
+what cracks open a crypt = Superboom TNT
+which room hides the wither lords' portal = The Blood Room
+who guards the blood room = The Watcher
+how much score does a death cost = 2
+which wither lord can be hit at any time = Necron
+what does the mimic pretend to be = A chest
+who revives a fallen teammate = The Fairy
+which wither lord hides behind terminals = Goldor
+what opens the blood door = The Blood Key
+what does a star mob carry = Wither Keys
+which wither lord is crushed under pillars = Storm
+how many rooms wide is floor vii = 6
+what score earns an s+ rank = 300
+which wither lord is fought first = Maxor
+who sends you into the catacombs = Mort
+how many crypt kills count towards bonus score = 5
+how much score does a failed puzzle cost = 14

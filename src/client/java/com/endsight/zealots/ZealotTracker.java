@@ -7,6 +7,7 @@ import com.endsight.hud.HudCard;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.TrackerHud;
 import com.endsight.qol.NpcPrices;
+import com.endsight.qol.LootDebug;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
@@ -139,6 +140,7 @@ public final class ZealotTracker {
     private static final long HIDE_IDLE_MS = 60_000;
 
     private static boolean enabled = true;
+    private static boolean hideDuringVoidgloom = true;
 
     private static int kills;
     private static int sinceSpecial;
@@ -241,6 +243,8 @@ public final class ZealotTracker {
                                 "Edit", DropPricesScreen::openZealot),
                         new Setting.Toggle("Learn drop sale prices", "Use your sale value when no custom price is set; shared with Slayer trackers.",
                                 NpcPrices::learning, NpcPrices::learning),
+                        new Setting.Toggle("Hide during Voidgloom", "Hide the Zealot HUD during an active Voidgloom quest; keep its session counts.",
+                                () -> hideDuringVoidgloom, v -> hideDuringVoidgloom = v),
                         new Setting.Action("Reset session",
                                 "Zero the counts and the clock.",
                                 "Reset", ZealotTracker::resetSession)));
@@ -364,7 +368,9 @@ public final class ZealotTracker {
     private static boolean recordSpecialSpawn(String raw, long now) {
         if (raw == null || !raw.contains("Special Zealot")) return false;
         String line = Zealots.strip(raw).trim();
-        if (!SPECIAL_SPAWN.matcher(line).matches()) return false;
+        LootDebug.Rare rare = LootDebug.rare(line);
+        boolean modern = rare != null && rare.hit() && rare.name().equals("Special Zealot");
+        if (!modern && !SPECIAL_SPAWN.matcher(line).matches()) return false;
         // One folded/raw signal can be delivered again within the same server tick.
         // A repeated copy must not wipe ordinary kills counted after that spawn.
         if (line.equals(lastSpecialSpawnLine) && now >= lastSpecialSpawnAt && now - lastSpecialSpawnAt < 250) return true;
@@ -567,6 +573,9 @@ public final class ZealotTracker {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         if (!Area.end()) return;
+        // Eman slayers are often run in the same End area. Location and recent zealot
+        // activity alone cannot tell which tracker the player currently needs.
+        if (hideDuringVoidgloom && com.endsight.slayers.Slayer.voidgloomQuestActive()) return;
         if (lastActivity == 0 || System.currentTimeMillis() - lastActivity > HIDE_IDLE_MS) return;
         // You are killing zealots or you are mining, never both, and two trackers up at
         // once is one of them describing something you stopped doing.

@@ -131,18 +131,21 @@ box in the Storage window that marks which pages hold the item.
 round trip measured once a second; TPS is worked out from the server's clock, good to
 about half a tick.
 
+**Visual Tweaks** — Fullbright, Glass Inventory (with its opacity control),
+explosion-cloud hiding, and Shiny End nodes share one page. Each switch works
+independently. Shiny End nodes is off by default; it outlines End Stone and Obsidian
+only after their server particles confirm a node. It has a stronger dark-backed
+outline, a colour picker (including Chroma), and an edge-width setting. The outline
+stays visible while chat is open and uses normal depth testing, so it does not
+reveal blocks behind walls.
+
 ### Chat
 
-**Debug on join** — turns `/debug` on for you after every join, so kills show their
-loot number.
-
-**Loot Number Filter** — hides `loot number:` lines except the close calls: rolls under
-a number you set (2.5 to start) and, with *Both ends* on, the same distance from 100 —
-a 99.98 is as rare as a 0.02. Lines that dropped something always show.
-
-**Compact Loot Roll** — the detailed `/debug` roll after a dragon, folded from twelve
-lines into two with just the numbers: dragon, rank, damage, score, MF, pet luck; then
-loot number, armour roll against what it needed, RNG meter, the result and bits.
+**Loot & Debug** — one page controls whether `/debug` is requested after each join,
+whether the server uses Normal or Detailed output, and how the chat presents the rolls:
+Original, Close calls, Compact, or Compact + close calls. The close-call cutoff and
+*Both ends* switch remain adjustable. Real drops always show. Detailed output is
+required for the Mob Coins tracker. Individual keybinds remain available on this page.
 
 **Ability Spam** — "This ability is on cooldown" once, with a count, instead of forty
 times; or hidden altogether.
@@ -187,8 +190,9 @@ listed uses the server's own tier. Drops other people paste into chat are ignore
 
 ## Settings
 
-Everything is a module with its own on/off switch and settings page, grouped by category
-in the sidebar. Seven palettes; the whole UI follows whichever is picked.
+Features have their own switches; related controls such as Loot & Debug and Visual
+Tweaks share a settings page. The browser groups them by category in the sidebar.
+Seven palettes; the whole UI follows whichever is picked.
 
 Any module can be bound to a key or a mouse button: click the chip on its card, press
 the key. Right-click the chip to clear it. A toast in the bottom-right says what the key

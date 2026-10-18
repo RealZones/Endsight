@@ -360,3 +360,24 @@ tasks.register('beamGeometryChecks', JavaExec) {
     mainClass = 'com.endsight.visual.BeamGeometryChecks'
 }
 tasks.named('check') { dependsOn 'compactModuleChecks', 'colourStripChecks', 'beamGeometryChecks' }
+
+tasks.register('shinyNodesChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.visual.ShinyNodesChecks'
+}
+tasks.named('check') { dependsOn 'shinyNodesChecks' }
+
+tasks.register('rarityChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.qol.RarityChecks'
+}
+
+tasks.register('petsChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.storage.PetsChecks'
+}
+
+tasks.named('check') { dependsOn 'rarityChecks', 'petsChecks' }

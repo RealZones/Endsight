@@ -30,6 +30,7 @@ import com.endsight.qol.ArmorGuard;
 import com.endsight.qol.EyeGuard;
 import com.endsight.qol.LootAlerts;
 import com.endsight.qol.LootFilter;
+import com.endsight.qol.LootChat;
 import com.endsight.qol.MenuButton;
 import com.endsight.qol.LootRoll;
 import com.endsight.qol.MathSolver;
@@ -65,6 +66,8 @@ import com.endsight.visual.InventoryPreview;
 import com.endsight.visual.EquipmentHud;
 import com.endsight.visual.NameGradient;
 import com.endsight.visual.RarityOutline;
+import com.endsight.visual.VisualTweaks;
+import com.endsight.visual.ShinyNodes;
 import com.endsight.zealots.ZealotTracker;
 import com.endsight.ui.EndsightDemo;
 import com.endsight.ui.Keybinds;
@@ -142,6 +145,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Fullbright.module());
             registry.replace(SlotLock.module());
             registry.replace(InventoryGlass.module());
+            registry.add(ShinyNodes.module());
             registry.replace(InventoryPreview.module());
             registry.replace(EquipmentHud.armorModule());
             registry.replace(EquipmentHud.petModule());
@@ -162,6 +166,13 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             registry.replace(MenuButton.module());
+            // Keep the old modules registered for their config and keybind ids. Their
+            // grouped pages change only what the browser shows, not how the features run.
+            registry.insertBefore("qol.debug", LootChat.module());
+            registry.hide("qol.debug").hide("qol.lootfilter").hide("qol.lootroll");
+            registry.insertBefore("visual.fullbright", VisualTweaks.module());
+            registry.hide("visual.fullbright").hide("visual.inventoryGlass")
+                    .hide("visual.explosionParticles").hide("visual.shinyNodes");
             Config.load(registry);
         }
         return registry;
@@ -204,6 +215,7 @@ public class EndsightClient implements ClientModInitializer {
         EquipmentHud.init();
         NameGradient.init();
         Area.init();
+        ShinyNodes.init();
         LootAlerts.init();
         Alerts.init();
         MathSolver.init();
@@ -310,13 +322,13 @@ public class EndsightClient implements ClientModInitializer {
             if (Keybinds.isDown(client.getWindow(), key)) down.add(key);
         }
         for (Module m : registry().all()) {
-            if (pressed(down, Keybinds.get(Keybinds.moduleId(m))) && m.implemented()) {
+            if (pressed(down, Keybinds.get(Keybinds.moduleId(m))) && m.togglable()) {
                 m.toggle();
                 Toast.toggled(m.title(), m.isEnabled());
             }
         }
         for (Module m : registry().all()) {
-            if (!m.implemented() || !m.isEnabled() || !m.hasSettings()) continue;
+            if (!m.implemented() || m.group() || !m.isEnabled() || !m.hasSettings()) continue;
             for (Setting s : m.settings()) {
                 if (s instanceof Setting.KeyAction a && pressed(down, Keybinds.get(a.id()))) {
                     a.run().run();

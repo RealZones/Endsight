@@ -18,6 +18,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -26,6 +27,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -63,7 +65,7 @@ public final class PowderTracker {
 
     private static final String ID = "mining.powder";
     private static final String HOTD = "Heart of the Dragon";
-    private static final Pattern FUEL = Pattern.compile("^Fuel: ([0-9,]+)/([0-9,]+)");
+    private static final Pattern FUEL = Pattern.compile("(?i)(?:^|\\s)Fuel\\s*:\\s*([0-9,]+)\\s*/\\s*([0-9,]+)(?:\\s|$)");
     private static final String FUEL_ID = "mining.fuel";
     private static final Pattern MINING_XP = Pattern.compile("\\+([\\d,.]+)\\s+Mining\\s*\\(([\\d.]+)%\\)");
     private static final Pattern POWDER = Pattern.compile("(?i)^(ender|void)\\s+powder\\D{0,4}([\\d,]{2,})");
@@ -555,21 +557,23 @@ public final class PowderTracker {
     }
 
     /**
-     * "Fuel: 1,504/10,000" off the held drill. Logged whenever it changes, with the block
+     * "Fuel: 1,504/10,000" off the held item. Logged whenever it changes, with the block
      * count, so fuel per block can be read from the file: the omelette's 25% and the
      * Blazing's 4x are on the lore, the base cost per block is not written anywhere.
      */
     private static void readFuel(Minecraft mc) {
         ItemStack held = mc.player.getMainHandItem();
         long f = -1, max = 0;
-        if (!held.isEmpty() && clean(held.getHoverName().getString()).toLowerCase(Locale.ROOT).contains("drill")) {
-            for (String line : tooltip(held)) {
-                Matcher m = FUEL.matcher(line);
-                if (m.find()) {
-                    f = Math.round(num(m.group(1)));
-                    max = Math.round(num(m.group(2)));
-                    break;
-                }
+        if (!held.isEmpty()) {
+            // The server's lore is the actual fuel source. A renamed or badge-decorated
+            // drill need not contain "drill" in its displayed name, and a generated
+            // tooltip may be altered by another client mod or the active resource pack.
+            ItemLore lore = held.get(DataComponents.LORE);
+            long[] parsed = lore == null ? null : parseFuel(lore.lines().stream().map(Component::getString).toList());
+            if (parsed == null) parsed = parseFuel(tooltip(held));
+            if (parsed != null) {
+                f = parsed[0];
+                max = parsed[1];
             }
         }
         fuel = f;
@@ -580,6 +584,24 @@ public final class PowderTracker {
             for (double b : blocks) blocksAll += b;
             log("F", f, max, Math.round(blocksAll));
         }
+    }
+
+    private static long[] parseFuel(List<String> lines) {
+        for (String raw : lines) {
+            StringBuilder plain = new StringBuilder(raw.length());
+            clean(raw).codePoints().forEach(cp -> plain.appendCodePoint(
+                    Character.getType(cp) == Character.PRIVATE_USE || Character.isSpaceChar(cp) ? ' ' : cp));
+            Matcher match = FUEL.matcher(plain.toString().trim());
+            if (!match.find()) continue;
+            try {
+                long value = Long.parseLong(match.group(1).replace(",", ""));
+                long capacity = Long.parseLong(match.group(2).replace(",", ""));
+                if (capacity > 0 && value >= 0) return new long[]{value, capacity};
+            } catch (NumberFormatException ignored) {
+                // A malformed or overflowed number is not a fuel measurement.
+            }
+        }
+        return null;
     }
 
     /** Skytils' fuel line: "Fuel: 2,776/10K (28%)", green to red as it drains. */

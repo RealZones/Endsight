@@ -21,8 +21,8 @@ import java.util.List;
  * rings landed on top of tooltips, and there was nothing to draw on the hotbar with.
  * That is why this is the one place the public mod uses mixins.
  *
- * The colour is the item's own, read off the last line of its lore the way the drop
- * readouts colour names - so it is what the server says the item is, not a guess.
+ * The colour comes from the same server item-data reader as the drop readouts,
+ * including when the resource pack draws rarity and type in separate tooltip badges.
  */
 public final class RarityOutline {
 

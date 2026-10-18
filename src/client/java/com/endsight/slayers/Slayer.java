@@ -94,6 +94,22 @@ public final class Slayer {
     public static boolean questActive() {
         return (questActive || bossUp) && System.currentTimeMillis() - cur().lastActivity < 15 * 60_000L;
     }
+
+    /** A live Voidgloom quest, including one already underway when the client joined. */
+    public static boolean voidgloomQuestActive() {
+        Minecraft mc = Minecraft.getInstance();
+        return voidgloomQuest(Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
+                questActive(), slayer);
+    }
+
+    static boolean voidgloomQuest(String slayerLine, String xpLine,
+                                  boolean chatQuestActive, String chatFamily) {
+        if (chatQuestActive && VOIDGLOOM.equals(chatFamily)) return true;
+        if (slayerLine == null) return false;
+        String name = com.endsight.zealots.Zealots.strip(slayerLine).toLowerCase(Locale.ROOT);
+        return (name.contains("voidgloom seraph") || name.contains("riftborn seraph"))
+                && questStatus(slayerLine, xpLine, false) == QuestStatus.ACTIVE;
+    }
     private static boolean bossUp;
     private static boolean questActive;
     private static String reminderArea = "";

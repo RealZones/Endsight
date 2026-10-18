@@ -95,7 +95,7 @@ public final class Etherwarp {
             // A cuboid takes one colour, and chroma is the point where one is not enough:
             // the edges are drawn as their own lines so the rainbow can run along them.
             if (filled) Gizmos.cuboid(t.box, GizmoStyle.fill(fill)).setAlwaysOnTop();
-            if (stroke) chromaEdges(t.box, w);
+            if (stroke) chromaEdges(t.box, w, true);
         } else {
             GizmoStyle s = filled && stroke ? GizmoStyle.strokeAndFill(c, w, fill)
                     : filled ? GizmoStyle.fill(fill) : GizmoStyle.stroke(c, w);
@@ -115,7 +115,7 @@ public final class Etherwarp {
      * diagonally across the box, corner to far corner, and slides along it with time.
      * Six pieces is where the steps stop showing at the distances a warp is made from.
      */
-    private static void chromaEdges(AABB box, float w) {
+    static void chromaEdges(AABB box, float w, boolean alwaysOnTop) {
         double phase = (System.currentTimeMillis() % 3000) / 3000.0;
         double span = (box.maxX - box.minX) + (box.maxY - box.minY) + (box.maxZ - box.minZ);
         for (int[] e : EDGES) {
@@ -125,7 +125,8 @@ public final class Etherwarp {
                 Vec3 m = p.add(q).scale(0.5);
                 double along = ((m.x - box.minX) + (m.y - box.minY) + (m.z - box.minZ)) / span;
                 float hue = (float) ((phase + along * 0.75) % 1.0);
-                Gizmos.line(p, q, 0xFF000000 | (Mth.hsvToRgb(hue, 0.85f, 1f) & 0xFFFFFF), w).setAlwaysOnTop();
+                var line = Gizmos.line(p, q, 0xFF000000 | (Mth.hsvToRgb(hue, 0.85f, 1f) & 0xFFFFFF), w);
+                if (alwaysOnTop) line.setAlwaysOnTop();
             }
         }
     }

@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Every module the UI knows about, grouped by category in the order registered.
@@ -15,6 +17,8 @@ import java.util.Collections;
 public final class ModuleRegistry {
 
     private final List<Module> modules = new ArrayList<>();
+    /** Registered for config and old keybinds, omitted from the browser after grouping. */
+    private final Set<String> hidden = new HashSet<>();
     private List<Module> snapshot;
     private List<String> categorySnapshot;
     private record Filter(String category, String query) { }
@@ -37,6 +41,23 @@ public final class ModuleRegistry {
         return this;
     }
 
+    /** Put a settings group where its first old card was, rather than at the category's end. */
+    public ModuleRegistry insertBefore(String id, Module module) {
+        for (int i = 0; i < modules.size(); i++) {
+            if (modules.get(i).id().equals(id)) {
+                modules.add(i, module);
+                changed();
+                return this;
+            }
+        }
+        return add(module);
+    }
+
+    public ModuleRegistry hide(String id) {
+        if (hidden.add(id)) changed();
+        return this;
+    }
+
     /**
      * Swap in a module with the same id, keeping its place in the order.
      *
@@ -56,7 +77,10 @@ public final class ModuleRegistry {
 
     /** Take a module out by id. The browser rebuilds its categories from what is left. */
     public ModuleRegistry remove(String id) {
-        if (modules.removeIf(m -> m.id().equals(id))) changed();
+        if (modules.removeIf(m -> m.id().equals(id))) {
+            hidden.remove(id);
+            changed();
+        }
         return this;
     }
 
@@ -74,6 +98,7 @@ public final class ModuleRegistry {
         if (categorySnapshot != null) return categorySnapshot;
         List<String> out = new ArrayList<>();
         for (Module m : modules) {
+            if (hidden.contains(m.id())) continue;
             if (!out.contains(m.category())) out.add(m.category());
         }
         categorySnapshot = List.copyOf(out);
@@ -93,6 +118,7 @@ public final class ModuleRegistry {
         if (cached != null) return cached;
         Map<String, List<Module>> out = new LinkedHashMap<>();
         for (Module m : modules) {
+            if (hidden.contains(m.id())) continue;
             if (category != null && !category.equals(m.category())) continue;
             if (!m.matches(key.query())) continue;
             out.computeIfAbsent(m.category(), k -> new ArrayList<>()).add(m);

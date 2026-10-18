@@ -170,7 +170,7 @@ public class EndsightScreen extends Screen {
                 y += 24;
             }
             for (Module module : group.getValue()) {
-                ModuleRowLayout geometry = ModuleRowLayout.of(x, y, w, module.implemented(), module.hasSettings());
+                ModuleRowLayout geometry = ModuleRowLayout.of(x, y, w, module.togglable(), module.hasSettings());
                 int bodyY = y + geometry.row().h();
                 int bodyH = module == editingModule && editor != null ? editor.embeddedHeight(w - 8, query) : 0;
                 rows.add(new Placed(module, geometry, bodyY, bodyH));
@@ -308,7 +308,7 @@ public class EndsightScreen extends Screen {
         Draw.text(g, font, Draw.fit(font, description, label.w()), label.x(), label.y() + 13,
                 matchSummaries.containsKey(module.id()) ? Theme.accent() : Theme.muted());
         if (!open) Draw.rect(g, row.x() + 8, row.y() + row.h() - 1, row.w() - 16, 1, Theme.hair());
-        if (module.implemented()) {
+        if (module.togglable()) {
             ModuleRowLayout.Rect key = geometry.key(), toggle = geometry.toggle();
             boolean keyHot = key.contains(mx, my) && my >= contentTop() && my < contentBottom();
             boolean listening = Keybinds.moduleId(module).equals(binding);

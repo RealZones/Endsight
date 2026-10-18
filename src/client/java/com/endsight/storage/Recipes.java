@@ -1,6 +1,7 @@
 package com.endsight.storage;
 
 import com.endsight.hud.Toast;
+import com.endsight.qol.Rarity;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -35,7 +36,6 @@ import net.minecraft.world.Container;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemLore;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -450,25 +450,17 @@ public final class Recipes {
         return out;
     }
 
-    private static final Pattern ACCESSORY_RARITY = Pattern.compile(
-            "\\b(VERY SPECIAL|UNCOMMON|LEGENDARY|COMMON|RARE|EPIC|MYTHIC|SPECIAL) ACCESSORY\\b");
-
     private static int magicalPower() {
         if (!mpDirty) return mpEstimate;
         mpDirty = false;
         List<MagicalPower.Accessory> bag = new ArrayList<>();
         for (ItemStack stack : accessoryBag()) {
             if (stack.isEmpty()) continue;
-            ItemLore lore = stack.get(DataComponents.LORE);
-            if (lore == null) continue;
-            for (Component line : lore.lines()) {
-                Matcher rarity = ACCESSORY_RARITY.matcher(Zealots.strip(line.getString()).toUpperCase(Locale.ROOT));
-                if (!rarity.find()) continue;
-                String name = name(stack);
-                String recipe = recipeFor(name);
-                bag.add(new MagicalPower.Accessory(recipe == null ? name : recipe, rarity.group(1)));
-                break;
-            }
+            Rarity.Info info = Rarity.read(stack);
+            if (info == null || !info.type().equals("ACCESSORY")) continue;
+            String name = name(stack);
+            String recipe = recipeFor(name);
+            bag.add(new MagicalPower.Accessory(recipe == null ? name : recipe, info.rarity()));
         }
         Set<String> accessories = CATEGORY.getOrDefault("Accessories", new LinkedHashSet<>());
         Map<String, List<String>> ingredients = new HashMap<>();

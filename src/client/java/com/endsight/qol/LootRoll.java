@@ -57,7 +57,6 @@ public final class LootRoll {
 
     // "mob: ?" means the server did not identify the source. This also occurs on
     // Voidgloom boss loot, so the line's context must supply a useful label.
-    private static final Pattern MOB = Pattern.compile("^mob:\\s+(\\S+)\\s+magic find:\\s*([\\d.]+)(?:.*?pet luck:\\s*([\\d.]+))?");
     // October's server format includes base and effective chances before the slice.
     // Keep the slice captures unchanged: close-call colour uses the adjusted bounds.
     private static final Pattern ROW = Pattern.compile("^(▶\\s*)?(?:base\\s+[\\d.]+%\\s*→\\s*effective\\s+)?[\\d.]+%\\s*[\\[(]([\\d.]+),\\s*([\\d.]+)[\\])]\\s*(.+)$");
@@ -71,7 +70,6 @@ public final class LootRoll {
     private static final Pattern LOOT = Pattern.compile("^loot number:\\s*([\\d.]+)\\s*(?:\\((?:0-100[^)]*|the rare table, lower\\s*=\\s*rarer)\\))?\\s*$");
     private static final Pattern RESULT = Pattern.compile("^result:\\s*(.+?)(?:\\s+frags:\\s*(\\d+))?\\s*(?:\\(.*)?$");
     // A dragon.
-    private static final Pattern DRAGON = Pattern.compile("^dragon:\\s*(.+?)\\s+rank:\\s*#?(\\d+)\\s+damage:\\s*([\\d,]+)");
     private static final Pattern SCORE = Pattern.compile("^drag score:\\s*([\\d,]+)");
     private static final Pattern MF = Pattern.compile("^magic find:\\s*([\\d.]+)(?:.*?pet luck:\\s*([\\d.]+))?");
     private static final Pattern PET = Pattern.compile("^pet luck:\\s*([\\d.]+)");
@@ -79,6 +77,18 @@ public final class LootRoll {
     private static final Pattern METER = Pattern.compile("^rng meter:\\s*(\\S+)");
     private static final Pattern FROZEN = Pattern.compile("^frozen/crystal roll:\\s*([\\d.]+)");
     private static final Pattern BITS = Pattern.compile("^\\+([\\d,]+) Bits from the .*?\\(([\\d,]+) carrot bits left\\)");
+    // The October 16 server format combines fields and omits the table on misses.
+    // Keep the original components for exact hover details; only parsing is shared.
+    private static final Pattern COMPACT_ROLL = Pattern.compile("^Roll\\s+([\\d.]+)/100\\s+→\\s+(.+)$");
+    private static final Pattern COMPACT_DRAGON_ROLL = Pattern.compile("^MF\\s+([\\d.]+)\\s+PL\\s+([\\d.]+)\\s+Table\\s+([\\d.]+)/100\\s+→\\s+(.+)$");
+    private static final Pattern COMPACT_CHANCE = Pattern.compile("^Chance\\s+[\\d.]+%\\s+\\[([\\d.]+),\\s*([\\d.]+)\\)\\s+Base\\s+[\\d.]+%$");
+    private static final Pattern COMPACT_ARMOR = Pattern.compile("^Armor\\s+([\\d.]+)/100\\s+<\\s+([\\d.]+)\\s+and\\s+(?:≤|<=)\\s+([\\d.]+)$");
+    private static final Pattern FRAGMENTS = Pattern.compile("^(.+?)\\s+\\+\\s+([\\d,]+) frags$");
+    private static final Pattern MODERN_DETAIL = Pattern.compile("^\\[Debug\\] (?:Chance|Base|Range)\\b.*");
+    private static final Pattern MODERN_CHANCE = Pattern.compile("\\bChance\\s+([\\d.]+)%");
+    private static final Pattern MODERN_RANGE = Pattern.compile("\\bRange\\s+\\[([\\d.]+),\\s*([\\d.]+)\\)");
+    private static final Pattern MODERN_RARE_END = Pattern.compile("(?i)\\s+(?:hit|miss)$");
+    private static final Pattern MODERN_INLINE_CHANCE = Pattern.compile("(?i)\\s+·\\s+Chance\\s+([\\d.]+)%$");
 
     /** Every line of a block comes in one server tick; this much quiet means it is over. */
     private static final long QUIET_MS = 250;
@@ -154,7 +164,7 @@ public final class LootRoll {
     }
 
     static boolean rollAnchor(String line) {
-        return MOB.matcher(line).find() || DRAGON.matcher(line).find();
+        return LootDebug.mob(line) != null || LootDebug.dragon(line) != null || LootDebug.modern(line) != null;
     }
 
     private static void flush() {
@@ -186,6 +196,10 @@ public final class LootRoll {
         if (b.loot >= 0) parts.add(lootColour(b) + fmt(b.loot));
         if (b.dropped()) parts.add("§8→ §a" + b.result);
         for (Rare r : b.rares) {
+            // The new server lists seasonal attempts on every kill. Keep distant
+            // misses in the hover; otherwise one compact line is wider than chat.
+            if (b.modernFormat && !r.hit && !LootFilter.shows(r.rolled)
+                    && !(r.needs > 0 && r.rolled < r.needs * 2)) continue;
             parts.add(r.hit ? "§8· §a✔ " + r.name
                     : "§8· §7" + r.name + (r.rolled < r.needs * 2 ? " §e" : " §8") + fmt(r.rolled));
         }
@@ -266,20 +280,85 @@ public final class LootRoll {
         final Map<String, String> dragon = new LinkedHashMap<>();
         String mob, result;
         boolean slayerLoot;
+        boolean modernFormat;
+        boolean modernMain;
+        int pendingModernRare = -1;
         double loot = -1;
         /** Whether any line of the roll itself was read - a banner alone is not a kill. */
         boolean read;
 
         boolean startsNext(String line) {
-            if (MOB.matcher(line).find()) return mob != null || !dragon.isEmpty();
-            return DRAGON.matcher(line).find() && (mob != null || dragon.containsKey("rank"));
+            LootDebug.Modern modern = LootDebug.modern(line);
+            if (modern != null) {
+                if (mob != null && !mob.equals(modern.mob())) return true;
+                if (modern.main()) return modernMain;
+                String next = modernItem(modern.result());
+                for (Rare rare : rares) if (rare.name().equalsIgnoreCase(next)) return true;
+                return false;
+            }
+            if (LootDebug.mob(line) != null) return mob != null || !dragon.isEmpty();
+            return LootDebug.dragon(line) != null && (mob != null || dragon.containsKey("rank"));
         }
 
         /** One line into its field; false if it is not one of ours. */
         boolean read(String line) {
             Matcher m;
-            if ((m = MOB.matcher(line)).find()) {
-                mob = m.group(1);
+            LootDebug.Mob source = LootDebug.mob(line);
+            LootDebug.Dragon boss = LootDebug.dragon(line);
+            LootDebug.Rare rare = LootDebug.rare(line);
+            LootDebug.Modern modern = LootDebug.modern(line);
+            if (modern != null) {
+                modernFormat = true;
+                mob = modern.mob();
+                if (modern.main()) {
+                    loot = modern.roll();
+                    modernMain = true;
+                    pendingModernRare = -1;
+                    result = modernResult(modern.result());
+                } else {
+                    Matcher inlineChance = MODERN_INLINE_CHANCE.matcher(modern.result());
+                    double chance = inlineChance.find() ? num(inlineChance.group(1)) : 0;
+                    addRare(new Rare(modernItem(modern.result()), chance, modern.roll(), modern.hit()));
+                    pendingModernRare = rares.size() - 1;
+                }
+            } else if (MODERN_DETAIL.matcher(line).matches()) {
+                Matcher chance = MODERN_CHANCE.matcher(line);
+                Matcher range = MODERN_RANGE.matcher(line);
+                if (pendingModernRare >= 0 && pendingModernRare < rares.size() && chance.find()) {
+                    Rare old = rares.get(pendingModernRare);
+                    rares.set(pendingModernRare, new Rare(old.name(), num(chance.group(1)), old.rolled(), old.hit()));
+                }
+                if (range.find() && modernMain && pendingModernRare < 0 && result != null)
+                    rows.add(new double[]{num(range.group(1)), num(range.group(2))});
+                pendingModernRare = -1;
+            } else if (source != null) {
+                mob = source.id();
+            } else if (boss != null) {
+                dragon.put("name", boss.name());
+                dragon.put("rank", boss.rank());
+                dragon.put("damage", boss.damage());
+                if (boss.score() != null) dragon.put("score", boss.score());
+                if (boss.eyes() != null) dragon.put("eyes", boss.eyes());
+            } else if (rare != null) {
+                addRare(new Rare(rare.name(), rare.chance(), rare.rolled(), rare.hit()));
+            } else if ((m = COMPACT_ROLL.matcher(line)).matches()) {
+                loot = num(m.group(1));
+                compactResult(m.group(2));
+            } else if ((m = COMPACT_DRAGON_ROLL.matcher(line)).matches()) {
+                dragon.put("mf", m.group(1));
+                dragon.put("pet", m.group(2));
+                loot = num(m.group(3));
+                compactResult(m.group(4));
+            } else if ((m = COMPACT_CHANCE.matcher(line)).matches()) {
+                rows.add(new double[]{num(m.group(1)), num(m.group(2))});
+            } else if ((m = COMPACT_ARMOR.matcher(line)).matches()) {
+                dragon.put("armor", m.group(1));
+                dragon.put("armorOp", "<");
+                dragon.put("armorNeeds", m.group(2));
+                dragon.put("armorCap", m.group(3));
+            } else if (line.matches("^Meter\\s+\\S+\\s+×[\\d.]+$")
+                    || line.startsWith("Frozen/crystal ") || line.startsWith("Armor skipped")) {
+                // Auxiliary checks stay intact in the hover, alongside the table roll.
             } else if ((m = ROW.matcher(line)).find()) {
                 rows.add(new double[]{num(m.group(2)), num(m.group(3))});
             } else if ((m = RARE.matcher(line)).find()) {
@@ -307,9 +386,6 @@ public final class LootRoll {
                     // Leave it visible as received until its own anchor arrives.
                     return false;
                 }
-            } else if ((m = DRAGON.matcher(line)).find()) {
-                dragon.put("rank", m.group(2));
-                dragon.put("damage", m.group(3));
             } else if ((m = SCORE.matcher(line)).find()) {
                 dragon.put("score", m.group(1));
             } else if ((m = MF.matcher(line)).find()) {
@@ -335,6 +411,28 @@ public final class LootRoll {
             }
             read = true;
             return true;
+        }
+
+        private void compactResult(String value) {
+            Matcher fragments = FRAGMENTS.matcher(value);
+            if (fragments.matches()) {
+                result = fragments.group(1);
+                dragon.put("frags", fragments.group(2));
+            } else result = value;
+        }
+
+        private static String modernItem(String result) {
+            String item = MODERN_INLINE_CHANCE.matcher(result).replaceFirst("");
+            item = MODERN_RARE_END.matcher(item).replaceFirst("");
+            int semicolon = item.indexOf(';');
+            return (semicolon >= 0 ? item.substring(0, semicolon) : item).trim();
+        }
+
+        private static String modernResult(String text) {
+            String value = text.replaceFirst("^Luck\\s+[\\d.]+x\\s*·\\s*", "");
+            value = value.replaceFirst("(?i)\\s+·\\s+(?:Miss )?Chance\\s+[\\d.]+%$", "").trim();
+            return value.isEmpty() || value.equalsIgnoreCase("miss") || value.equalsIgnoreCase("nothing")
+                    ? null : value;
         }
 
         private boolean isBonusResult(String item) {
@@ -386,7 +484,7 @@ public final class LootRoll {
     private static String name(String mob) {
         String s = mob.startsWith("NEST_") ? mob.substring(5) : mob;
         StringBuilder out = new StringBuilder();
-        for (String w : s.split("_")) {
+        for (String w : s.split("[_ ]+")) {
             if (w.isEmpty()) continue;
             if (!out.isEmpty()) out.append(' ');
             out.append(w.charAt(0)).append(w.substring(1).toLowerCase(Locale.ROOT));

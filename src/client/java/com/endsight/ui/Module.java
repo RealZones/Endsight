@@ -38,14 +38,19 @@ public record Module(String id,
     }
 
     /**
-     * Whether this module actually does anything yet.
-     *
-     * A module with no setter cannot be switched on, which is already the truth about a
-     * feature that has not been written - so the UI reads that rather than carrying a
-     * separate flag that could disagree with it. A card people can toggle, that then
-     * does nothing, is worse than one that says so.
+     * A live card has a state accessor. Unimplemented cards have neither accessor;
+     * settings groups have no master setter because their controls act independently.
      */
     public boolean implemented() {
+        return enabled != null;
+    }
+
+    /** Settings groups have real controls but no misleading master switch. */
+    public boolean group() {
+        return enabled != null && setEnabled == null;
+    }
+
+    public boolean togglable() {
         return setEnabled != null;
     }
 
@@ -72,6 +77,11 @@ public record Module(String id,
      */
     public static Module unimplemented(String id, String title, String description, String category) {
         return new Module(id, title, description, category, null, null, List.of());
+    }
+
+    public static Module group(String id, String title, String description, String category,
+                               List<Setting> settings) {
+        return new Module(id, title, description, category, () -> true, null, settings);
     }
 
     public static Module placeholder(String id, String title, String description, String category,

@@ -450,7 +450,13 @@ public class SettingsScreen extends Screen {
     private void drawModuleState(GuiGraphicsExtractor g, Font font, int mouseX, int mouseY) {
         int x = panelX() + 16, y = panelY() + Theme.HEADER_H + 62, w = Theme.SIDEBAR_W - 32;
         Draw.rect(g, panelX(), y - 14, Theme.SIDEBAR_W, 1, Theme.hair());
-        Draw.text(g, font, "MODULE", x, y - 6, Theme.dim());
+        Draw.text(g, font, module.group() ? "GROUP" : "MODULE", x, y - 6, Theme.dim());
+
+        if (module.group()) {
+            Draw.roundedRect(g, x - 6, y + 10, w + 12, 22, Theme.RADIUS, Theme.bg());
+            Draw.text(g, font, "Set each option below", x, y + 17, Theme.muted());
+            return;
+        }
 
         boolean on = module.isEnabled();
         if (!module.implemented()) {
@@ -603,7 +609,7 @@ public class SettingsScreen extends Screen {
         }
 
         int sx = panelX() + 16, sy = panelY() + Theme.HEADER_H + 72;
-        if (!embedded && module.implemented()) {
+        if (!embedded && module.togglable()) {
             int cw = Theme.SIDEBAR_W - 32;
             if (contains(sx + cw - CHIP_W, sy + 30, CHIP_W, CHIP_H, mx, my)) {
                 return listen(Keybinds.moduleId(module), event);

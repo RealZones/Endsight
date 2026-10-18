@@ -56,6 +56,8 @@ public final class Drops {
     private static final Pattern RARITY_NOTE =
             Pattern.compile("\\((?:COMMON|UNCOMMON|RARE|EPIC|LEGENDARY|MYTHIC)\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LOOT = Pattern.compile("loot number:[^→]*→\\s*(?:§[k-or])*(§[0-9a-f])?(.+)$");
+    private static final Pattern MODERN_LOOT = Pattern.compile("^(?:Roll\\s+[\\d.]+/100|MF\\s+[\\d.]+\\s+PL\\s+[\\d.]+\\s+Table\\s+[\\d.]+/100)\\s+→\\s+.+$");
+    private static final Pattern SIDE_FRAGS = Pattern.compile("(?:\\s|§.)+\\+(?:\\s|§.)*[\\d,]+(?:\\s|§.)+frags(?:\\s|§.)*$");
     /** A pet drop carries its level: "[Lvl 1] Ender Dragon". Its rarity is not in the name. */
     private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl \\d+\\]");
     private static final Pattern BONUS = Pattern.compile("^BONUS! You received ([\\d,]+)x (.+)!$");
@@ -138,7 +140,10 @@ public final class Drops {
             if (pet >= 0) return once(new Drop(item, pet, amount.quantity()), source, now);
             return once(new Drop(item, tierOf(item, rank(a.group(1))), amount.quantity()), source, now);
         }
-        Matcher l = LOOT.matcher(raw);
+        // The new server puts the outcome on the roll itself. Strip only the side
+        // fragment count; keep styled pet names so their actual rarity survives.
+        String debug = modernLoot(raw);
+        Matcher l = LOOT.matcher(debug == null ? raw : "loot number: → " + debug);
         if (l.find()) {
             ItemAmount amount = itemAmount(Zealots.strip(l.group(2)).trim());
             if (amount == null) return null;
@@ -157,6 +162,12 @@ public final class Drops {
             return tier < 0 ? null : once(new Drop(item, tier, amount.quantity()), DropDeduplicator.Source.DEBUG, now);
         }
         return null;
+    }
+
+    static String modernLoot(String raw) {
+        if (!MODERN_LOOT.matcher(Zealots.strip(raw).trim()).matches()) return null;
+        String result = SIDE_FRAGS.matcher(raw.substring(raw.indexOf('→') + 1)).replaceFirst("").trim();
+        return Zealots.strip(result).trim().equalsIgnoreCase("nothing") ? null : result;
     }
 
     private static Drop once(Drop d, DropDeduplicator.Source source, long now) {

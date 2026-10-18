@@ -13,7 +13,7 @@ import java.util.List;
 public final class LootRollChecks {
     private static int checks;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         // A zealot that got nothing: the table and both rolls fold to one line.
         equal(fold(
                 "§7mob: §fNEST_ZEALOT §7magic find: §b384.75 §8(x3.85) §7pet luck: §d59.95",
@@ -172,6 +172,9 @@ public final class LootRollChecks {
         equal(none.read("base 0.05% → effective unknown [0, 1) Null Ovoid"), false);
 
         streakBonusAndBoundaries();
+        modernServerFormat();
+        october18HoverFormat();
+        if (args.length > 0) replay(java.nio.file.Path.of(args[0]));
 
         // Decimals follow how close the roll is to an end.
         equal(LootRoll.fmt(0.00480), "0.0048");
@@ -179,6 +182,179 @@ public final class LootRollChecks {
         equal(LootRoll.fmt(99.98), "99.98");
 
         System.out.println(checks + " loot roll checks passed");
+    }
+
+    private static void modernServerFormat() {
+        // Exact server lines from latest.log, October 16, 21:41:04 and 22:08:13.
+        String mob = "[Debug] NEST_ZEALOT MF 382.8 PL 66.12 Luck 1x";
+        LootRoll.Block hit = block(mob,
+                "Roll 0.49284180/100 → Null Ovoid",
+                "Chance 0.19140132% [0.32306667, 0.51446798) Base 0.05%",
+                "[Roll] Special Zealot 58.97808226 < 0.22093921% (1 in 453) miss");
+        equal(hit.mob, "NEST_ZEALOT");
+        equal(hit.loot, 0.49284180);
+        equal(hit.result, "Null Ovoid");
+        equal(hit.rows.getFirst()[1], 0.51446798);
+        equal(hit.rares.getFirst().needs(), 0.22093921);
+        equal(hit.rares.getFirst().hit(), false);
+        equal(Zealots.strip(LootRoll.kill(hit)), "▍ Zealot 0.493 → Null Ovoid · Special Zealot 58.98");
+        equal(hit.startsNext(mob), true);
+        equal(hit.startsNext("[DRAGON] Someone: " + mob), false);
+        equal(LootRoll.rollAnchor("[DRAGON] Someone: " + mob), false);
+        equal(LootRoll.rollAnchor("[Debug] NEST_ZEALOT MF whatever"), false);
+
+        LootRoll.Block miss = block(mob, "Roll 89.63299499/100 → nothing",
+                "[Roll] Special Zealot 1.04826866 < 0.22093921% (1 in 453) miss");
+        boolean previousFilter = LootFilter.on();
+        try {
+            LootFilter.module().setEnabled().accept(true);
+            equal(miss.dropped(), false);
+            equal(miss.worthShowing(), true); // The independent roll is a close call.
+            LootRoll.Block empty = block(mob, "Roll 70.84092822/100 → nothing",
+                    "[Roll] Special Zealot 43.23815191 < 0.22093921% (1 in 453) miss");
+            equal(empty.worthShowing(), false);
+            equal(empty.read("[Roll] Special Zealot 0.1 < 0.22093921% (1 in 453) HIT"), true);
+            equal(empty.worthShowing(), true);
+        } finally { LootFilter.module().setEnabled().accept(previousFilter); }
+
+        String[] dragonLines = {
+                "[Debug] Wise Dragon #1 Score 900 (4 eyes) Damage 93,677,218",
+                "MF 294.69 PL 66.12 Table 55.59835938/100 → Wise Dragon Helmet + 4 frags",
+                "Armor 62.06160796/100 < 235.752 and ≤ 225",
+                "Meter ender_dragon_pet_legendary ×1.1039",
+                "Frozen/crystal 62.06160796/100 Core < 0.02210175 else Fragment < 4.42035 Crystal < 10"
+        };
+        LootRoll.Block dragon = block(dragonLines);
+        equal(dragon.dragon.get("score"), "900");
+        equal(dragon.dragon.get("eyes"), "4");
+        equal(dragon.dragon.get("damage"), "93,677,218");
+        equal(dragon.dragon.get("mf"), "294.69");
+        equal(dragon.dragon.get("frags"), "4");
+        equal(dragon.dragon.get("armorCap"), "225");
+        equal(dragon.result, "Wise Dragon Helmet");
+        equal(Zealots.strip(LootRoll.dragonTop(dragon)), "▍ Score 900 · MF 295 · PL 66");
+        equal(Zealots.strip(LootRoll.dragonRoll(dragon)), "▍ Loot 55.60 → Wise Dragon Helmet");
+        for (String line : dragonLines) dragon.raw.add(Component.literal(line));
+        var summary = LootRoll.hover(LootRoll.dragonRoll(dragon), dragon);
+        var details = LootRollDetails.rows(id((ClickEvent.RunCommand) summary.getStyle().getClickEvent()));
+        equal(details.size(), 5);
+        equal(LootRollDetailsScreen.copyLine(details.get(4)), dragonLines[4]);
+        equal(dragon.startsNext(mob), true);
+        equal(hit.startsNext(dragonLines[0]), true);
+        equal(LootRoll.rollAnchor("[DRAGON] Someone: " + dragonLines[0]), false);
+        equal(dragon.read("[DRAGON] Someone: " + dragonLines[1]), false);
+        equal(hit.read("[DRAGON] Someone: [Roll] Special Zealot 0.1 < 1% (1 in 100) HIT"), false);
+
+        equal(LootFilter.roll("LootNum: 28.79760 Magic Find Multiplier: 3.803x"), 28.79760);
+        equal(LootFilter.roll("loot number: 0.5"), 0.5);
+        equal(LootFilter.roll("loot number: 0.5 → Null Ovoid"), null);
+        equal(LootFilter.roll("[DRAGON] Someone: LootNum: 0.5 Magic Find Multiplier: 3.803x"), null);
+    }
+
+    private static void october18HoverFormat() {
+        // Exact lines received October 18. They were all escaping the old parser and
+        // filling chat; the compact line keeps these six originals in its hover.
+        String[] lines = {
+                "[Debug] Enderman · Roll 67.43257/100 · MF 408.06802 · PL 66.12 · Haunted Candy; MF not applied miss",
+                "[Debug] Chance 0.3003% · Base 0.3003% · Range [0, 0.3003)",
+                "[Debug] Enderman · Roll 96.5314/100 · MF 408.06802 · PL 66.12 · Trick-or-Treat Chest; MF not applied miss",
+                "[Debug] Chance 0.02667% · Base 0.02667% · Range [0, 0.02667)",
+                "[Debug] Enderman · Roll 72.57079/100 · MF 408.06802 · PL 66.12 · Luck 1x · miss · Miss Chance 99.93677%",
+                "[Debug] Range [0.06323, 100)"
+        };
+        LootRoll.Block b = block(lines);
+        equal(b.mob, "Enderman");
+        equal(b.loot, 72.57079);
+        equal(b.rares.size(), 2);
+        equal(b.rares.getFirst().name(), "Haunted Candy");
+        equal(b.rares.getFirst().needs(), 0.3003);
+        equal(b.modernMain, true);
+        equal(Zealots.strip(LootRoll.kill(b)), "▍ Enderman 72.57");
+        equal(b.startsNext(lines[0]), true);
+        equal(LootRoll.rollAnchor("[DRAGON] Someone: " + lines[0]), false);
+        boolean filter = LootFilter.on();
+        try {
+            LootFilter.module().setEnabled().accept(true);
+            equal(b.worthShowing(), false);
+        } finally { LootFilter.module().setEnabled().accept(filter); }
+        for (String line : lines) b.raw.add(Component.literal(line));
+        Component summary = LootRoll.hover(LootRoll.kill(b), b);
+        var details = LootRollDetails.rows(id((ClickEvent.RunCommand) summary.getStyle().getClickEvent()));
+        equal(details.size(), 6);
+        equal(LootRollDetailsScreen.copyLine(details.getLast()), lines[5]);
+
+        LootRoll.Block zealot = block(
+                "[Debug] Zealot · Roll 87.30163/100 · MF 408.06802 · PL 66.12 · Haunted Candy; MF not applied miss",
+                "[Debug] Chance 0.3003% · Base 0.3003% · Range [0, 0.3003)",
+                "[Debug] Zealot · Roll 10.1674/100 · MF 408.06802 · PL 66.12 · Trick-or-Treat Chest; MF not applied miss",
+                "[Debug] Chance 0.02667% · Base 0.02667% · Range [0, 0.02667)",
+                "[Debug] Zealot · Roll 3.13676/100 · MF 410.56802 · PL 66.12 · Luck 1x · miss · Miss Chance 99.68135%",
+                "[Debug] Range [0.31865, 100)",
+                "[Debug] Zealot · Roll 4.46746/100 · MF 408.06802 · PL 66.12 · Summoning Eye; MF not applied HIT · Chance 17%",
+                "[Debug] Range [0, 17)",
+                "[Debug] Zealot · Roll 64.78413/100 · MF 408.06802 · PL 66.12 · Special Zealot miss · Chance 0.23371%",
+                "[Debug] Range [0, 0.23371)");
+        equal(zealot.rares.size(), 4);
+        equal(zealot.rares.get(2).name(), "Summoning Eye");
+        equal(zealot.rares.get(2).hit(), true);
+        equal(zealot.rares.get(2).needs(), 17.0);
+        equal(Zealots.strip(LootRoll.kill(zealot)), "▍ Zealot 3.14 · ✔ Summoning Eye");
+        equal(zealot.startsNext("[Debug] Zealot · Roll 94.61622/100 · MF 408.06802 · PL 66.12 · Haunted Candy; MF not applied miss"), true);
+
+        // The server's settings can omit MF, PL, Luck, chance or seasonal rolls.
+        // Parse the fields that exist and keep the exact originals on hover.
+        String[] minimal = {
+                "[Debug] The Disturbed · Roll 0.01559/100 · The Art of War · Chance 0.11659%",
+                "[Debug] Base 0.02857% · Range [0, 0.11659) · Meter none (example)"
+        };
+        LootRoll.Block custom = block(minimal);
+        equal(custom.mob, "The Disturbed");
+        equal(custom.result, "The Art of War");
+        equal(Zealots.strip(LootRoll.kill(custom)), "▍ The Disturbed 0.0156 → The Art of War");
+        for (String line : minimal) custom.raw.add(Component.literal(line));
+        Component customSummary = LootRoll.hover(LootRoll.kill(custom), custom);
+        var customDetails = LootRollDetails.rows(id((ClickEvent.RunCommand) customSummary.getStyle().getClickEvent()));
+        equal(customDetails.size(), 2);
+        equal(LootRollDetailsScreen.copyLine(customDetails.getLast()), minimal[1]);
+
+        LootRoll.Block dragonTable = block(
+                "[Debug] Strong Dragon · Table 24.7052/100 · MF 408.06802 · PL 66.12 · Luck 1x · Dragon Scale · Chance 12.24204%",
+                "[Debug] Base 3% · Range [14.6121, 26.85414) · Meter ender_dragon_pet_legendary ×1.10462",
+                "[Debug] Strong Dragon · Roll 72.42354/100 · Frozen Core miss · Chance 0.03061%",
+                "[Debug] Range [0, 0.03061)");
+        equal(dragonTable.result, "Dragon Scale");
+        equal(dragonTable.rares.size(), 1);
+        equal(dragonTable.rares.getFirst().name(), "Frozen Core");
+        equal(Zealots.strip(LootRoll.kill(dragonTable)), "▍ Strong Dragon 24.71 → Dragon Scale");
+        equal(dragonTable.startsNext("[Debug] Strong Dragon · Table 5/100 · Dragon Claw"), true);
+        equal(custom.startsNext("[Debug] Zealot · Roll 5/100 · Luck 1x · miss"), true);
+    }
+
+    /** Optional replay of a real Minecraft log; unrelated chat remains untouched. */
+    private static void replay(java.nio.file.Path path) throws Exception {
+        LootRoll.Block current = null;
+        int headers = 0, rolls = 0;
+        for (String raw : java.nio.file.Files.readAllLines(path)) {
+            int chat = raw.indexOf("[System] [CHAT] ");
+            if (chat < 0) continue;
+            String line = Zealots.strip(raw.substring(chat + "[System] [CHAT] ".length())).trim();
+            if (LootRoll.rollAnchor(line)) {
+                if (current == null || current.startsNext(line)) {
+                    current = new LootRoll.Block();
+                    headers++;
+                }
+            }
+            if (current == null) continue;
+            if (LootRoll.rollAnchor(line) || line.startsWith("[Debug] Chance ") || line.startsWith("[Debug] Range ")
+                    || line.matches("^(?:Roll |\\[Roll\\] |Chance |MF |Armor |Meter |Frozen/crystal ).*")) {
+                if (!current.read(line)) throw new AssertionError("replay did not parse: " + line);
+                equal(true, true);
+                if (line.startsWith("Roll ") || line.startsWith("MF ")
+                        || LootDebug.modern(line) != null) rolls++;
+            }
+        }
+        if (headers == 0 || rolls == 0) throw new AssertionError("No modern debug blocks in " + path);
+        System.out.println("Replayed real Minecraft log: " + headers + " debug headers, " + rolls + " table rolls");
     }
 
     private static void streakBonusAndBoundaries() {

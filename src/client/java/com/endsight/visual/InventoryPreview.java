@@ -65,10 +65,12 @@ public final class InventoryPreview {
      * background colour - so the readout arrived tinted, and over dark stone it read
      * as a coloured sheet laid on the world rather than a window onto it. The fill is
      * now neutral black at whatever the slider says, which at the bottom of the range
-     * is genuinely clear rather than clear-ish, and the border carries the shape.
+     * is genuinely clear rather than clear-ish. At zero opacity the frame goes away
+     * too: leaving its accent ring visible made "clear" still look like a panel.
      */
     private static void frame(GuiGraphicsExtractor g, int x, int y, int w, int h) {
-        if (opacity > 0) Draw.roundedRect(g, x, y, w, h, Theme.RADIUS, Draw.alpha(0xFF000000, (float) opacity));
+        if (opacity <= 0) return;
+        Draw.roundedRect(g, x, y, w, h, Theme.RADIUS, Draw.alpha(0xFF000000, (float) opacity));
         // A pixel is as thin as a line gets, so "thinner" here means fainter: the readout
         // sits over the world and its edge only has to say where it stops.
         Draw.roundedRing(g, x, y, w, h, Theme.RADIUS, Draw.alpha(Theme.accent(), .35f));

@@ -15,6 +15,13 @@ public final class SlayerReminderChecks {
         equal(Slayer.questStatus("Slayer: Not started", "XP: 0/13,750", true), Slayer.QuestStatus.ACTIVE);
         equal(Slayer.questStatus(null, "XP: 0/13,750", true), Slayer.QuestStatus.ACTIVE);
         equal(Slayer.questStatus("Slayer: Atoned Horror", null, true), Slayer.QuestStatus.ACTIVE);
+        equal(Slayer.voidgloomQuest("§5Slayer: Voidgloom Seraph I", "XP: 0/400", false, null), true);
+        equal(Slayer.voidgloomQuest("Slayer: Voidgloom Seraph IV", null, false, null), true);
+        equal(Slayer.voidgloomQuest("Slayer: Riftborn Seraph V", "XP: 1/13,750", false, null), true);
+        equal(Slayer.voidgloomQuest("Slayer: Not started", null, false, "Voidgloom"), false);
+        equal(Slayer.voidgloomQuest("Slayer: Revenant Horror V", "XP: 0/13,750", false, null), false);
+        equal(Slayer.voidgloomQuest(null, null, true, "Voidgloom"), true);
+        equal(Slayer.voidgloomQuest(null, null, false, "Voidgloom"), false);
         equal(Slayer.reminderCommand("Revenant"), "/slayer 5");
         equal(Slayer.reminderCommand("Voidgloom"), "/slayer enderman 4");
         SlayerTiers tiers = new SlayerTiers();

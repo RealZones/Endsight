@@ -66,6 +66,18 @@ public final class DropsChecks {
         equal(Drops.bonus("BONUS! You received 0x Null Atom!"), null);
         equal(Drops.bonus("BONUS! You received 999999999999x Null Atom!"), null);
 
+        equal(Drops.modernLoot("Roll 0.49284180/100 → Null Ovoid"), "Null Ovoid");
+        equal(Drops.modernLoot("MF 294.69 PL 66.12 Table 55.59835938/100 → Wise Dragon Helmet + 4 frags"), "Wise Dragon Helmet");
+        equal(Drops.modernLoot("MF 380.31 PL 66.12 Table 50.68099857/100 → §aAspect of the Dragons §7+ §f6 §7frags"), "§aAspect of the Dragons");
+        equal(Drops.modernLoot("Roll 70.84092822/100 → nothing"), null);
+        equal(Drops.modernLoot("[DRAGON] Someone: Roll 0.49284180/100 → Null Ovoid"), null);
+        equal(Drops.parseMessage("Roll 0.01/100 → Null Atom", 110, 10_000), new Drops.Drop("Null Atom", 0));
+        equal(Drops.parseMessage("RARE DROP! Null Atom", 111, 10_001), null);
+        equal(Drops.parseMessage("Roll 0.01/100 → Null Atom", 112, 10_002), new Drops.Drop("Null Atom", 0));
+        equal(Drops.parseMessage("MF 380.31 PL 66.12 Table 0.01/100 → §7[Lvl 1] §5Ender Dragon + 6 frags", 113, 10_003),
+                new Drops.Drop("[Lvl 1] Ender Dragon", 2));
+        equal(Drops.parseMessage("RNGESUS DROP! §7[Lvl 1] §5Ender Dragon", 114, 10_004), null);
+
         DropDeduplicator matching = new DropDeduplicator();
         Drops.Drop a = new Drops.Drop("Riftstring", 1), b = new Drops.Drop("Null Atom", 0);
         equal(matching.credit(a, DropDeduplicator.Source.DEBUG, 2_000), 1);

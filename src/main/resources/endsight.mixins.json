@@ -15,6 +15,7 @@
 		"GuardianRendererMixin",
 		"GuardianParticlesMixin",
 		"ExplosionParticlesMixin",
+		"ShinyNodeParticlesMixin",
 		"LivingEntityRenderStateMixin",
 		"LivingEntityRendererMixin",
 		"EntityRendererMixin",

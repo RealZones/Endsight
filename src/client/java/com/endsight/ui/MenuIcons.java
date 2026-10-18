@@ -62,9 +62,9 @@ final class MenuIcons {
             case "visual.beacon" -> BEACON;
             case "visual.etherwarp" -> WARP;
             case "visual.rarity" -> GEM;
-            case "visual.fullbright" -> LIGHT;
+            case "visual.fullbright", "visual.tweaks" -> LIGHT;
             case "hud.stats", "qol.hotdButton" -> COMPASS;
-            case "qol.debug", "qol.math", "dungeon.quiz" -> BOOK;
+            case "qol.debug", "qol.lootChat", "qol.math", "dungeon.quiz" -> BOOK;
             case "qol.copychat", "qol.globalchat" -> WRITING;
             case "qol.lootroll" -> PAPER;
             case "qol.lootfilter" -> FILTER;

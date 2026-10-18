@@ -109,6 +109,16 @@ public final class ZealotTrackerChecks {
         yes(!(boolean) spawn.invoke(null, "Special Zealot has spawned nearby!", 1_200L),
                 "an unverified nearby-spawn message was treated as personal ownership");
         eq(count("sinceSpecial"), 1, "nonpersonal spawn text changed the streak");
+        yes(!(boolean) spawn.invoke(null, "[Roll] Special Zealot 1.04826866 < 0.22093921% (1 in 453) miss", 1_500L),
+                "new missed roll reset streak");
+        yes(!(boolean) spawn.invoke(null, "[MVP+] Someone: [Roll] Special Zealot 0.1 < 0.22093921% (1 in 453) HIT", 1_500L),
+                "new player paste reset streak");
+        String modernSpawn = "[Roll] Special Zealot 0.1 < 0.22093921% (1 in 453) HIT";
+        yes((boolean) spawn.invoke(null, modernSpawn, 1_600L), "new successful spawn not recognized");
+        eq(count("sinceSpecial"), 0, "new personal spawn did not reset streak");
+        ZealotTracker.recordKill(false);
+        yes((boolean) spawn.invoke(null, modernSpawn, 1_700L), "new repeated signal not consumed");
+        eq(count("sinceSpecial"), 1, "new duplicate erased later kills");
         // The real network receiver also handles hidden detailed lines. Later eye
         // payouts and the Special's own death preserve kills since its spawn.
         line.invoke(null, "rare roll Special Zealot (1 in 383, 0.26139%) rolled 0.10010 HIT");

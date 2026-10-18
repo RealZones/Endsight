@@ -1,5 +1,6 @@
 package com.endsight.storage;
 
+import com.endsight.qol.Rarity;
 import com.endsight.zealots.Zealots;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.minecraft.client.Minecraft;
@@ -9,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
@@ -27,7 +29,6 @@ public final class Pets {
     private Pets() {
     }
 
-    private static final Pattern RARITY = Pattern.compile("^(COMMON|UNCOMMON|RARE|EPIC|LEGENDARY|MYTHIC) PET");
     /** Run over the whole tooltip as one sentence, so it stops at the full stop, not at a line end. */
     private static final Pattern POWDER = Pattern.compile("Earn (\\d+)% more (Void|Ender) Powder from ([^.]+?)\\.");
     private static final Pattern LEVEL = Pattern.compile("^\\[Lvl \\d+\\]\\s*");
@@ -49,35 +50,37 @@ public final class Pets {
     public static void init() {
         load();
         ItemTooltipCallback.EVENT.register((stack, context, flag, lines) -> {
-            String name = LEVEL.matcher(Zealots.strip(stack.getHoverName().getString()).trim()).replaceFirst("");
-            String rarity = null;
-            Map<String, Integer> found = new HashMap<>();
-            // One sentence, not lines: "Earn 25% more Void Powder" / "from Crying
-            // Obsidian." is wrapped over two, and matched a line at a time it never hit -
-            // pets.txt stayed empty and no pet's powder buff was ever applied.
-            StringBuilder all = new StringBuilder();
-            for (Component c : lines) {
-                String line = Zealots.strip(c.getString()).trim();
-                all.append(line).append(' ');
-                Matcher r = RARITY.matcher(line);
-                if (r.find()) rarity = r.group(1);
-            }
-            Matcher m = POWDER.matcher(all.toString().replaceAll("\\s+", " "));
-            while (m.find()) {
-                // "from all sources" is every material of that powder: a Scatha's
-                // Bejeweled Eyes is +20% Void, on crying obsidian and amethyst alike.
-                String where = m.group(3).trim();
-                String key = where.equalsIgnoreCase("all sources") ? "*" + m.group(2) : where;
-                found.put(key, Integer.parseInt(m.group(1)));
-            }
-            if (rarity == null || found.isEmpty()) return;
-            boolean changed = false;
-            for (Map.Entry<String, Integer> e : found.entrySet()) {
-                String key = rarity + " " + name + "|" + e.getKey();
-                if (!e.getValue().equals(powder.put(key, e.getValue()))) changed = true;
-            }
-            if (changed) save();
+            if (learn(stack.getHoverName().getString(), Rarity.read(stack), lines)) save();
         });
+    }
+
+    static boolean learn(String itemName, Rarity.Info info, List<Component> lines) {
+        if (info == null || !info.type().equals("PET")) return false;
+        String name = LEVEL.matcher(Zealots.strip(itemName).trim()).replaceFirst("");
+        Map<String, Integer> found = new HashMap<>();
+        // One sentence, not lines: "Earn 25% more Void Powder" / "from Crying
+        // Obsidian." is wrapped over two, and matched a line at a time it never hit -
+        // pets.txt stayed empty and no pet's powder buff was ever applied.
+        StringBuilder all = new StringBuilder();
+        for (Component c : lines) {
+            String line = Zealots.strip(c.getString()).trim();
+            all.append(line).append(' ');
+        }
+        Matcher m = POWDER.matcher(all.toString().replaceAll("\\s+", " "));
+        while (m.find()) {
+            // "from all sources" is every material of that powder: a Scatha's
+            // Bejeweled Eyes is +20% Void, on crying obsidian and amethyst alike.
+            String where = m.group(3).trim();
+            String key = where.equalsIgnoreCase("all sources") ? "*" + m.group(2) : where;
+            found.put(key, Integer.parseInt(m.group(1)));
+        }
+        if (found.isEmpty()) return false;
+        boolean changed = false;
+        for (Map.Entry<String, Integer> e : found.entrySet()) {
+            String key = info.rarity() + " " + name + "|" + e.getKey();
+            if (!e.getValue().equals(powder.put(key, e.getValue()))) changed = true;
+        }
+        return changed;
     }
 
     /**

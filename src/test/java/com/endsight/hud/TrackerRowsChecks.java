@@ -199,6 +199,12 @@ public final class TrackerRowsChecks {
         equal(fuel, "2,776/3K (93%)");
         same(fuel, call(PowderTracker.class, "fuelText", new Class<?>[]{long.class, long.class}, 2_776L, 3_000L), "unchanged fuel text rebuilt");
         equal(call(PowderTracker.class, "fuelText", new Class<?>[]{long.class, long.class}, 2_000L, 3_000L), "2,000/3K (67%)");
+        long[] parsedFuel = (long[]) call(PowderTracker.class, "parseFuel", new Class<?>[]{List.class},
+                List.of("§dBadge \uE000 Fuel : §a6,808 / 50,000 (14%)"));
+        equal(parsedFuel[0], 6_808L);
+        equal(parsedFuel[1], 50_000L);
+        equal(call(PowderTracker.class, "parseFuel", new Class<?>[]{List.class},
+                List.of("Fuel Tank: Perfectly-Cut", "No fuel in this item")), null);
     }
 
     private static Object bossRows(String boss, String period, boolean sample, long now) throws Exception {

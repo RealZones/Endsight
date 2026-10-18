@@ -64,17 +64,21 @@ public final class LootFilter {
         return roll < showUnder || (bothEnds && roll >= 100 - showUnder);
     }
 
+    static Double roll(String line) {
+        Double modern = LootDebug.normalRoll(line.trim());
+        if (modern != null) return modern;
+        Matcher m = ROLL.matcher(line);
+        if (!m.find()) return null;
+        try { return Double.valueOf(m.group(1)); }
+        catch (NumberFormatException e) { return null; }
+    }
+
     public static void init() {
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
             // A dragon's detailed block has a bare loot number too; LootRoll judges it with the rest.
             if (!enabled || overlay || LootRoll.busy()) return true;
-            Matcher m = ROLL.matcher(Zealots.strip(message.getString()));
-            if (!m.find()) return true;
-            try {
-                return shows(Double.parseDouble(m.group(1)));
-            } catch (NumberFormatException e) {
-                return true;
-            }
+            Double value = roll(Zealots.strip(message.getString()));
+            return value == null || shows(value);
         });
     }
 }

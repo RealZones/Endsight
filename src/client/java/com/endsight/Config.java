@@ -80,6 +80,8 @@ public final class Config {
         }
 
         for (Module m : registry.all()) {
+            // Group cards only present old modules' controls; those stable ids own the saved values.
+            if (m.group()) continue;
             String base = "module." + m.id();
 
             String on = p.getProperty(base + ".enabled");
@@ -148,6 +150,7 @@ public final class Config {
         com.endsight.qol.CommandBinds.save(p);
 
         for (Module m : registry.all()) {
+            if (m.group()) continue;
             String base = "module." + m.id();
             p.setProperty(base + ".enabled", String.valueOf(m.isEnabled()));
 

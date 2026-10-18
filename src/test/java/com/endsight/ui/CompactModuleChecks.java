@@ -14,6 +14,7 @@ public final class CompactModuleChecks {
     public static void main(String[] args) {
         registrySnapshots();
         registryMutation();
+        groupPresentation();
         liveSearch();
         moduleSearch();
         settingsOutline();
@@ -126,6 +127,26 @@ public final class CompactModuleChecks {
         same(unchanged, registry.all(), "absent removal rebuilt modules");
         same(unchangedCategories, registry.categories(), "absent removal rebuilt categories");
         same(unchangedGroups, registry.grouped(null, ""), "absent removal rebuilt groups");
+    }
+
+    private static void groupPresentation() {
+        Module old = module("old", "Old control", "Chat");
+        Module other = module("other", "Other control", "Visual");
+        Module group = Module.group("group", "Combined", "Controls for old features", "Chat",
+                List.of(Setting.demoToggle("Old control", "Preserved behavior", true)));
+        ModuleRegistry registry = new ModuleRegistry().add(old).add(other);
+        registry.insertBefore("old", group).hide("old");
+        yes(group.implemented() && group.group() && !group.togglable() && group.isEnabled(),
+                "settings group should open without a master toggle");
+        equal(registry.all(), List.of(group, old, other));
+        equal(registry.categories(), List.of("Chat", "Visual"));
+        equal(registry.grouped(null, ""), Map.of("Chat", List.of(group), "Visual", List.of(other)));
+        equal(registry.count(null, ""), 2);
+        equal(registry.grouped(null, "old control"), Map.of("Chat", List.of(group)));
+        registry.replace(module("old", "Updated control", "Chat"));
+        equal(registry.count(null, ""), 2); // replacing a hidden module must not reveal it
+        registry.remove("old").add(old);
+        equal(registry.count(null, ""), 3); // removing it clears the hidden id
     }
 
     private static void liveSearch() {

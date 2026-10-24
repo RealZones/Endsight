@@ -41,7 +41,17 @@ public final class ProfileClient {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, context) -> ProfileCommands.register(
                 dispatcher, source -> source.getClient().getUser().getName(),
                 source -> NAMES.withOnline(source.getClient().getConnection().getSuggestionsProvider().getOnlinePlayerNames()),
-                ProfileClient::open));
+                ProfileClient::open, ProfileClient::toServer));
+    }
+
+    /**
+     * Sends a command to the server as the plain command packet. Not sendCommand: Fabric runs
+     * client commands inside it first, so "/pv 1" came straight back to this /pv, which sent it
+     * again, until the stack ran out and the game crashed (2026-10-24, profile select screen).
+     */
+    private static void toServer(String command) {
+        var connection = Minecraft.getInstance().getConnection();
+        if (connection != null) connection.send(new net.minecraft.network.protocol.game.ServerboundChatCommandPacket(command));
     }
 
     public static int open(String player) {

@@ -16,9 +16,9 @@ public final class ProfileCommandChecks {
         dispatcher.register(LiteralArgumentBuilder.<String>literal("pv")
                 .then(RequiredArgumentBuilder.<String,Integer>argument("player", IntegerArgumentType.integer())
                         .executes(c -> { throw new AssertionError("Server command selected for a username"); })));
-        List<String> opened = new ArrayList<>();
+        List<String> opened = new ArrayList<>(), forwarded = new ArrayList<>();
         ProfileCommands.register(dispatcher, source -> source,
-                source -> List.of("Secrets_", "Secreta", "secrets_", "Imfear", "Steve", "invalid name"), opened::add);
+                source -> List.of("Secrets_", "Secreta", "secrets_", "Imfear", "Steve", "invalid name"), opened::add, forwarded::add);
         var parsed = dispatcher.parse("pv secrets_", "Self");
         require(!parsed.getReader().canRead(), "The username must parse completely despite the server integer argument");
         dispatcher.execute(parsed);
@@ -39,9 +39,14 @@ public final class ProfileCommandChecks {
         require(filtered.getChild("pv") == null && server.getRoot().getChild("pv") != null,
                 "Filter reserved aliases without mutating the received server tree");
         var redirected = new CommandDispatcher<>(filtered);
-        ProfileCommands.register(redirected, source -> source, source -> List.of("Secrets_"), opened::add);
+        ProfileCommands.register(redirected, source -> source, source -> List.of("Secrets_"), opened::add, forwarded::add);
         redirected.execute("pv Secrets_", "Self");
         require(opened.getLast().equals("Secrets_"), "A server redirect cannot capture profile usernames");
+        // Dragsim's vaults: /pv 1 to /pv 99 belong to the server (the game drops the server's own
+        // /pv tree, as here); a three-digit name is a player.
+        redirected.execute("pv 1", "Self"); redirected.execute("pv 10", "Self"); redirected.execute("pv 100", "Self");
+        require(forwarded.equals(List.of("pv 1", "pv 10")), "A one- or two-digit /pv must go to the server's vaults");
+        require(opened.getLast().equals("100"), "Three digits is a valid username and opens a profile");
         var temp = Files.createTempDirectory("endsight-profile-names");
         var file = temp.resolve("profile-players.txt");
         try {

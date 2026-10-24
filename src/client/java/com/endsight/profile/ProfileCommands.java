@@ -25,8 +25,14 @@ public final class ProfileCommands {
         return result;
     }
 
+    /**
+     * @param server sends a command on to the server as typed, without the slash. Dragsim's own
+     *               /pv takes a vault number (/pv 1 opens vault 1), and this /pv caught it and
+     *               opened a profile called "1". A Minecraft name is at least three characters,
+     *               so one or two digits can only be a vault, and those go to the server.
+     */
     public static <S> void register(CommandDispatcher<S> dispatcher, Function<S,String> self,
-                                   Function<S,Collection<String>> players, Consumer<String> open) {
+                                   Function<S,Collection<String>> players, Consumer<String> open, Consumer<String> server) {
         for (String name : List.of("pv", "esprofile")) {
             dispatcher.register(LiteralArgumentBuilder.<S>literal(name)
                     .executes(c -> { open.accept(self.apply(c.getSource())); return 1; })
@@ -45,7 +51,12 @@ public final class ProfileCommands {
                                 matches.values().forEach(builder::suggest);
                                 return builder.buildFuture();
                             })
-                            .executes(c -> { open.accept(StringArgumentType.getString(c, PLAYER)); return 1; })));
+                            .executes(c -> {
+                                String value = StringArgumentType.getString(c, PLAYER);
+                                if (name.equals("pv") && value.matches("[0-9]{1,2}")) server.accept("pv " + value);
+                                else open.accept(value);
+                                return 1;
+                            })));
         }
     }
 }

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "endsight-profile-tests",
+  "version": "1.0.0",
+  "name": "Endsight profile render checks",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["com.endsight.profile.ProfileVisualTest", "com.endsight.storage.CacheVisualTest", "com.endsight.dungeon.DungeonMapVisualTest", "com.endsight.dungeon.KeyAlertVisualTest"]
+  },
+  "depends": {"endsight": "*", "fabric-client-gametest-api-v1": "*"}
+}

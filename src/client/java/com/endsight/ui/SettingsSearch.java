@@ -35,11 +35,21 @@ final class SettingsSearch {
         return matches(query, text(setting));
     }
 
+    /**
+     * Whether the module browser's search looks at this setting. Not keybind rows or headings:
+     * nearly every page ends in a "Keybinds" heading and an "X key" row, so typing "key" for
+     * Key Alerts listed thirty-two pages, each "Matches: Keybinds, X key". They are the same on
+     * every page and say nothing about what it does. A page's own search still finds them.
+     */
+    static boolean browsable(Setting setting) {
+        return !(setting instanceof Setting.KeyAction) && !(setting instanceof Setting.Section);
+    }
+
     static List<String> matchingLabels(Module module, String query) {
         if (normalize(query).isEmpty() || module.settings() == null) return List.of();
         List<String> labels = new ArrayList<>();
         for (Setting setting : module.settings()) {
-            if (matches(setting, query)) labels.add(setting instanceof Setting.Command command
+            if (browsable(setting) && matches(setting, query)) labels.add(setting instanceof Setting.Command command
                     ? command.command() : setting.label());
         }
         return List.copyOf(labels);

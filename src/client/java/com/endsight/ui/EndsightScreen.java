@@ -21,6 +21,7 @@ public class EndsightScreen extends Screen {
     private static String category, expandedId;
     private static String query = "";
     private static int scroll;
+    private static final String APPEARANCE = "@appearance";
     private record ViewState(String category, String query, int scroll, String expanded) { }
     private static final Map<ModuleRegistry, ViewState> views = new WeakHashMap<>();
     private static ModuleRegistry activeRegistry;
@@ -34,7 +35,13 @@ public class EndsightScreen extends Screen {
     private Map<String, List<Module>> groups;
     private final Map<String, String> matchSummaries = new HashMap<>();
     private final Map<String, Anim> anims = new HashMap<>();
-    private final ThemeRow themeRow = new ThemeRow();
+    private final Module appearance = Module.group("ui.appearance", "Appearance", "Theme and interface preferences.", "Appearance", List.of(
+            new Setting.Section("Interface"),
+            new Setting.Choice("Theme", "Shared by both menus and your readouts.", Theme.palettes().stream().map(Palette::name).toList(),
+                    () -> Theme.palette().name(), name -> Theme.palettes().stream().filter(p -> p.name().equals(name)).findFirst().ifPresent(Theme::set))));
+    private final Map<String, List<Module>> appearanceGroups = Map.of("Appearance", List.of(appearance));
+    private int beforeSearchScroll;
+    private String beforeSearchExpanded;
     private final List<Placed> rows = new ArrayList<>();
     private final List<Heading> headings = new ArrayList<>();
     private final List<Nav> nav = new ArrayList<>();
@@ -50,10 +57,12 @@ public class EndsightScreen extends Screen {
         if (activeRegistry != registry) {
             if (activeRegistry != null) views.put(activeRegistry, new ViewState(category, query, scroll, expandedId));
             ViewState view = views.get(registry);
-            category = view == null ? null : view.category();
+            category = view == null ? registry.browserView() : view.category();
             query = view == null ? "" : view.query();
             scroll = view == null ? 0 : view.scroll();
             expandedId = view == null ? null : view.expanded();
+            if (view == null && ModuleRegistry.FAVORITES.equals(category))
+                expandedId = registry.favorites().values().stream().flatMap(List::stream).map(Module::id).findFirst().orElse(null);
             activeRegistry = registry;
         }
     }
@@ -79,6 +88,7 @@ public class EndsightScreen extends Screen {
     @Override
     public void removed() {
         views.put(registry, new ViewState(category, query, scroll, expandedId));
+        registry.browserView(category);
         if (editor != null) editor.cancelInteractions();
         super.removed();
     }
@@ -87,29 +97,27 @@ public class EndsightScreen extends Screen {
     private int panelY() { return Theme.panelY(height); }
     private int panelW() { return Theme.panelW(width); }
     private int panelH() { return Theme.panelH(height); }
-    private int sidebarW() { return Math.min(Theme.SIDEBAR_W, Math.max(144, panelW() / 3)); }
+    private int sidebarW() { return Math.min(156, Math.max(100, panelW() / 4)); }
     private int contentX() { return panelX() + sidebarW(); }
     private int contentW() { return panelW() - sidebarW(); }
     private int contentTop() { return panelY() + HEADER; }
     private int contentBottom() { return panelY() + panelH() - 10; }
-    private int navTop() { return contentTop() + 20; }
+    private int navTop() { return contentTop() - 1; }
     private int navBottom() { return Math.max(navTop() + 20, moveButtonY() - 8); }
-    private boolean compactFooter() { return panelH() < 260; }
-    private int moveButtonY() {
-        if (compactFooter()) return panelY() + panelH() - 47;
-        int paletteRows = (Theme.palettes().size() + 4) / 5;
-        return panelY() + panelH() - (paletteRows * 25 - 7) - 78;
-    }
+    private int moveButtonY() { return panelY() + panelH() - 59; }
     private int searchX() { return contentX() + INSET; }
     private int searchY() { return panelY() + 31; }
     private int searchW() { return Math.max(40, contentW() - INSET * 2); }
     private int maxScroll() { return Math.max(0, contentHeight - (contentBottom() - contentTop())); }
-    private int maxNavScroll() { return Math.max(0, (registry.categories().size() + 1) * NAV_PITCH - (navBottom() - navTop())); }
+    private int maxNavScroll() { return Math.max(0, (registry.categories().size() + 2) * NAV_PITCH + 10 - (navBottom() - navTop())); }
 
     private Anim anim(String key) { return anims.computeIfAbsent(key, ignored -> new Anim(0)); }
 
     private void results() {
-        Map<String, List<Module>> next = registry.grouped(category, query);
+        // The header search is global; keeping a hidden category filter made real features appear missing.
+        Map<String, List<Module>> next = !query.isBlank() ? registry.grouped(null, query)
+                : APPEARANCE.equals(category) ? appearanceGroups
+                : ModuleRegistry.FAVORITES.equals(category) ? registry.favorites() : registry.grouped(category, "");
         if (groups == next) return;
         groups = next;
         resultCount = 0;
@@ -141,7 +149,7 @@ public class EndsightScreen extends Screen {
 
     private void layout() {
         results();
-        if (category != null && !registry.categories().contains(category)) {
+        if (category != null && !ModuleRegistry.FAVORITES.equals(category) && !APPEARANCE.equals(category) && !registry.categories().contains(category)) {
             category = null;
             results();
         }
@@ -149,12 +157,14 @@ public class EndsightScreen extends Screen {
         navScroll = Math.max(0, Math.min(navScroll, maxNavScroll()));
         nav.clear();
         int ny = navTop() - navScroll;
-        nav.add(new Nav("All modules", null, ny));
+        nav.add(new Nav("Favorites", ModuleRegistry.FAVORITES, ny));
+        ny += NAV_PITCH;
+        nav.add(new Nav("All features", null, ny));
+        ny += 10;
         for (String name : registry.categories()) {
             ny += NAV_PITCH;
             nav.add(new Nav(name, name, ny));
         }
-        themeRow.layout(panelX(), panelY(), panelH());
         placeRows();
         int clamped = Math.max(0, Math.min(scroll, maxScroll()));
         if (clamped != scroll) { scroll = clamped; placeRows(); }
@@ -165,12 +175,13 @@ public class EndsightScreen extends Screen {
         int x = contentX() + INSET, w = Math.max(80, contentW() - INSET * 2);
         int y = contentTop() + 8 - scroll;
         for (Map.Entry<String, List<Module>> group : groups.entrySet()) {
-            if (category == null) {
+            if (category == null || ModuleRegistry.FAVORITES.equals(category) || !query.isBlank()) {
                 headings.add(new Heading(group.getKey(), group.getValue().size(), y));
                 y += 24;
             }
             for (Module module : group.getValue()) {
-                ModuleRowLayout geometry = ModuleRowLayout.of(x, y, w, module.togglable(), module.hasSettings());
+                ModuleRowLayout geometry = ModuleRowLayout.of(x, y, w, module.togglable(), module.hasSettings(),
+                        Keybinds.get(Keybinds.moduleId(module)) != Keybinds.NONE);
                 int bodyY = y + geometry.row().h();
                 int bodyH = module == editingModule && editor != null ? editor.embeddedHeight(w - 8, query) : 0;
                 rows.add(new Placed(module, geometry, bodyY, bodyH));
@@ -204,12 +215,11 @@ public class EndsightScreen extends Screen {
         Draw.rect(g, x + w - 1, y + 8, 1, panelH() - 16, Theme.line());
         Draw.roundedRect(g, x + 15, y + 18, 5, 5, 2, Theme.accent());
         Draw.text(g, font, Draw.fit(font, brand, w - 42), x + 27, y + 16, Theme.text());
-        Draw.text(g, font, "MODULES", x + 15, contentTop() + 5, Theme.dim());
         g.enableScissor(x + 1, navTop(), x + w - 1, navBottom());
         try {
             for (Nav item : nav) {
                 if (item.y() + 24 <= navTop() || item.y() >= navBottom()) continue;
-                boolean selected = java.util.Objects.equals(category, item.category());
+                boolean selected = query.isBlank() && java.util.Objects.equals(category, item.category());
                 boolean hot = contains(x + 8, item.y(), w - 16, 23, mx, my) && my >= navTop() && my < navBottom();
                 float a = anim("nav:" + item.title()).to(selected ? 1 : hot ? .55f : 0, Theme.EASE_FAST);
                 if (a > .01f) Draw.roundedRect(g, x + 8, item.y(), w - 16, 23, 5, Draw.alpha(Theme.accent(), .14f * a));
@@ -225,34 +235,30 @@ public class EndsightScreen extends Screen {
             if (navScroll < maxNavScroll())
                 MenuIcons.arrow(g, x + w - 19, navBottom() - 12, MenuIcons.Arrow.DOWN, Theme.muted());
         }
-        int moveY = moveButtonY();
-        boolean moveHot = contains(x + 10, moveY, w - 20, 18, mx, my);
-        Draw.roundedRect(g, x + 10, moveY, w - 20, 18, 5, moveHot ? Theme.hover() : Theme.raised());
-        Draw.textCentered(g, font, "Move readouts", x + w / 2, moveY + 5, moveHot ? Theme.text() : Theme.muted());
-        if (compactFooter()) {
-            int themeY = panelY() + panelH() - 25;
-            boolean themeHot = contains(x + 10, themeY, w - 20, 18, mx, my);
-            Draw.roundedRect(g, x + 10, themeY, w - 20, 18, 5, themeHot ? Theme.hover() : Theme.raised());
-            Draw.text(g, font, Draw.fit(font, "Theme: " + Theme.palette().name(), w - 34), x + 17, themeY + 5, Theme.muted());
-        } else {
-            // The shared palette row uses the desktop sidebar width. Clip its
-            // separator on narrow windows; all five swatches still fit.
-            g.enableScissor(x, y, x + w, y + panelH());
-            try { themeRow.draw(g, font, x, mx, my); }
-            finally { g.disableScissor(); }
-        }
+        footer(g, "Edit HUD", moveButtonY(), mx, my, false);
+        footer(g, "Appearance", moveButtonY() + 25, mx, my, APPEARANCE.equals(category));
+    }
+
+    private void footer(GuiGraphicsExtractor g, String title, int y, int mx, int my, boolean selected) {
+        int x = panelX(), w = sidebarW();
+        boolean hot = contains(x + 8, y, w - 16, 23, mx, my);
+        if (hot || selected) Draw.roundedRect(g, x + 8, y, w - 16, 23, 5, selected ? Theme.raised() : Theme.hover());
+        int color = selected ? Theme.accent() : hot ? Theme.text() : Theme.muted();
+        MenuIcons.draw(g, title, x + 19, y + 5, color);
+        Draw.text(g, font, Draw.fit(font, title, w - 47), x + 38, y + 7, color);
     }
 
     private void drawHeader(GuiGraphicsExtractor g) {
         Draw.roundedRect(g, contentX(), panelY(), contentW(), HEADER, Theme.RADIUS_LG,
                 Theme.bg(), false, true, false, false);
-        String title = category == null ? "All modules" : category;
+        String title = !query.isBlank() ? "Search results" : ModuleRegistry.FAVORITES.equals(category) ? "Favorites"
+                : APPEARANCE.equals(category) ? "Appearance" : category == null ? "All features" : category;
         Draw.text(g, font, Draw.fit(font, title, Math.max(30, contentW() - 94)), contentX() + INSET, panelY() + 12, Theme.text());
-        Draw.textRight(g, font, resultCount + (resultCount == 1 ? " module" : " modules"),
+        Draw.textRight(g, font, resultCount + (resultCount == 1 ? " entry" : " entries"),
                 panelX() + panelW() - INSET, panelY() + 12, Theme.dim());
         Draw.roundedOutline(g, searchX(), searchY(), searchW(), 23, 5,
                 searchFocused || !query.isEmpty() ? Theme.accent() : Theme.line(), Theme.input());
-        String shown = query.isEmpty() ? "Search modules and settings..." : query;
+        String shown = query.isEmpty() ? "Search all features and settings..." : query;
         MenuIcons.search(g, searchX() + 8, searchY() + 5,
                 searchFocused || !query.isEmpty() ? Theme.accent() : Theme.muted());
         Draw.text(g, font, Draw.fit(font, shown, searchW() - 49), searchX() + 25, searchY() + 7,
@@ -281,8 +287,8 @@ public class EndsightScreen extends Screen {
                 }
             }
             if (resultCount == 0) {
-                Draw.textCentered(g, font, "No matching modules or settings", contentX() + contentW() / 2, contentTop() + 42, Theme.muted());
-                Draw.textCentered(g, font, "Clear the search or choose another category", contentX() + contentW() / 2, contentTop() + 57, Theme.dim());
+                Draw.textCentered(g, font, query.isBlank() && ModuleRegistry.FAVORITES.equals(category) ? "No favorites yet" : "No matching features or settings", contentX() + contentW() / 2, contentTop() + 42, Theme.muted());
+                Draw.textCentered(g, font, query.isBlank() && ModuleRegistry.FAVORITES.equals(category) ? "Star a feature in All features to pin it here" : "Try another search", contentX() + contentW() / 2, contentTop() + 57, Theme.dim());
             }
         } finally { g.disableScissor(); }
         drawScrollbar(g);
@@ -297,11 +303,6 @@ public class EndsightScreen extends Screen {
         float a = anim("row:" + module.id()).to(hot ? 1 : 0, Theme.EASE_FAST);
         Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5,
                 open ? Theme.surface() : Draw.lerp(Theme.bg(), Theme.hover(), a));
-        int iconY = row.y() + (geometry.stacked() ? 10 : 15);
-        int iconColor = open ? Theme.accent() : module.implemented() ? Theme.muted() : Theme.dim();
-        Draw.roundedRect(g, row.x() + 9, iconY - 4, 18, 18, 4,
-                open ? Draw.alpha(Theme.accent(), .16f) : Theme.raised());
-        MenuIcons.feature(g, module, row.x() + 9, iconY - 4, iconColor);
         Draw.text(g, font, Draw.fit(font, module.title(), label.w()), label.x(), label.y(),
                 module.implemented() ? Theme.text() : Theme.dim());
         String description = matchSummaries.getOrDefault(module.id(), module.description());
@@ -312,18 +313,20 @@ public class EndsightScreen extends Screen {
             ModuleRowLayout.Rect key = geometry.key(), toggle = geometry.toggle();
             boolean keyHot = key.contains(mx, my) && my >= contentTop() && my < contentBottom();
             boolean listening = Keybinds.moduleId(module).equals(binding);
-            Keybinds.chip(g, font, Keybinds.moduleId(module), key.x(), key.y(), keyHot || listening ? 1 : 0, listening);
+            if (key.w() > 0) Keybinds.chip(g, font, Keybinds.moduleId(module), key.x(), key.y(), keyHot || listening ? 1 : 0, listening);
             float on = anim("toggle:" + module.id()).to(module.isEnabled() ? 1 : 0, Theme.EASE_FAST);
             int tx = toggle.x() + 5, ty = toggle.y() + 5;
-            Draw.roundedRect(g, tx, ty, 20, 10, 5, Draw.lerp(Theme.line(), Theme.pos(), on));
+            Draw.roundedRect(g, tx, ty, 20, 10, 5, Draw.lerp(Theme.line(), Theme.accent(), on));
             Draw.roundedRect(g, tx + 1 + Math.round(10 * on), ty + 1, 8, 8, 4, Theme.text());
         }
+        ModuleRowLayout.Rect pin = geometry.pin();
+        boolean pinHot = pin.contains(mx, my) && my >= contentTop() && my < contentBottom();
+        MenuIcons.star(g, pin.x() + 3, pin.y() + 4,
+                registry.favorite(module.id()) ? Theme.accent() : pinHot ? Theme.text() : Theme.dim());
         if (module.hasSettings()) {
             ModuleRowLayout.Rect expand = geometry.expand();
             if (expand.contains(mx, my)) Draw.roundedRect(g, expand.x(), expand.y(), expand.w(), expand.h(), 4, Theme.hover());
-            Draw.gearIcon(g, font, expand.x() + 10, expand.y() + 10,
-                    open ? Theme.accent() : Theme.muted());
-            MenuIcons.arrow(g, expand.x() + 19, expand.y() + 4,
+            MenuIcons.arrow(g, expand.x() + 3, expand.y() + 4,
                     open ? MenuIcons.Arrow.DOWN : MenuIcons.Arrow.RIGHT,
                     open ? Theme.accent() : Theme.muted());
         }
@@ -359,7 +362,10 @@ public class EndsightScreen extends Screen {
     }
 
     private void search(String value) {
+        if (query.isBlank() && !value.isBlank()) { beforeSearchScroll = scroll; beforeSearchExpanded = expandedId; }
+        boolean restoring = !query.isBlank() && value.isBlank();
         query = value; scroll = 0; searchFocused = true;
+        if (restoring) { scroll = beforeSearchScroll; expandedId = beforeSearchExpanded; }
         if (editor != null) editor.cancelInteractions();
         results();
         if (resultCount == 1) {
@@ -391,19 +397,16 @@ public class EndsightScreen extends Screen {
             return true;
         }
         searchFocused = false;
-        if (compactFooter()) {
-            if (contains(panelX() + 10, panelY() + panelH() - 25, sidebarW() - 20, 18, mx, my)) {
-                List<Palette> palettes = Theme.palettes();
-                Theme.set(palettes.get(Math.floorMod(palettes.indexOf(Theme.palette()) + (event.button() == 1 ? -1 : 1), palettes.size())));
-                return true;
-            }
-        } else if (themeRow.click(mx, my)) return true;
-        if (contains(panelX() + 10, moveButtonY(), sidebarW() - 20, 18, mx, my)) {
+        if (contains(panelX() + 8, moveButtonY() + 25, sidebarW() - 16, 23, mx, my)) {
+            category = APPEARANCE; query = ""; scroll = 0; expandedId = appearance.id(); binding = null;
+            layout(); return true;
+        }
+        if (contains(panelX() + 8, moveButtonY(), sidebarW() - 16, 23, mx, my)) {
             com.endsight.hud.HudPlacementScreen.open(); return true;
         }
         if (contains(panelX(), navTop(), sidebarW(), navBottom() - navTop(), mx, my)) for (Nav item : nav) {
             if (!contains(panelX() + 8, item.y(), sidebarW() - 16, 23, mx, my)) continue;
-            category = item.category(); scroll = 0; binding = null;
+            category = item.category(); query = ""; scroll = 0; binding = null;
             if (editor != null) editor.cancelInteractions();
             layout(); return true;
         }
@@ -421,6 +424,7 @@ public class EndsightScreen extends Screen {
                     else binding = id.equals(binding) ? null : id;
                 }
                 case TOGGLE -> { binding = null; module.toggle(); }
+                case PIN -> { binding = null; registry.toggleFavorite(module.id()); layout(); }
                 case EXPAND, ROW -> { if (module.hasSettings()) expand(module); }
                 default -> { }
             }

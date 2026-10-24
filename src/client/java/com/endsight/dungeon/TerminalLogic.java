@@ -25,7 +25,12 @@ public final class TerminalLogic {
 
     private static final Pattern STARTS = Pattern.compile("^What starts with: '([A-Za-z0-9_])'\\?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern COLORS = Pattern.compile("^Select all the ([A-Za-z ]+) items!$", Pattern.CASE_INSENSITIVE);
-    private static final List<String> CYCLE = List.of("red", "orange", "yellow", "green", "blue");
+    // Dragsim's fourth colour is lime, not Hypixel's green: the 2026-10-23 Floor VII recording
+    // had yellow/blue/orange, orange/blue/yellow, lime/orange/red, and with only "green" in the
+    // cycle the lime pane read as unknown, so the terminal sat at "Waiting for all nine colors"
+    // until it was closed. Both names mean the same step; the order is Hypixel's (left click
+    // moves forward), not yet checked against a recorded click on Dragsim.
+    private static final List<String> CYCLE = List.of("red", "orange", "yellow", "lime", "blue");
     private static final List<Integer> RUBIX_SLOTS = List.of(12, 13, 14, 21, 22, 23, 30, 31, 32);
     // Noamm's exception is default item glint components plus Golden Apple. These
     // seven default-component items were also verified against 26.1.2 Items bytecode.
@@ -154,6 +159,7 @@ public final class TerminalLogic {
             String item = id(cell);
             colors[i] = -1;
             for (int c = 0; c < CYCLE.size(); c++) if (item.equals(CYCLE.get(c) + "_stained_glass_pane")) colors[i] = c;
+            if (item.equals("green_stained_glass_pane")) colors[i] = 3;
             if (colors[i] < 0 || cell.count() != 1) return empty(Type.RUBIX, "Waiting for all nine colors");
         }
         int target = 0, bestCost = Integer.MAX_VALUE;
@@ -176,13 +182,39 @@ public final class TerminalLogic {
     }
 
     private static Plan melody(Map<Integer, Cell> board) {
+        // Dragsim marks the target column twice: a magenta pane in the top row and another in
+        // the bottom row (slots 4 and 40 in the 2026-10-23 Floor VII recording). This wanted
+        // exactly one magenta pane, so it sat at "Waiting for unique markers" for the whole of
+        // both Melody terminals in that run and never said when to click. A marker now counts
+        // only outside the three tracks, and every marker must name the same column.
         List<Cell> targets = board.values().stream().filter(cell -> id(cell).equals("magenta_stained_glass_pane")).toList();
-        List<Cell> movers = board.values().stream().filter(TerminalLogic::lime).toList();
-        if (targets.size() != 1 || movers.size() != 1) return empty(Type.MELODY, "Waiting for unique markers");
-        Cell target = targets.getFirst(), mover = movers.getFirst();
+        // The live track is the one with red panes in it, and its mover is the one lime pane
+        // among them. A finished track turns all lime and a waiting one is white. This used to
+        // count every lime pane in the three tracks, so the moment the first track finished it
+        // saw six movers and went to "Waiting for unique markers" for the rest of the terminal;
+        // with wrong-click blocking on, every click after the first was then refused. Both
+        // Melody terminals in the 2026-10-23 22:35 recording stopped there.
+        List<Cell> movers = new ArrayList<>();
+        int live = 0;
+        for (int row = 1; row <= 3; row++) {
+            List<Cell> track = new ArrayList<>();
+            for (int column = 1; column <= 5; column++) track.add(board.get(row * 9 + column));
+            if (track.stream().noneMatch(TerminalLogic::red)) continue;
+            live++;
+            movers.addAll(track.stream().filter(TerminalLogic::lime).toList());
+        }
+        if (live != 1) movers.clear();
+        Set<Integer> columns = new HashSet<>();
+        boolean outside = true;
+        for (Cell marker : targets) {
+            columns.add(marker.slot() % 9);
+            outside &= marker.slot() / 9 == 0 || marker.slot() / 9 >= 4;
+        }
+        if (targets.isEmpty() || columns.size() != 1 || !outside || movers.size() != 1) return empty(Type.MELODY, "Waiting for unique markers");
+        int target = columns.iterator().next();
+        Cell mover = movers.getFirst();
         int row = mover.slot() / 9, column = mover.slot() % 9;
-        if (target.slot() < 1 || target.slot() > 5 || row < 1 || row > 3 || column < 1 || column > 5)
-            return empty(Type.MELODY, "Unrecognized marker layout");
+        if (target < 1 || target > 5) return empty(Type.MELODY, "Unrecognized marker layout");
         for (int trackRow = 1; trackRow <= 3; trackRow++) for (int trackColumn = 1; trackColumn <= 5; trackColumn++) {
             Cell cell = board.get(trackRow * 9 + trackColumn);
             if (!id(cell).endsWith("_stained_glass_pane") || cell.count() != 1) return empty(Type.MELODY, "Waiting for complete tracks");
@@ -192,7 +224,7 @@ public final class TerminalLogic {
             if (!Set.of("red_terracotta", "lime_terracotta", "green_terracotta").contains(id(cell)) || cell.count() != 1)
                 return empty(Type.MELODY, "Unrecognized buttons");
         }
-        if (column != target.slot()) return new Plan(Type.MELODY, List.of(), "Wait for alignment", true);
+        if (column != target) return new Plan(Type.MELODY, List.of(), "Wait for alignment", true);
         return new Plan(Type.MELODY, List.of(new Hint(row * 9 + 7, 1, Button.LEFT)), "Aligned: click now");
     }
 

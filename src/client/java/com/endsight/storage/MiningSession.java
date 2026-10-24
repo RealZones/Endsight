@@ -47,7 +47,7 @@ public final class MiningSession {
 
     private static final String ID = "mining.session";
     private static final long GRACE_MS = 15_000;
-    private static final Pattern SOLD = Pattern.compile("^You sold ([\\d,]+)x (.+?) for ([\\d,]+) coins!?$");
+    private static final Pattern SOLD = Pattern.compile("^You sold ([\\d,]+)x (.+?) for ([\\d,]+(?:\\.\\d{1,2})?) coins!?$");
     private static final String RAW = "Raw";
     private static final String ENCH = "Ench";
     private static final String REF = "Ref";
@@ -181,7 +181,7 @@ public final class MiningSession {
                         new Setting.Choice("Material units",
                                 "Show mined material counts as raw blocks, enchanted items or refined crafts.",
                                 List.of(RAW, ENCH, REF), () -> materialUnits, v -> materialUnits = v),
-                        new Setting.Toggle("Profit", "NPC sell value of mined materials and collected Void Fragments.",
+                        new Setting.Toggle("Profit", "Estimated NPC value after compaction, plus collected Void Fragments.",
                                 () -> profitEstimate, v -> profitEstimate = v),
                         new Setting.Toggle("Breakdown", "Materials and mining drops, highest coin value first.",
                                 () -> breakdown, v -> breakdown = v),
@@ -331,16 +331,19 @@ public final class MiningSession {
         String material = materialName(m.group(2));
         if (material == null && !m.group(2).equalsIgnoreCase("Void Fragment")
                 && !m.group(2).equalsIgnoreCase("Void Core")) return;
-        soldCoins += parseLong(m.group(3));
-        lifetime.sold += parseLong(m.group(3));
+        long coins = parseCoins(m.group(3));
+        soldCoins += coins;
+        lifetime.sold += coins;
         lifetimeDirty = true;
         if (material != null) currentMaterial = material;
     }
 
-    private static long parseLong(String s) {
+    private static long parseCoins(String s) {
         try {
-            return Long.parseLong(s.replace(",", ""));
-        } catch (NumberFormatException e) {
+            // Rough gems can sell for fractional coins; the HUD stores whole coins.
+            return new java.math.BigDecimal(s.replace(",", ""))
+                    .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
             return 0;
         }
     }
@@ -678,6 +681,15 @@ public final class MiningSession {
     }
 
     private static long value(String material, long raw) {
+        if (material.equalsIgnoreCase("Amethyst")) {
+            // Sale evidence on 2026-10-20: Fine/Flawless have the same raw-unit
+            // value, but unfinished Flawed and Rough sell for less. The tracker
+            // stores raw-equivalent gains so compactor moves stay neutral.
+            long remainder = raw % AMETHYST_FINE;
+            return raw / AMETHYST_FINE * 1_305_600L
+                    + remainder / AMETHYST_FLAWED * 8_160L
+                    + Math.round(remainder % AMETHYST_FLAWED * 50.4);
+        }
         return raw * price(material);
     }
 
@@ -686,9 +698,6 @@ public final class MiningSession {
         if (m.contains("crying obsidian")) return 2857;
         if (m.contains("obsidian")) return 400;
         if (m.contains("end stone")) return 50;
-        // A Fine sells for 1,088,000 and is 6,400 raw, so 170 a raw gem; the old 50 put a
-        // Fine at a third of what the shop pays for it.
-        if (m.contains("amethyst")) return 170;
         return 0;
     }
 

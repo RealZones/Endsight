@@ -12,9 +12,9 @@ import java.util.List;
  * instance you landed in.
  *
  * Every lobby switch puts you back in that instance's own chat, which is the wrong one
- * for anyone trading or watching for a drop announcement. Two seconds in, like
- * {@link DebugOnJoin}: a command that arrives while the backend is still setting the
- * player up is dropped, and behind a proxy every hand-off is a fresh join to the client.
+ * for anyone trading or watching for a drop announcement. Two seconds in: a command that
+ * arrives while the backend is still setting the player up is dropped, and behind a proxy
+ * every hand-off is a fresh join to the client.
  */
 public final class GlobalChat {
 

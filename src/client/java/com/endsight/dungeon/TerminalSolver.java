@@ -14,18 +14,28 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.HashedStack;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import java.util.*;
 
-/** Visual terminal hints. A compact-grid click forwards exactly one physical mouse click. */
+/** Visual terminal hints. Each physical mouse click on a terminal sends exactly one click. */
 public final class TerminalSolver {
     private static boolean enabled = true;
+    private static boolean blockWrongClicks = true;
     private static String layout = "Compact";
     private static AbstractContainerScreen<?> current;
     private static int window = -1;
-    private static final Set<Integer> selected = new HashSet<>(), pending = new HashSet<>();
+    private static final Set<Integer> selected = new HashSet<>();
+    /** Clicks sent that the server has not answered yet, oldest first. */
+    private record Sent(int slot, long at) { }
+    private static final List<Sent> sent = new ArrayList<>();
+    // The server answers a terminal click in 110-180 ms. One unanswered after this was
+    // dropped (a lag spike, a click while the board reset), so its hint comes back.
+    private static final long ANSWER_MS = 1000;
     private static List<ObservedSlot> plannedSlots = List.of();
     private static String plannedTitle;
     private static TerminalLogic.Plan cachedPlan;
@@ -34,13 +44,46 @@ public final class TerminalSolver {
     private TerminalSolver() { }
 
     public static Module module() {
-        return new Module("dungeon.terminals", "Terminal Solvers", "Compact manual terminal hints and live timing indicators.",
-                "Dungeons", () -> enabled, v -> enabled = v, List.of(new Setting.Choice("Layout",
-                "Compact grid or highlights over the normal chest; every click is yours.",
-                List.of("Compact", "Normal chest"), () -> layout, v -> layout = v)));
+        return new Module("dungeon.terminals", "Terminal Solvers", "Compact menu hints and Simon Says button guidance.",
+                "Dungeons", () -> enabled, v -> enabled = v, List.of(
+                new Setting.Choice("Layout", "Compact grid or highlights over the normal chest; every click is yours.",
+                        List.of("Compact", "Normal chest"), () -> layout, v -> layout = v),
+                new Setting.Toggle("Block Wrong Clicks", "Reject non-solution and duplicate clicks while a terminal is open.",
+                        () -> blockWrongClicks, v -> blockWrongClicks = v),
+                new Setting.Toggle("Simon Says", "Highlight the next button on the in-world light board.",
+                        SimonSays::enabled, SimonSays::setEnabled)));
+    }
+
+    static boolean enabledForSimon() { return enabled; }
+
+
+    /**
+     * Sends one click on a terminal slot, and changes nothing on this side.
+     *
+     * Vanilla's own click predicts the result first: it lifts the pane onto the cursor and
+     * leaves the slot empty until the server's answer puts it back, 110-180 ms later. That
+     * was the flicker on every click, and it emptied the board under the solver, which read
+     * "Waiting for numbered panes" between every Click in Order click. Worse, letting go of
+     * the mouse while carrying it dropped the pane into whatever slot was under the cursor:
+     * the 2026-10-23 22:35 recording has a purple pane put in slot 47, an Ancient Maxor's
+     * Chestplate lifted out of the inventory, and the server reshuffling the purple board
+     * after the stray clicks. This sends the same packet with the menu as it stands, so the
+     * server does the one click and its slot updates are the only change anyone sees. The
+     * click is remembered so its hint disappears at once instead of a ping later.
+     */
+    public static void click(int containerId, int slot, int button) {
+        Minecraft mc = Minecraft.getInstance();
+        var connection = mc.getConnection();
+        if (current == null || window != containerId || connection == null || mc.player == null) return;
+        var menu = current.getMenu();
+        connection.send(new ServerboundContainerClickPacket(containerId, menu.getStateId(), (short) slot, (byte) button,
+                ContainerInput.PICKUP, new Int2ObjectOpenHashMap<>(),
+                HashedStack.create(menu.getCarried(), connection.decoratedHashOpsGenenerator())));
+        sent.add(new Sent(slot, System.currentTimeMillis()));
     }
 
     public static void init() {
+        SimonSays.init();
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             String line = Zealots.strip(message.getString()).trim();
@@ -52,20 +95,28 @@ public final class TerminalSolver {
             ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> draw(container, g, mx, my));
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
                 if (!eligible(container)) return true;
-                TerminalLogic.Plan plan = plan(container);
-                boolean compact = layout.equals("Compact") && plan.ready();
+                TerminalLogic.Plan plan = shown(container);
+                boolean compact = compactShown(plan);
                 int slot = compact ? frame(container, plan.type()).slot(click.x(), click.y()) : nativeSlot(container, click.x(), click.y());
-                boolean valid = plan.hints().stream().anyMatch(hint -> hint.slot() == slot);
-                if (plan.type() == TerminalLogic.Type.ORDER && !plan.hints().isEmpty()) valid = slot == plan.hints().getFirst().slot();
-                if (valid && (click.button() == 0 || click.button() == 1)) {
-                    pending.add(slot);
-                    if (compact && mc.gameMode != null)
-                        mc.gameMode.handleContainerInput(container.getMenu().containerId, slot, click.button(), ContainerInput.PICKUP, mc.player);
+                TerminalLogic.Hint hint = target(plan, slot, click.button());
+                if (hint != null) {
+                    click(container.getMenu().containerId, slot, hint.button() == TerminalLogic.Button.RIGHT ? 1 : 0);
+                    return false;
                 }
-                // Forwarding can change the local container before server confirmation.
-                // Keep the original mode or the same click could also reach vanilla.
-                return !compact;
+                if (compact || blockWrongClicks) return false;
+                // Blocking off, normal chest: a wrong click still goes, but the same way, so
+                // nothing lands on the cursor. Clicks in your own inventory stay vanilla.
+                if (slot >= 0 && (click.button() == 0 || click.button() == 1)) {
+                    click(container.getMenu().containerId, slot, click.button());
+                    return false;
+                }
+                return true;
             });
+            // Vanilla places a carried item on release, under wherever the cursor went - in the
+            // compact grid, a hidden chest slot. Nothing is ever carried now, but a terminal has
+            // no use for a release or a drag either, so neither reaches it.
+            ScreenMouseEvents.allowMouseRelease(screen).register((s, click) -> !eligible(container));
+            ScreenMouseEvents.allowMouseDrag(screen).register((s, click, dx, dy) -> !eligible(container));
             ScreenKeyboardEvents.allowKeyPress(screen).register((s, event) -> {
                 if (!compactActive(s)) return true;
                 if (event.key() == 256) return true;
@@ -75,7 +126,7 @@ public final class TerminalSolver {
             });
             ScreenEvents.remove(screen).register(s -> {
                 if (s == current) {
-                    current = null; window = -1; pending.clear(); selected.clear(); clearPlan();
+                    current = null; window = -1; sent.clear(); selected.clear(); clearPlan();
                 }
             });
         });
@@ -90,14 +141,67 @@ public final class TerminalSolver {
 
     public static boolean compactActive(Screen screen) {
         return layout.equals("Compact") && screen instanceof AbstractContainerScreen<?> container
-                && eligible(container) && plan(container).ready();
+                && eligible(container) && compactShown(plan(container));
+    }
+
+    private static boolean compactShown(TerminalLogic.Plan plan) {
+        // A recognized terminal owns its compact surface from the first frame.
+        // Waiting for a ready plan exposed vanilla for a frame after each server
+        // re-open, and local click predictions could briefly make it unready again.
+        return layout.equals("Compact");
     }
 
     /** Called only after an actual server slot update, never after a local prediction. */
     public static void serverSlotUpdated(int containerId, int slot) {
         if (current == null || window != containerId) return;
         cachedPlan = null;
-        if (pending.remove(slot)) selected.add(slot);
+        // Melody's button never changes on a hit; the track does. Any update means the
+        // click has been judged, and the next alignment may be clicked.
+        if (TerminalLogic.type(current.getTitle().getString()) == TerminalLogic.Type.MELODY) { sent.clear(); return; }
+        for (Iterator<Sent> it = sent.iterator(); it.hasNext(); ) {
+            if (it.next().slot() != slot) continue;
+            it.remove(); selected.add(slot);
+            break;
+        }
+    }
+
+    public static void serverContentUpdated(int containerId) {
+        if (current == null || window != containerId) return;
+        cachedPlan = null;
+        for (Sent click : sent) selected.add(click.slot());
+        sent.clear();
+    }
+
+    /** The plan as the player should see it: the server's board, less the clicks already sent. */
+    private static TerminalLogic.Plan shown(AbstractContainerScreen<?> screen) {
+        TerminalLogic.Plan plan = plan(screen);
+        long now = System.currentTimeMillis();
+        sent.removeIf(click -> now - click.at() > ANSWER_MS);
+        if (sent.isEmpty() || !plan.ready()) return plan;
+        if (plan.type() == TerminalLogic.Type.MELODY) return new TerminalLogic.Plan(plan.type(), List.of(), "Clicked", true);
+        List<TerminalLogic.Hint> hints = new ArrayList<>();
+        for (TerminalLogic.Hint hint : plan.hints()) {
+            int clicks = hint.clicks() - (int) sent.stream().filter(click -> click.slot() == hint.slot()).count();
+            if (clicks > 0) hints.add(new TerminalLogic.Hint(hint.slot(), clicks, hint.button()));
+        }
+        String status = hints.isEmpty() ? "Complete" : plan.type() == TerminalLogic.Type.ORDER
+                ? "Next: " + screen.getMenu().slots.get(hints.getFirst().slot()).getItem().getCount() : plan.status();
+        return new TerminalLogic.Plan(plan.type(), hints, status, true);
+    }
+
+    /** The hint a click on this slot would carry out, or null if it is not one. Button -1 is any. */
+    private static TerminalLogic.Hint target(TerminalLogic.Plan plan, int slot, int button) {
+        if (!plan.ready() || slot < 0 || button > 1) return null;
+        for (int i = 0; i < plan.hints().size(); i++) {
+            TerminalLogic.Hint hint = plan.hints().get(i);
+            if (hint.slot() != slot) continue;
+            if (plan.type() == TerminalLogic.Type.ORDER && i != 0) return null;
+            // Same colour turns each way; the other button undoes a step instead of making one.
+            if (plan.type() == TerminalLogic.Type.RUBIX && button >= 0
+                    && (button == 1) != (hint.button() == TerminalLogic.Button.RIGHT)) return null;
+            return hint;
+        }
+        return null;
     }
 
     private record ObservedSlot(int index, ItemStack stack) { }
@@ -123,7 +227,7 @@ public final class TerminalSolver {
     private static TerminalLogic.Plan plan(AbstractContainerScreen<?> screen) {
         Minecraft mc = Minecraft.getInstance();
         if (current != screen || window != screen.getMenu().containerId) {
-            current = screen; window = screen.getMenu().containerId; selected.clear(); pending.clear();
+            current = screen; window = screen.getMenu().containerId; selected.clear(); sent.clear();
             clearPlan();
         }
         String title = screen.getTitle().getString();
@@ -181,8 +285,8 @@ public final class TerminalSolver {
     private static void draw(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
         if (!eligible(screen)) return;
         Minecraft mc = Minecraft.getInstance();
-        TerminalLogic.Plan plan = plan(screen);
-        boolean compact = layout.equals("Compact") && plan.ready();
+        TerminalLogic.Plan plan = shown(screen);
+        boolean compact = compactShown(plan);
         Frame f = frame(screen, plan.type());
         String help = plan.type() == TerminalLogic.Type.RUBIX ? "L = left click  ·  R = right click" : "Click highlighted tiles  ·  Esc closes";
         String title = Zealots.strip(screen.getTitle().getString());
@@ -200,6 +304,12 @@ public final class TerminalSolver {
                     g.item(stack, f.sx(slot) + 3, f.sy(slot) + 3);
                 }
             }
+        }
+        // On the normal chest the clicked pane still shows its old colour until the server
+        // answers; a green fill marks it done meanwhile. The compact grid just drops the hint.
+        if (!compact) for (Sent click : sent) {
+            var slot = screen.getMenu().slots.get(click.slot());
+            Draw.rect(g, screen.leftPos + slot.x, screen.topPos + slot.y, 16, 16, Draw.alpha(0xFF55FF55, .45f));
         }
         for (int i = 0; i < plan.hints().size(); i++) {
             TerminalLogic.Hint hint = plan.hints().get(i);

@@ -2,7 +2,7 @@ package com.endsight.dungeon;
 
 /** Compact controls must map to the original slot without clickable gaps or hidden inventory slots. */
 public final class TerminalUiChecks {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         int checks = 0;
         for (TerminalSolver.Frame f : java.util.List.of(
                 new TerminalSolver.Frame(50, 80, 7, 2, 1, 1),
@@ -22,6 +22,22 @@ public final class TerminalUiChecks {
                     || f.slot(f.x(), f.y() + f.rows() * 24) != -1) throw new AssertionError("Outside grid accepted");
             checks++;
         }
+        // A new terminal screen may arrive before its slots. Compact owns even
+        // that first frame so the underlying chest cannot flash into view.
+        var mode = TerminalSolver.class.getDeclaredField("layout");
+        mode.setAccessible(true);
+        var shown = TerminalSolver.class.getDeclaredMethod("compactShown", TerminalLogic.Plan.class);
+        shown.setAccessible(true);
+        var ready = new TerminalLogic.Plan(TerminalLogic.Type.RUBIX, java.util.List.of(), "Ready", true);
+        var waiting = new TerminalLogic.Plan(TerminalLogic.Type.RUBIX, java.util.List.of(), "Waiting for server", false);
+        mode.set(null, "Compact");
+        if (!(boolean) shown.invoke(null, ready) || !(boolean) shown.invoke(null, waiting))
+            throw new AssertionError("Compact menu flashed before or during a partial click update");
+        checks += 2;
+        mode.set(null, "Normal chest");
+        if ((boolean) shown.invoke(null, ready)) throw new AssertionError("Normal chest layout stayed suppressed");
+        checks++;
+        mode.set(null, "Compact");
         System.out.println(checks + " terminal UI slot checks passed");
     }
 }

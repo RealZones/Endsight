@@ -4,6 +4,7 @@ import com.endsight.hud.Area;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.HudCard;
 import com.endsight.hud.TrackerHud;
+import com.endsight.hud.TrackerDropOrder;
 import com.endsight.ui.Theme;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.resources.Identifier;
@@ -1857,22 +1858,7 @@ public final class BossDrops {
         for (Map.Entry<String, Integer> e : drops.entrySet()) {
             if (sortTier(e.getKey()) >= floor && !hidden(e.getKey())) out.add(e);
         }
-        out.sort((a, b) -> {
-            int r = Integer.compare(rankOf(b.getKey()), rankOf(a.getKey()));
-            if (r != 0) return r;
-            int t = Integer.compare(sortTier(b.getKey()), sortTier(a.getKey()));
-            if (t != 0) return t;
-            // drops.txt is an ordered preference list inside each tier. Its
-            // line position beats quantity and the game's item rarity.
-            int order = Integer.compare(Drops.orderOf(a.getKey()), Drops.orderOf(b.getKey()));
-            if (order != 0) return order;
-            // Tied on the list, so let the item say: a common Warden pet is not a
-            // Giant's Core, though the list calls both legendary.
-            int q = Integer.compare(Rarity.rank(b.getKey()), Rarity.rank(a.getKey()));
-            if (q != 0) return q;
-            int c = Integer.compare(b.getValue(), a.getValue());
-            return c != 0 ? c : plain(a.getKey()).compareToIgnoreCase(plain(b.getKey()));
-        });
+        out.sort(TrackerDropOrder.comparator(BossDrops::rankOf, BossDrops::sortTier, BossDrops::plain));
         return out;
     }
 

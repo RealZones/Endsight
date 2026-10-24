@@ -25,7 +25,8 @@
 		"ChestGlassMixin",
 		"ContainerGlassLabelsMixin",
 		"ChatNameGradientMixin",
-		"TabNameGradientMixin"
+		"TabNameGradientMixin",
+		"ProfileCommandTreeMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

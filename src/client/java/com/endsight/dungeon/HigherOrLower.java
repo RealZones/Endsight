@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.monster.Blaze;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -53,6 +53,7 @@ public final class HigherOrLower {
     private static HigherOrLowerLogic.Order order;
     /** Ticks the blaze count must hold before the first outline. */
     private static final int SETTLE_TICKS = 20;
+    private static final int ROOM_BLAZES = 10;
     private static int lastCount = -1, settled;
     private static String announced;
 
@@ -71,7 +72,6 @@ public final class HigherOrLower {
     private static boolean locked;
     private static Vec3 room;                   // the middle of the blazes, once locked
     private static Entity target;               // the next blaze, while it is loaded
-    private static AABB targetBox;              // where it was last seen, when it is not
 
     private HigherOrLower() { }
 
@@ -128,11 +128,11 @@ public final class HigherOrLower {
     private static void reset() {
         active = false; world = null; order = null; target = null; announced = null;
         lastCount = -1; settled = 0;
-        roster.clear(); locked = false; room = null; targetBox = null;
+        roster.clear(); locked = false; room = null;
     }
 
     private static void tick(Minecraft mc) {
-        if (!visible(mc)) { target = null; targetBox = null; return; }
+        if (!visible(mc)) { target = null; return; }
 
         // The direction label, re-read each tick: a later room can ask for the other end,
         // and a stale order would point at the exactly wrong blaze.
@@ -150,7 +150,9 @@ public final class HigherOrLower {
         Map<UUID, Entity> loaded = new HashMap<>();
         List<UUID> dead = new ArrayList<>();
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (entity instanceof Player) continue;
+            // Floating health labels can contain the word Blaze too. They are
+            // not mobs and their boxes sit above the actual target.
+            if (!(entity instanceof Blaze)) continue;
             // Before the room is read, "the room" is what is near you; after, it is what
             // is near the blazes, so a blaze elsewhere in the dungeon never joins in.
             Vec3 from = room != null ? room : mc.player.position();
@@ -174,7 +176,9 @@ public final class HigherOrLower {
             // none: it is confidently wrong at exactly the moment the room is read. So the
             // count has to hold steady before anything is drawn, and any change restarts it.
             if (live.size() != lastCount) { lastCount = live.size(); settled = 0; target = null; return; }
-            if (++settled < SETTLE_TICKS || live.isEmpty()) { target = null; return; }
+            // A stable partial roster is still partial: the missing smallest or
+            // largest mob can make the very first outline wrong.
+            if (++settled < SETTLE_TICKS || live.size() != ROOM_BLAZES) { target = null; return; }
             locked = true;
             double x = 0, y = 0, z = 0;
             for (Seen seen : live.values()) { Vec3 c = seen.box().getCenter(); x += c.x; y += c.y; z += c.z; }
@@ -190,12 +194,10 @@ public final class HigherOrLower {
         List<HigherOrLowerLogic.Blaze> read = roster.values().stream().map(Seen::blaze).toList();
         HigherOrLowerLogic.Blaze next = HigherOrLowerLogic.next(read, order);
         target = null;
-        targetBox = null;
         if (next == null) return;
         for (Map.Entry<UUID, Seen> e : roster.entrySet()) {
             if (e.getValue().blaze() != next) continue;
             target = loaded.get(e.getKey());
-            targetBox = e.getValue().box();
             break;
         }
     }
@@ -211,9 +213,10 @@ public final class HigherOrLower {
     private static void draw() {
         Minecraft mc = Minecraft.getInstance();
         if (!visible(mc)) return;
-        AABB box = target != null && !target.isRemoved() ? target.getBoundingBox() : targetBox;
-        if (box == null) return;
-        var outline = Gizmos.cuboid(box.inflate(.08),
+        // Never draw the cached box of an unloaded mob. It looked like a
+        // floating next target after a kill and could hide a missing mob.
+        if (target == null || target.isRemoved() || target instanceof LivingEntity living && living.isDeadOrDying()) return;
+        var outline = Gizmos.cuboid(target.getBoundingBox().inflate(.08),
                 GizmoStyle.strokeAndFill(0xFF55FF55, 2.5f, 0x4055FF55));
         if (throughWalls) outline.setAlwaysOnTop();
     }

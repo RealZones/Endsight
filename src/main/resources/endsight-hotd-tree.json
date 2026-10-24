@@ -1,0 +1,370 @@
+[
+  {
+    "id": "VOID_INFUSION",
+    "name": "Void Infusion",
+    "tier": 10,
+    "column": 1,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "CRYSTALLINE",
+    "name": "Crystalline",
+    "tier": 10,
+    "column": 2,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "GIFTS_FROM_THE_VOID",
+    "name": "Gifts from the Void",
+    "tier": 10,
+    "column": 3,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "MINING_MASTER",
+    "name": "Mining Master",
+    "tier": 10,
+    "column": 4,
+    "maximum": 10,
+    "ability": false
+  },
+  {
+    "id": "FINE_CUT",
+    "name": "Fine Cut",
+    "tier": 10,
+    "column": 5,
+    "maximum": 25,
+    "ability": false
+  },
+  {
+    "id": "VOID_SEEKER",
+    "name": "Void Seeker",
+    "tier": 10,
+    "column": 6,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "SHEER_FORCE",
+    "name": "Sheer Force",
+    "tier": 10,
+    "column": 7,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "METAL_HEAD",
+    "name": "Metal Head",
+    "tier": 9,
+    "column": 2,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "RAGS_TO_RICHES",
+    "name": "Rags to Riches",
+    "tier": 9,
+    "column": 4,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "EAGER_ADVENTURER",
+    "name": "Eager Adventurer",
+    "tier": 9,
+    "column": 6,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "MINERS_BLESSING",
+    "name": "Miner's Blessing",
+    "tier": 8,
+    "column": 1,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "NO_STONE_UNTURNED",
+    "name": "No Stone Unturned",
+    "tier": 8,
+    "column": 2,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "STRONG_ARM",
+    "name": "Strong Arm",
+    "tier": 8,
+    "column": 3,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "STEADY_HAND",
+    "name": "Steady Hand",
+    "tier": 8,
+    "column": 4,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "SEASONED_SPELUNKER",
+    "name": "Seasoned Spelunker",
+    "tier": 8,
+    "column": 5,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "SURVEYOR",
+    "name": "Surveyor",
+    "tier": 8,
+    "column": 6,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "VOID_BLESSING",
+    "name": "Void Blessing",
+    "tier": 8,
+    "column": 7,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "SPEEDY_MINEMAN",
+    "name": "Speedy Mineman",
+    "tier": 7,
+    "column": 2,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "POWDER_BUFF",
+    "name": "Powder Buff",
+    "tier": 7,
+    "column": 4,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "FORTUNATE_MINEMAN",
+    "name": "Fortunate Mineman",
+    "tier": 7,
+    "column": 6,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "TUNNEL_VISION",
+    "name": "Tunnel Vision",
+    "tier": 6,
+    "column": 1,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "BLOCKHEAD",
+    "name": "Blockhead",
+    "tier": 6,
+    "column": 2,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "MINING_MADNESS",
+    "name": "Mining Madness",
+    "tier": 6,
+    "column": 3,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "KEEP_IT_COOL",
+    "name": "Keep It Cool",
+    "tier": 6,
+    "column": 4,
+    "maximum": 25,
+    "ability": false
+  },
+  {
+    "id": "IMPATIENT_MINER",
+    "name": "Impatient Miner",
+    "tier": 6,
+    "column": 5,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "SPELUNKER",
+    "name": "Spelunker",
+    "tier": 6,
+    "column": 6,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "MANIAC_MINER",
+    "name": "Maniac Miner",
+    "tier": 6,
+    "column": 7,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "DAILY_GRIND",
+    "name": "Daily Grind",
+    "tier": 5,
+    "column": 2,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "CORE_OF_THE_DRAGON",
+    "name": "Core of the Dragon",
+    "tier": 5,
+    "column": 4,
+    "maximum": 10,
+    "ability": false
+  },
+  {
+    "id": "DAILY_POWDER",
+    "name": "Daily Powder",
+    "tier": 5,
+    "column": 6,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "DRAGONS_FAVOR",
+    "name": "Dragon's Favor",
+    "tier": 4,
+    "column": 1,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "OLD_SCHOOL",
+    "name": "Old-School",
+    "tier": 4,
+    "column": 2,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "PROFESSIONAL",
+    "name": "Professional",
+    "tier": 4,
+    "column": 3,
+    "maximum": 140,
+    "ability": false
+  },
+  {
+    "id": "MOLE",
+    "name": "Mole",
+    "tier": 4,
+    "column": 4,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "GEM_LOVER",
+    "name": "Gem Lover",
+    "tier": 4,
+    "column": 5,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "SEASONED_MINEMAN",
+    "name": "Seasoned Mineman",
+    "tier": 4,
+    "column": 6,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "FRONT_LOADED",
+    "name": "Front Loaded",
+    "tier": 4,
+    "column": 7,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "FRUGAL_MINER",
+    "name": "Frugal Miner",
+    "tier": 3,
+    "column": 2,
+    "maximum": 25,
+    "ability": false
+  },
+  {
+    "id": "EFFICIENT_MINER",
+    "name": "Efficient Miner",
+    "tier": 3,
+    "column": 4,
+    "maximum": 100,
+    "ability": false
+  },
+  {
+    "id": "QUICK_FORGE",
+    "name": "Quick Forge",
+    "tier": 3,
+    "column": 6,
+    "maximum": 20,
+    "ability": false
+  },
+  {
+    "id": "MINING_SPEED_BOOST",
+    "name": "Mining Speed Boost",
+    "tier": 2,
+    "column": 2,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "PRECISION_MINING",
+    "name": "Precision Mining",
+    "tier": 2,
+    "column": 3,
+    "maximum": 1,
+    "ability": false
+  },
+  {
+    "id": "MINING_FORTUNE",
+    "name": "Mining Fortune",
+    "tier": 2,
+    "column": 4,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "OBSIDIAN_INSANIUM",
+    "name": "Obsidian Insanium",
+    "tier": 2,
+    "column": 5,
+    "maximum": 50,
+    "ability": false
+  },
+  {
+    "id": "PICKOBULUS",
+    "name": "Pickobulus",
+    "tier": 2,
+    "column": 6,
+    "maximum": 3,
+    "ability": true
+  },
+  {
+    "id": "MINING_SPEED",
+    "name": "Mining Speed",
+    "tier": 1,
+    "column": 4,
+    "maximum": 50,
+    "ability": false
+  }
+]

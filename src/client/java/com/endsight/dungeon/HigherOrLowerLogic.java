@@ -20,9 +20,9 @@ import java.util.regex.Pattern;
  *
  *     [Lv120] Blaze 1.4M/1.4M❤
  *
- * so a health is "number, optional k/m/b, slash, the same again, heart". Ordering is on
- * the CURRENT health rather than the maximum: the puzzle is about the values on the
- * tags in front of you, and a blaze part-way damaged still shows where it belongs.
+ * so a health is "number, optional k/m/b, slash, the same again, heart". The
+ * spawn value after the slash determines the fixed puzzle order. A partially
+ * damaged Blaze must not jump ahead of its neighbours.
  */
 public final class HigherOrLowerLogic {
 
@@ -89,7 +89,7 @@ public final class HigherOrLowerLogic {
     /** The blazes in the order they should be killed. */
     public static List<Blaze> sorted(List<Blaze> blazes, Order order) {
         List<Blaze> out = new ArrayList<>(blazes == null ? List.of() : blazes);
-        Comparator<Blaze> byHealth = Comparator.comparingLong(Blaze::health);
+        Comparator<Blaze> byHealth = Comparator.comparingLong(Blaze::max);
         out.sort(order == Order.HIGHEST_FIRST ? byHealth.reversed() : byHealth);
         return out;
     }
@@ -97,6 +97,9 @@ public final class HigherOrLowerLogic {
     /** The one to shoot now, or null when there is nothing left. */
     public static Blaze next(List<Blaze> blazes, Order order) {
         List<Blaze> ordered = sorted(blazes, order);
-        return ordered.isEmpty() ? null : ordered.get(0);
+        // Rounded server tags can make two distinct spawn values look identical.
+        // A confident outline would be a guess when the next two tie.
+        return ordered.isEmpty() || ordered.size() > 1 && ordered.get(0).max() == ordered.get(1).max()
+                ? null : ordered.get(0);
     }
 }

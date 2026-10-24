@@ -278,6 +278,13 @@ tasks.register('threeWeirdosChecks', JavaExec) {
 
 tasks.named('check') { dependsOn 'dungeonContextChecks', 'dungeonMapChecks', 'threeWeirdosChecks' }
 
+tasks.register('dungeonMapOverlayChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.DungeonMapOverlayChecks'
+}
+tasks.named('check') { dependsOn 'dungeonMapOverlayChecks' }
+
 tasks.register('ticTacToeChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -306,6 +313,20 @@ tasks.register('terminalUiChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'terminalUiChecks' }
 
+tasks.register('simonSaysChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.SimonSaysChecks'
+}
+tasks.named('check') { dependsOn 'simonSaysChecks' }
+
+tasks.register('higherOrLowerChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.HigherOrLowerChecks'
+}
+tasks.named('check') { dependsOn 'higherOrLowerChecks' }
+
 tasks.register('quizChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -329,6 +350,13 @@ tasks.register('bloodRoomChecks', JavaExec) {
 }
 
 tasks.named('check') { dependsOn 'bloodRoomChecks' }
+
+tasks.register('bloodRunChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.BloodRunChecks'
+}
+tasks.named('check') { dependsOn 'bloodRunChecks' }
 
 tasks.register('eggRespawnTimingChecks', JavaExec) {
     dependsOn 'testClasses', 'clientClasses'
@@ -381,3 +409,81 @@ tasks.register('petsChecks', JavaExec) {
 }
 
 tasks.named('check') { dependsOn 'rarityChecks', 'petsChecks' }
+
+tasks.register('powderAccuracyChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.storage.PowderAccuracyChecks'
+}
+tasks.named('check') { dependsOn 'powderAccuracyChecks' }
+
+
+tasks.register('browserPresentationChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.ui.BrowserPresentationChecks'
+}
+tasks.named('check') { dependsOn 'browserPresentationChecks' }
+
+if (providers.gradleProperty('menuPreview').isPresent()) {
+    loom.runs.client.vmArg '-Dendsight.menuPreview=true'
+}
+if (providers.gradleProperty('profilePreview').isPresent()) {
+    loom.runs.client.vmArg "-Dendsight.profilePreview=${providers.gradleProperty('profilePreview').get()}"
+}
+tasks.register('profileDataChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.profile.ProfileDataChecks'
+}
+tasks.named('check') { dependsOn 'profileDataChecks' }
+tasks.register('profileCommandChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.profile.ProfileCommandChecks'
+}
+tasks.named('check') { dependsOn 'profileCommandChecks' }
+
+tasks.register('profileViewChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.profile.ProfileViewChecks'
+    systemProperty 'endsight.profileBenchmark', providers.gradleProperty('profilePreparationBenchmark').isPresent()
+}
+tasks.named('check') { dependsOn 'profileViewChecks' }
+tasks.register('abilitySpamChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.qol.AbilitySpamChecks'
+}
+tasks.named('check') { dependsOn 'abilitySpamChecks' }
+tasks.register('cacheTrackerChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.storage.CacheTrackerChecks'
+}
+tasks.named('check') { dependsOn 'cacheTrackerChecks' }
+// Native screenshots and interaction checks live in a separate test mod.
+if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradleProperty('cacheVisualTest').isPresent()
+        || providers.gradleProperty('mapVisualTest').isPresent() || providers.gradleProperty('keyVisualTest').isPresent()) {
+    fabricApi.configureTests {
+        createSourceSet = true
+        modId = 'endsight-profile-tests'
+        enableGameTests = false
+        enableClientGameTests = true
+        clearRunDirectory = false
+    }
+    sourceSets.gametest.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
+    sourceSets.gametest.runtimeClasspath += sourceSets.client.runtimeClasspath
+    // One suite per run: each opens its own world and screenshots, and the others are slow.
+    def only = providers.gradleProperty('cacheVisualTest').isPresent() ? '"com.endsight.storage.CacheVisualTest"'
+            : providers.gradleProperty('mapVisualTest').isPresent() ? '"com.endsight.dungeon.DungeonMapVisualTest"'
+            : providers.gradleProperty('keyVisualTest').isPresent() ? '"com.endsight.dungeon.KeyAlertVisualTest"'
+            : '"com.endsight.profile.ProfileVisualTest"'
+    tasks.named('processGametestResources') {
+        inputs.property('only', only)
+        filesMatching('fabric.mod.json') {
+            filter { line -> line.replace('"com.endsight.profile.ProfileVisualTest", "com.endsight.storage.CacheVisualTest", "com.endsight.dungeon.DungeonMapVisualTest", "com.endsight.dungeon.KeyAlertVisualTest"', only) }
+        }
+    }
+}

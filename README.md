@@ -141,11 +141,10 @@ reveal blocks behind walls.
 
 ### Chat
 
-**Loot & Debug** — one page controls whether `/debug` is requested after each join,
-whether the server uses Normal or Detailed output, and how the chat presents the rolls:
-Original, Close calls, Compact, or Compact + close calls. The close-call cutoff and
-*Both ends* switch remain adjustable. Real drops always show. Detailed output is
-required for the Mob Coins tracker. Individual keybinds remain available on this page.
+**Loot & Debug** — how the server's `/debug` loot rolls appear in chat: Original,
+Close calls, Compact, or Compact + close calls. Turn debug on in Dragsim's own settings.
+The close-call cutoff and *Both ends* switch remain adjustable. Real drops always show.
+Individual keybinds remain available on this page.
 
 **Ability Spam** — "This ability is on cooldown" once, with a count, instead of forty
 times; or hidden altogether.

@@ -88,8 +88,6 @@ public final class EndsightDemo {
         // Chat: what you turn on first, down to the one you rarely touch.
         r.add(Module.placeholder("qol.abilityspam", "Ability Spam",
                 "One cooldown line with a count, or none.", "Chat"));
-        r.add(Module.placeholder("qol.debug", "Debug on join",
-                "Runs /debug for you two seconds after every join.", "Chat"));
         r.add(Module.placeholder("qol.copychat", "Copy Chat",
                 "Right-click a chat line to copy it.", "Chat"));
         r.add(Module.placeholder("qol.math", "Math Solver",

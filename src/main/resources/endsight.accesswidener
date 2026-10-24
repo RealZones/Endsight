@@ -39,3 +39,7 @@ accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScr
 # is told from the old one still showing.
 accessible	field	net/minecraft/client/gui/Gui	overlayMessageString	Lnet/minecraft/network/chat/Component;
 accessible	field	net/minecraft/client/gui/Gui	overlayMessageTime	I
+
+# Key Alerts reads the item an item_display shows, to tell a floating Wither or Blood Key
+# from any other display. The getter is private and there is no public one.
+accessible	method	net/minecraft/world/entity/Display$ItemDisplay	getItemStack	()Lnet/minecraft/world/item/ItemStack;

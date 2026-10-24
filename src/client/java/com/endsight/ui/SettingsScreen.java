@@ -366,7 +366,7 @@ public class SettingsScreen extends Screen {
             boolean hovered = contains(r.x, r.y, r.w, r.h, mouseX, mouseY);
             float h = anim("row:" + r.setting.label()).to(hovered ? 1f : 0f, Theme.EASE_FAST);
             Draw.roundedRect(g, r.x - 8, r.y, r.w + 16, r.h, Theme.RADIUS,
-                    Draw.lerp(Theme.bg(), Theme.surface(), h));
+                    Draw.lerp(embedded ? Theme.surface() : Theme.bg(), embedded ? Theme.raised() : Theme.surface(), h));
 
             if (r.setting instanceof Setting.Command c) {
                 drawCommand(g, font, r, c, mouseX, mouseY);

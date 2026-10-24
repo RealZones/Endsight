@@ -125,36 +125,45 @@ public final class HudPlacementScreen extends Screen {
 
         int px = (int) event.x() - grabX, py = (int) event.y() - grabY;
         int w = b[2], h = b[3];
-        // Snap: the screen's centre lines, and every other readout's edges and centre -
-        // plus sitting flush beside or under one - so a column lines up instead of
-        // landing a pixel off. Hold shift to place freely.
-        snapX = snapY = Integer.MIN_VALUE;
-        if (!event.hasShiftDown()) {
-            List<int[]> xs = new ArrayList<>(), ys = new ArrayList<>();   // {line, offset of my edge that meets it}
-            xs.add(new int[]{width / 2, w / 2});
-            ys.add(new int[]{height / 2, h / 2});
-            for (Map.Entry<String, int[]> e : bounds.entrySet()) {
-                if (e.getKey().equals(dragging)) continue;
-                int[] o = e.getValue();
-                for (int line : new int[]{o[0], o[0] + o[2], o[0] + o[2] / 2}) for (int mine : new int[]{0, w, w / 2}) xs.add(new int[]{line, mine});
-                for (int line : new int[]{o[1], o[1] + o[3], o[1] + o[3] / 2}) for (int mine : new int[]{0, h, h / 2}) ys.add(new int[]{line, mine});
-                xs.add(new int[]{o[0] + o[2] + GAP, 0});   // flush to its right
-                xs.add(new int[]{o[0] - GAP, w});          // flush to its left
-                ys.add(new int[]{o[1] + o[3] + GAP, 0});   // flush under it
-                ys.add(new int[]{o[1] - GAP, h});          // flush above it
-            }
-            int bestX = SNAP + 1, bestY = SNAP + 1;
-            for (int[] c : xs) {
-                int d = Math.abs(px + c[1] - c[0]);
-                if (d < bestX) { bestX = d; px = c[0] - c[1]; snapX = c[0]; }
-            }
-            for (int[] c : ys) {
-                int d = Math.abs(py + c[1] - c[0]);
-                if (d < bestY) { bestY = d; py = c[0] - c[1]; snapY = c[0]; }
-            }
-        }
-        HudLayout.setPixels(dragging, px, py, w, h, width, height);
+        int[] placed = event.hasShiftDown() ? new int[]{px, py, Integer.MIN_VALUE, Integer.MIN_VALUE}
+                : snap(dragging, px, py, w, h, bounds, width, height);
+        snapX = placed[2]; snapY = placed[3];
+        HudLayout.setPixels(dragging, placed[0], placed[1], w, h, width, height);
         return true;
+    }
+
+    /**
+     * Snap: the screen's centre lines, and every other readout's edges and centre - plus
+     * sitting flush beside or under one - so a column lines up instead of landing a pixel
+     * off. Shift skips it. Shared with dragging from chat, so both line up the same way.
+     *
+     * @return {x, y, guide x, guide y}, a guide being MIN_VALUE when that axis did not snap
+     */
+    static int[] snap(String dragging, int px, int py, int w, int h, Map<String, int[]> others, int width, int height) {
+        int snapX = Integer.MIN_VALUE, snapY = Integer.MIN_VALUE;
+        List<int[]> xs = new ArrayList<>(), ys = new ArrayList<>();   // {line, offset of my edge that meets it}
+        xs.add(new int[]{width / 2, w / 2});
+        ys.add(new int[]{height / 2, h / 2});
+        for (Map.Entry<String, int[]> e : others.entrySet()) {
+            if (e.getKey().equals(dragging)) continue;
+            int[] o = e.getValue();
+            for (int line : new int[]{o[0], o[0] + o[2], o[0] + o[2] / 2}) for (int mine : new int[]{0, w, w / 2}) xs.add(new int[]{line, mine});
+            for (int line : new int[]{o[1], o[1] + o[3], o[1] + o[3] / 2}) for (int mine : new int[]{0, h, h / 2}) ys.add(new int[]{line, mine});
+            xs.add(new int[]{o[0] + o[2] + GAP, 0});   // flush to its right
+            xs.add(new int[]{o[0] - GAP, w});          // flush to its left
+            ys.add(new int[]{o[1] + o[3] + GAP, 0});   // flush under it
+            ys.add(new int[]{o[1] - GAP, h});          // flush above it
+        }
+        int bestX = SNAP + 1, bestY = SNAP + 1;
+        for (int[] c : xs) {
+            int d = Math.abs(px + c[1] - c[0]);
+            if (d < bestX) { bestX = d; px = c[0] - c[1]; snapX = c[0]; }
+        }
+        for (int[] c : ys) {
+            int d = Math.abs(py + c[1] - c[0]);
+            if (d < bestY) { bestY = d; py = c[0] - c[1]; snapY = c[0]; }
+        }
+        return new int[]{px, py, snapX, snapY};
     }
 
     /** Snap distance in GUI pixels, and the gap left between two readouts placed flush. */

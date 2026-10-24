@@ -5,6 +5,7 @@ import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.dungeon.DungeonContext;
 import com.endsight.dungeon.DungeonMap;
+import com.endsight.dungeon.KeyAlert;
 import com.endsight.dungeon.BloodRoom;
 import com.endsight.dungeon.HigherOrLower;
 import com.endsight.dungeon.IcePath;
@@ -22,7 +23,6 @@ import com.endsight.hud.ServerStats;
 import com.endsight.qol.AbilitySpam;
 import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
-import com.endsight.qol.DebugOnJoin;
 import com.endsight.qol.Drops;
 import com.endsight.qol.GlobalChat;
 import com.endsight.qol.CopyChat;
@@ -48,6 +48,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.ForgeRecipes;
 import com.endsight.storage.MiningSession;
+import com.endsight.storage.CacheTracker;
 import com.endsight.storage.VoidFragments;
 import com.endsight.storage.Pets;
 import com.endsight.storage.PowderTracker;
@@ -107,6 +108,7 @@ public class EndsightClient implements ClientModInitializer {
 
     private static ModuleRegistry registry;
     private boolean keyWasDown = false;
+    private boolean previewOpened;
     /** Which bound keys were down last tick, so a held key fires once. */
     private final java.util.Set<Integer> heldBinds = new java.util.HashSet<>();
 
@@ -127,12 +129,14 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(SlayerSpawnMarker.module());
             registry.replace(RevenantSpawnTiles.module());
             registry.replace(ZealotTracker.module());
+            registry.insertBefore("dragon.timer", CacheTracker.module());
             registry.replace(DungeonMap.module());
             registry.replace(ThreeWeirdos.module());
             registry.replace(TicTacToe.module());
             registry.replace(Quiz.module());
             registry.replace(HigherOrLower.module());
             registry.replace(BloodRoom.module());
+            registry.add(KeyAlert.module());
             registry.replace(IcePath.module());
             registry.replace(TerminalSolver.module());
             registry.replace(Alerts.module());
@@ -152,7 +156,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Etherwarp.module());
             registry.replace(Cooldowns.module());
             registry.replace(LootAlerts.module());
-            registry.replace(DebugOnJoin.module());
             registry.replace(GlobalChat.module());
             registry.replace(LootFilter.module());
             registry.replace(LootRoll.module());
@@ -166,13 +169,15 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
             registry.replace(MenuButton.module());
+            registry.replace(com.endsight.profile.ProfileClient.module());
             // Keep the old modules registered for their config and keybind ids. Their
             // grouped pages change only what the browser shows, not how the features run.
-            registry.insertBefore("qol.debug", LootChat.module());
-            registry.hide("qol.debug").hide("qol.lootfilter").hide("qol.lootroll");
+            registry.insertBefore("qol.lootfilter", LootChat.module());
+            registry.hide("qol.lootfilter").hide("qol.lootroll");
             registry.insertBefore("visual.fullbright", VisualTweaks.module());
             registry.hide("visual.fullbright").hide("visual.inventoryGlass")
                     .hide("visual.explosionParticles").hide("visual.shinyNodes");
+            com.endsight.ui.FeatureCatalog.publicLayout(registry);
             Config.load(registry);
         }
         return registry;
@@ -183,7 +188,9 @@ public class EndsightClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
         Drops.init();
         DungeonContext.init();
+        KeyAlert.init();
         HudLayout.init();
+        com.endsight.hud.ChatHudDrag.init();
         StoragePreview.init();
         SnapshotStore.init();
         StorageSearch.init();
@@ -196,13 +203,13 @@ public class EndsightClient implements ClientModInitializer {
         EyeGuard.init();
         ArmorGuard.init();
         DamageNumbers.init();
-        DebugOnJoin.init();
         GlobalChat.init();
         LootFilter.init();
         LootRoll.init();
         AbilitySpam.init();
         CopyChat.init();
         MiningSession.init();
+        CacheTracker.init();
         PowderTracker.init();
         VoidFragments.init();
         Pets.init();
@@ -220,6 +227,7 @@ public class EndsightClient implements ClientModInitializer {
         Alerts.init();
         MathSolver.init();
         Updates.init();
+        com.endsight.profile.ProfileClient.init();
         Beacon.init();
         RarityOutline.init();
         Etherwarp.init();
@@ -292,6 +300,18 @@ public class EndsightClient implements ClientModInitializer {
 
     private void onTick(Minecraft client) {
         if (client.getWindow() == null) return;
+        boolean profilePreview = net.fabricmc.loader.api.FabricLoader.getInstance().isDevelopmentEnvironment()
+                && !System.getProperty("endsight.profilePreview", "").isBlank();
+        if (profilePreview && !previewOpened && client.screen == null && client.level != null) {
+            previewOpened = true;
+            client.setScreen(new com.endsight.ui.ProfileScreen(null, System.getProperty("endsight.profilePreview")));
+        }
+        boolean preview = net.fabricmc.loader.api.FabricLoader.getInstance().isDevelopmentEnvironment()
+                && Boolean.getBoolean("endsight.menuPreview");
+        if (preview && !previewOpened && client.screen instanceof net.minecraft.client.gui.screens.TitleScreen) {
+            previewOpened = true;
+            open(client);
+        }
 
         // Polled rather than registered as a KeyMapping on purpose: a KeyMapping only
         // fires while no screen is open, and this has to be openable from the pause
@@ -300,7 +320,7 @@ public class EndsightClient implements ClientModInitializer {
         boolean down = !OPEN.isUnbound() && (key.getType() == InputConstants.Type.MOUSE
                 ? GLFW.glfwGetMouseButton(client.getWindow().handle(), key.getValue()) == GLFW.GLFW_PRESS
                 : InputConstants.isKeyDown(client.getWindow(), key.getValue()));
-        if (down && !keyWasDown && client.screen == null && client.level != null) open(client);
+        if (down && !keyWasDown && (preview || client.screen == null && client.level != null)) open(client);
         keyWasDown = down;
 
         // Bound keys are polled here too, and only with no screen open - otherwise the

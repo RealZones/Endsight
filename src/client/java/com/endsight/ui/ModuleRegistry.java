@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Properties;
+import java.util.LinkedHashSet;
 
 /**
  * Every module the UI knows about, grouped by category in the order registered.
@@ -21,7 +23,12 @@ public final class ModuleRegistry {
     private final Set<String> hidden = new HashSet<>();
     private List<Module> snapshot;
     private List<String> categorySnapshot;
-    private record Filter(String category, String query) { }
+    private List<Module> presentation;
+    private final Map<String, String> aliases = new LinkedHashMap<>();
+    private final Set<String> favorites = new LinkedHashSet<>();
+    private String browserView;
+    public static final String FAVORITES = "@favorites";
+    private record Filter(String category, String query, boolean favorites) { }
     private final Map<Filter, Map<String, List<Module>>> filters = new LinkedHashMap<>();
 
     private void changed() {
@@ -93,12 +100,49 @@ public final class ModuleRegistry {
         return modules.isEmpty();
     }
 
+    /** Browser descriptors borrow live accessors; all() remains the persistence/keybind authority. */
+    public void present(List<Module> entries, Map<String, String> searchAliases, List<String> defaults) {
+        presentation = List.copyOf(entries);
+        aliases.clear();
+        aliases.putAll(searchAliases);
+        favorites.addAll(defaults);
+        browserView = favorites.isEmpty() ? null : FAVORITES;
+        categorySnapshot = null;
+        invalidateSearch();
+    }
+
+    private List<Module> visible() { return presentation == null ? modules : presentation; }
+    private boolean hidden(Module module) { return presentation == null && hidden.contains(module.id()); }
+    public boolean favorite(String id) { return favorites.contains(id); }
+    public void toggleFavorite(String id) {
+        if (!favorites.remove(id)) favorites.add(id);
+        invalidateSearch();
+    }
+    public String browserView() { return browserView; }
+    public void browserView(String view) { browserView = view; }
+
+    public void loadBrowserState(Properties properties) {
+        String saved = properties.getProperty("browser.favorites");
+        if (saved != null) {
+            favorites.clear();
+            for (String id : saved.split(",")) if (!id.isBlank()) favorites.add(id);
+        }
+        browserView = properties.getProperty("browser.view", browserView);
+        if ("@all".equals(browserView)) browserView = null;
+        invalidateSearch();
+    }
+
+    public void saveBrowserState(Properties properties) {
+        properties.setProperty("browser.favorites", String.join(",", favorites));
+        properties.setProperty("browser.view", browserView == null ? "@all" : browserView);
+    }
+
     /** Categories in the order they first appear, so the sidebar needs no config. */
     public List<String> categories() {
         if (categorySnapshot != null) return categorySnapshot;
         List<String> out = new ArrayList<>();
-        for (Module m : modules) {
-            if (hidden.contains(m.id())) continue;
+        for (Module m : visible()) {
+            if (hidden(m)) continue;
             if (!out.contains(m.category())) out.add(m.category());
         }
         categorySnapshot = List.copyOf(out);
@@ -113,14 +157,20 @@ public final class ModuleRegistry {
      * it - so the filtering has to happen before the grouping, not during layout.
      */
     public Map<String, List<Module>> grouped(String category, String query) {
-        Filter key = new Filter(category, SettingsSearch.normalize(query));
+        return grouped(category, query, false);
+    }
+
+    public Map<String, List<Module>> favorites() { return grouped(null, "", true); }
+
+    private Map<String, List<Module>> grouped(String category, String query, boolean favoritesOnly) {
+        Filter key = new Filter(category, SettingsSearch.normalize(query), favoritesOnly);
         Map<String, List<Module>> cached = filters.get(key);
         if (cached != null) return cached;
         Map<String, List<Module>> out = new LinkedHashMap<>();
-        for (Module m : modules) {
-            if (hidden.contains(m.id())) continue;
+        for (Module m : visible()) {
+            if (hidden(m) || favoritesOnly && !favorites.contains(m.id())) continue;
             if (category != null && !category.equals(m.category())) continue;
-            if (!m.matches(key.query())) continue;
+            if (!m.matches(key.query()) && !SettingsSearch.matches(key.query(), aliases.get(m.id()))) continue;
             out.computeIfAbsent(m.category(), k -> new ArrayList<>()).add(m);
         }
         out.replaceAll((name, group) -> List.copyOf(group));

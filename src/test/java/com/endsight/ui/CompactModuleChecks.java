@@ -202,12 +202,15 @@ public final class CompactModuleChecks {
                 Set.of(Setting.class.getPermittedSubclasses()));
         yes(module.matches(null), "null query hid module");
         yes(module.matches(" \t\n "), "blank query hid module");
-        yes(module.matches("inventory timing dungeons celestial reposition teleport forge navigation"),
+        yes(module.matches("inventory timing dungeons celestial reposition forge navigation"),
                 "tokens did not combine metadata and setting text");
         yes(!module.matches("inventory celestial missing-token"), "multiword search accepted a missing token");
         for (String query : List.of("outline armor", "opacity tint", "mode selection celestial", "stroke hue",
-                "placement reposition", "utility teleport", "basic", "advice navigation", "travel forge"))
+                "placement reposition", "advice navigation", "travel forge"))
             yes(module.matches(query), "setting text is not searchable: " + query);
+        // Keybind rows and headings repeat on nearly every page, so the browser skips them.
+        for (String query : List.of("utility teleport", "basic"))
+            yes(!module.matches(query), "keybind row or heading matched a browser search: " + query);
 
         Locale previous = Locale.getDefault();
         try {
@@ -216,7 +219,7 @@ public final class CompactModuleChecks {
             yes(module.matches("inventory"), "module text casing used the default locale");
             yes(module("lower", "inventory", "Utility").matches("INVENTORY"),
                     "query casing used the default locale");
-            yes(module.matches("  INVENTORY \t DUNGEONS\n Celestial REPOSITION TELEPORT FORGE navigation  "),
+            yes(module.matches("  INVENTORY \t DUNGEONS\n Celestial REPOSITION FORGE navigation  "),
                     "case or whitespace changed mixed-field search");
             ModuleRegistry registry = new ModuleRegistry().add(module);
             same(registry.grouped(null, "INVENTORY"), registry.grouped(null, "inventory"),
@@ -311,12 +314,12 @@ public final class CompactModuleChecks {
                 ModuleRowLayout.Rect label = row.label();
                 yes(label.w() > 0, "module name has no visible space at width " + width);
                 equal(row.target(label.x() + .5, label.y() + .5), ModuleRowLayout.Target.ROW);
-                List<ModuleRowLayout.Rect> controls = List.of(row.key(), row.toggle(), row.expand());
+                List<ModuleRowLayout.Rect> controls = List.of(row.key(), row.toggle(), row.expand(), row.pin());
                 List<ModuleRowLayout.Target> targets = List.of(ModuleRowLayout.Target.KEY,
-                        ModuleRowLayout.Target.TOGGLE, ModuleRowLayout.Target.EXPAND);
+                        ModuleRowLayout.Target.TOGGLE, ModuleRowLayout.Target.EXPAND, ModuleRowLayout.Target.PIN);
                 for (int i = 0; i < controls.size(); i++) {
                     ModuleRowLayout.Rect control = controls.get(i);
-                    boolean present = i == 2 ? settings : implemented;
+                    boolean present = i == 3 || (i == 2 ? settings : i == 0 ? implemented && width >= 150 : implemented);
                     equal(control.w() > 0, present);
                     if (!present) continue;
                     yes(row.row().contains(control.x(), control.y())

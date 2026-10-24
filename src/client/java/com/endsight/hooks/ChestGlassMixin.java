@@ -2,6 +2,7 @@ package com.endsight.hooks;
 
 import com.endsight.visual.InventoryGlass;
 import com.endsight.storage.StorageOverview;
+import com.endsight.dungeon.TerminalSolver;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
@@ -18,7 +19,8 @@ abstract class ChestGlassMixin {
                                 int x, int y, float u, float v, int w, int h, int tw, int th) {
         // The overview owns its backing. Neither vanilla's texture nor the glass
         // replacement may show through when its opacity is reduced.
-        if (StorageOverview.active((ContainerScreen) (Object) this)) return;
+        if (StorageOverview.active((ContainerScreen) (Object) this)
+                || TerminalSolver.compactActive((ContainerScreen) (Object) this)) return;
         if (!InventoryGlass.applies(this)) g.blit(pipeline, texture, x, y, u, v, w, h, tw, th);
         // A chest background is two texture slices; draw the complete frame only once.
         else if (v == 0) InventoryGlass.background((ContainerScreen) (Object) this, g);

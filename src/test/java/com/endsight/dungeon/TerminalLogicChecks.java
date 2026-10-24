@@ -86,6 +86,27 @@ public final class TerminalLogicChecks {
         melody = melody(4, 4, 2);
         put(melody, 3, "magenta_stained_glass_pane", "", 1, false);
         check(TerminalLogic.solve("Click the button on time!", 54, melody).hints().isEmpty(), "two targets suppress guessed alignment");
+        // The recorded board: markers at 4 and 40, mover sweeping 10..14 in the first track.
+        melody = melody(4, 1, 1);
+        plan = TerminalLogic.solve("Click the button on time!", 54, melody);
+        check(plan.ready() && plan.hints().isEmpty(), "recorded Melody waits while the mover is off the marked column");
+        melody = melody(4, 4, 1);
+        check(TerminalLogic.solve("Click the button on time!", 54, melody).hints().equals(List.of(new TerminalLogic.Hint(16, 1, LEFT))),
+                "recorded Melody clicks the first button when the mover reaches the marked column");
+        // The first Melody of the 22:35 recording after its first track: row one all lime,
+        // the markers moved to column one, the mover in row two. Six lime panes, one mover.
+        melody = melody(1, 1, 2);
+        for (int col = 1; col <= 5; col++) put(melody, 9 + col, "lime_stained_glass_pane", "", 1, false);
+        put(melody, 16, "lime_terracotta", "", 1, false);
+        check(TerminalLogic.solve("Click the button on time!", 54, melody).hints().equals(List.of(new TerminalLogic.Hint(25, 1, LEFT))),
+                "a finished track is not a mover; the second track's button is next");
+        // The same-colour board from that recording: lime, not green, is the fourth colour.
+        List<TerminalLogic.Cell> lime = background(45);
+        String[] recorded = {"yellow", "blue", "orange", "orange", "blue", "yellow", "lime", "orange", "red"};
+        for (int i = 0; i < 9; i++) put(lime, RUBIX[i], recorded[i] + "_stained_glass_pane", "", 1, false);
+        plan = TerminalLogic.solve("Change all to same color!", 45, lime);
+        check(plan.ready() && plan.status().equals("Make all panes orange") && plan.hints().size() == 6,
+                "recorded Dragsim board with a lime pane solves to orange");
         melody = melody(2, 2, 2);
         put(melody, 25, "stone", "", 1, false);
         plan = TerminalLogic.solve("Click the button on time!", 54, melody);
@@ -144,12 +165,17 @@ public final class TerminalLogicChecks {
         check(TerminalLogic.solve("Change all to same color!", 45, board).hints().isEmpty(), "unknown cycle color never produces rotations");
     }
 
+    /** Dragsim's Melody as recorded on 2026-10-23: the target column marked by magenta panes
+     *  in the top and bottom rows, the active track red with one lime mover and a lime
+     *  terracotta button, later tracks white with red terracotta buttons. */
     private static List<TerminalLogic.Cell> melody(int targetColumn, int movingColumn, int row) {
         List<TerminalLogic.Cell> board = background(54);
         put(board, targetColumn, "magenta_stained_glass_pane", "", 1, false);
-        for (int r = 1; r <= 3; r++) for (int col = 1; col <= 5; col++) put(board, r * 9 + col, "red_stained_glass_pane", "", 1, false);
+        put(board, 36 + targetColumn, "magenta_stained_glass_pane", "", 1, false);
+        for (int r = 1; r <= 3; r++) for (int col = 1; col <= 5; col++)
+            put(board, r * 9 + col, r == row ? "red_stained_glass_pane" : "white_stained_glass_pane", "", 1, false);
         put(board, row * 9 + movingColumn, "lime_stained_glass_pane", "", 1, false);
-        for (int button : List.of(16, 25, 34)) put(board, button, "red_terracotta", "", 1, false);
+        for (int r = 1; r <= 3; r++) put(board, r * 9 + 7, r == row ? "lime_terracotta" : "red_terracotta", "", 1, false);
         return board;
     }
     private static List<TerminalLogic.Cell> rectangle(int size, int rows, int columns, String item) {

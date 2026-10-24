@@ -40,6 +40,7 @@ public final class AbilitySpam {
 
     private static boolean enabled = true;
     private static String mode = STACK;
+    private static boolean goopBoss;
 
     /** The line currently standing in for the refusals, and how many it stands for. */
     private static Component stacked;
@@ -48,24 +49,34 @@ public final class AbilitySpam {
 
     public static Module module() {
         return new Module("qol.abilityspam", "Ability Spam",
-                "Stack repeated ability messages into one, or remove them.", "Chat",
+                "Stack ability messages and hide Goop boss chat.", "Chat",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Choice("Mode",
                                 "Stack: one line with a count. Hide: none.",
-                                List.of(STACK, HIDE), () -> mode, v -> mode = v)));
+                                List.of(STACK, HIDE), () -> mode, v -> mode = v),
+                        new Setting.Toggle("Goop boss",
+                                "Hide dialogue and warnings; keep placer, results and loot.",
+                                () -> goopBoss, v -> goopBoss = v)));
     }
 
     public static void init() {
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
             if (!enabled || overlay) return true;
             String line = Zealots.strip(message.getString()).trim();
+            // Boss narration is hidden as a whole, even when ability refusals
+            // are set to Stack. Loot and normal player chat still pass through.
+            if (goopBoss && goopMessage(line)) return false;
             String kind = line.startsWith(COOLDOWN) ? COOLDOWN
                     : line.equals(SALVATION_MISS) ? SALVATION_MISS : null;
             if (kind == null) return true;
             if (!HIDE.equals(mode)) stack(message, kind);
             return false;
         });
+    }
+
+    static boolean goopMessage(String line) {
+        return GoopChat.hide(line);
     }
 
     /**

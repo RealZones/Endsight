@@ -94,7 +94,8 @@ public record Module(String id,
     public boolean matches(String query) {
         if (query == null || query.isBlank()) return true;
         StringBuilder text = new StringBuilder(title).append(' ').append(description).append(' ').append(category);
-        if (settings != null) for (Setting setting : settings) text.append(' ').append(SettingsSearch.text(setting));
+        if (settings != null) for (Setting setting : settings)
+            if (SettingsSearch.browsable(setting)) text.append(' ').append(SettingsSearch.text(setting));
         return SettingsSearch.matches(query, text.toString());
     }
 }

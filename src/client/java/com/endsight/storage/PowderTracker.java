@@ -66,6 +66,9 @@ public final class PowderTracker {
     private static final String ID = "mining.powder";
     private static final String HOTD = "Heart of the Dragon";
     private static final Pattern FUEL = Pattern.compile("(?i)(?:^|\\s)Fuel\\s*:\\s*([0-9,]+)\\s*/\\s*([0-9,]+)(?:\\s|$)");
+    private static final Pattern FUEL_HEADER = Pattern.compile("(?i)^(?:drill\\s+)?fuel\\s*:?$");
+    private static final Pattern FUEL_VALUES = Pattern.compile("^([0-9,]+)\\s*/\\s*([0-9,]+)(?:\\s*\\([0-9.]+%\\))?$");
+    private static final Pattern REFUEL_HEADER = Pattern.compile("(?i)^refuel(?:\\s|$)");
     private static final String FUEL_ID = "mining.fuel";
     private static final Pattern MINING_XP = Pattern.compile("\\+([\\d,.]+)\\s+Mining\\s*\\(([\\d.]+)%\\)");
     private static final Pattern POWDER = Pattern.compile("(?i)^(ender|void)\\s+powder\\D{0,4}([\\d,]{2,})");
@@ -89,13 +92,17 @@ public final class PowderTracker {
     /** Blocks behind a learned rate, and the most it counts for - enough to steady it, not enough to freeze it. */
     private static final double[] rateWeight = new double[4];
     private static final double RATE_WEIGHT_CAP = 5_000;
+    private static final double MIN_RATE_BLOCKS = 64;
+    /** Older files could learn a whole saved-balance jump from one newly observed block. */
+    private static final String RATE_SCHEMA = "#calibration\t2";
 
     private static final String[] KIND = {"End Stone", "Obsidian", "Crying Obsidian", "Amethyst"};
     private static final int[] POWDER_OF = {0, 0, 1, 1};
     private static final String[] TYPE = {"Ender", "Void"};
     /** Per block broken, and the Powder Buff percentage they were measured at. */
     // Amethyst is unmeasured: it counts nothing until two HOTD opens bracket an amethyst run.
-    private static final double[] rate = {16.4, 41.2, 139.0, 0};
+    private static final double[] SEED_RATES = {16.4, 41.2, 139.0, 0};
+    private static final double[] rate = SEED_RATES.clone();
     private static final int[] rateBuff = {24, 24, 24, 24};
 
     /** An upgrade the menu offered: what it is, which powder, and the price. */
@@ -106,6 +113,8 @@ public final class PowderTracker {
     private static boolean showPowder = true;
     private static boolean remind = true;
     private static final long[] total = {-1, -1};
+    /** Saved balances are useful display anchors, but cannot bracket this launch's blocks. */
+    private static final boolean[] liveVisit = new boolean[2];
     private static final long[] sessionBase = {-1, -1};
     /**
      * Whether the session's starting point is known, kept apart from its value.
@@ -187,6 +196,8 @@ public final class PowderTracker {
                                 () -> remind, v -> remind = v),
                         new Setting.Section("Session"),
                         new Setting.Action("Reset Session", "Clears powder, XP, and rate totals.", "Reset", PowderTracker::reset),
+                        new Setting.Action("Relearn Rates", "After changing mining gear, open HOTD, mine at least 64 blocks of one material, then reopen HOTD.",
+                                "Relearn", PowderTracker::relearnRates),
                         new Setting.Note("Status", PowderTracker::status)));
     }
 
@@ -223,6 +234,18 @@ public final class PowderTracker {
         activeMs = 0;
         recentXp.clear();
         reminded.clear();
+    }
+
+    private static void relearnRates() {
+        clearCalibration();
+        saveRates();
+    }
+
+    private static void clearCalibration() {
+        // Keep the current estimates steady until a new, entirely live interval
+        // measures the new gear. An old balance is never a calibration endpoint.
+        java.util.Arrays.fill(rateWeight, 0);
+        java.util.Arrays.fill(liveVisit, false);
     }
 
     private static String status() {
@@ -403,18 +426,32 @@ public final class PowderTracker {
      * kinds contributed at their known rates; then the count restarts.
      */
     private static void visit(int t, long value) {
+        if (syncVisit(t, value)) saveRates();
+    }
+
+    private static boolean syncVisit(int t, long value) {
         long old = total[t];
-        if (old == value) return;
+        boolean anchored = liveVisit[t];
+        liveVisit[t] = true;
         long est = estimate(t);                            // before any rate below is re-learned
         double since = 0;
         int major = -1;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) since += blocksSince(k);
+        // An unchanged first balance still closes the saved-balance interval;
+        // an unchanged later balance corrects any blocks that earned no powder.
+        if (old == value && anchored && since == 0) return false;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t && since > 0 && blocksSince(k) >= PURE * since) major = k;
-        if (old >= 0 && value > old && major >= 0) {
+        double estMined = est - old, realMined = value - old;
+        boolean calibration = anchored && old >= 0 && value > old && major >= 0
+                && blocksSince(major) >= MIN_RATE_BLOCKS
+                && (rateWeight[major] == 0 || estMined <= 0 || realMined <= 2 * estMined);
+        boolean learnedMining = false;
+        if (calibration) {
             double others = 0;
             for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t && k != major) others += effective(k) * blocksSince(k);
             double learned = (value - old - others) / blocksSince(major) / (1 + petBuff(major));
             if (learned > 0) {
+                learnedMining = true;
                 // Averaged over visits, weighted by the blocks behind each, not replaced by
                 // the latest one. The log shows four amethyst visits at the same buff
                 // reading 349, 330, 324 and 322 a block: each on its own is a few hundred
@@ -427,7 +464,6 @@ public final class PowderTracker {
                 rate[major] = w > 0 && rate[major] > 0 ? (oldNow * w + learned * n) / (w + n) : learned;
                 rateWeight[major] = Math.min(RATE_WEIGHT_CAP, w + n);
                 rateBuff[major] = buff[t];
-                saveRates();
                 log("RATE", KIND[major], value - old, blocksSince(major), String.format(Locale.ROOT, "%.3f", learned), buff[t]);
             }
         }
@@ -445,21 +481,19 @@ public final class PowderTracker {
             sessionBase[t] = value - Math.round(before);
             sessionSet[t] = true;
         } else {
-            // The menu's correction goes into the session only when it could be mining:
-            // the gain since the last visit within half to twice what its blocks were
-            // estimated at. Anything else is not mining - a perk bought on a page this does
-            // not read, powder from somewhere else - and moves the start instead. Letting
-            // every correction through took a session to Void +0 after an unseen purchase,
-            // and put 12k Ender on it from two End Stone.
-            double estMined = est - old, realMined = value - old;
-            boolean mining = since > 0 && old >= 0 && estMined > 0
-                    && realMined >= 0.5 * estMined && realMined <= 2 * estMined;
+            // A lower positive gain is an overestimate, not spending. Moving the
+            // baseline by that correction preserved the inflated session and /h even
+            // after HOTD supplied the real balance. Negative balance changes still
+            // preserve earned powder when an upgrade spends it. The first live
+            // visit excludes any balance changes from before this launch.
+            boolean mining = anchored && since > 0 && old >= 0 && realMined >= 0
+                    && (learnedMining || estMined > 0 && realMined <= 2 * estMined);
             if (!mining) sessionBase[t] += value - est;
         }
         total[t] = value;
         for (int k = 0; k < KIND.length; k++) if (POWDER_OF[k] == t) blocksAtVisit[k] = blocks[k];
         log("H", TYPE[t], value, since);
-        saveRates();                                       // the totals ride in the same file
+        return true;
     }
 
     /** Upgrades the estimate now covers. */
@@ -557,7 +591,7 @@ public final class PowderTracker {
     }
 
     /**
-     * "Fuel: 1,504/10,000" off the held item. Logged whenever it changes, with the block
+     * Fuel from the held item's legacy label or its two-line DRILL FUEL bar. Logged whenever it changes, with the block
      * count, so fuel per block can be read from the file: the omelette's 25% and the
      * Blazing's 4x are on the lore, the base cost per block is not written anywhere.
      */
@@ -587,19 +621,49 @@ public final class PowderTracker {
     }
 
     private static long[] parseFuel(List<String> lines) {
+        List<String> plainLines=new ArrayList<>(lines.size());
         for (String raw : lines) {
             StringBuilder plain = new StringBuilder(raw.length());
-            clean(raw).codePoints().forEach(cp -> plain.appendCodePoint(
-                    Character.getType(cp) == Character.PRIVATE_USE || Character.isSpaceChar(cp) ? ' ' : cp));
-            Matcher match = FUEL.matcher(plain.toString().trim());
-            if (!match.find()) continue;
-            try {
-                long value = Long.parseLong(match.group(1).replace(",", ""));
-                long capacity = Long.parseLong(match.group(2).replace(",", ""));
-                if (capacity > 0 && value >= 0) return new long[]{value, capacity};
-            } catch (NumberFormatException ignored) {
-                // A malformed or overflowed number is not a fuel measurement.
+            clean(raw).codePoints().forEach(cp -> {
+                if(Character.getType(cp)!=Character.FORMAT)plain.appendCodePoint(
+                        Character.getType(cp) == Character.PRIVATE_USE || Character.isSpaceChar(cp) ? ' ' : cp);
+            });
+            String line=plain.toString().trim();plainLines.add(line);
+            long[] legacy=fuelValues(FUEL.matcher(line));
+            if(legacy!=null)return legacy;
+        }
+        for(int i=0;i<plainLines.size();i++) {
+            if(FUEL_HEADER.matcher(plainLines.get(i)).matches()) {
+                // Custom bars put the numeric ratio below a separate header,
+                // sometimes with blank/private-font decoration between them.
+                for(int j=i+1;j<Math.min(plainLines.size(),i+5);j++) {
+                    String line=plainLines.get(j);
+                    long[] values=fuelValues(FUEL_VALUES.matcher(line));
+                    if(values!=null)return values;
+                    if(line.codePoints().anyMatch(Character::isLetterOrDigit))break;
+                }
+            } else if(REFUEL_HEADER.matcher(plainLines.get(i)).find()) {
+                // A resource pack may draw the DRILL FUEL header as one private
+                // glyph. The ratio immediately above Refuel is still identifiable.
+                for(int j=i-1;j>=Math.max(0,i-4);j--) {
+                    String line=plainLines.get(j);
+                    long[] values=fuelValues(FUEL_VALUES.matcher(line));
+                    if(values!=null)return values;
+                    if(line.codePoints().anyMatch(Character::isLetterOrDigit))break;
+                }
             }
+        }
+        return null;
+    }
+
+    private static long[] fuelValues(Matcher match) {
+        if(!match.find())return null;
+        try {
+            long value=Long.parseLong(match.group(1).replace(",",""));
+            long capacity=Long.parseLong(match.group(2).replace(",",""));
+            if(capacity>0&&value>=0&&value<=capacity)return new long[]{value,capacity};
+        } catch(NumberFormatException ignored) {
+            // Malformed and overflowed numbers are not measurements.
         }
         return null;
     }
@@ -704,7 +768,15 @@ public final class PowderTracker {
 
     /** kind, rate, buff it was learned at - one line each, so a re-learned rate survives a restart. */
     private static void saveRates() {
-        StringBuilder sb = new StringBuilder("# kind\tpowder per block (no pet)\tPowder Buff % when measured\tblocks behind it\n");
+        try {
+            Files.createDirectories(file("").getParent());
+            Files.writeString(file("powder-rates.txt"), ratesText(), StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static String ratesText() {
+        StringBuilder sb = new StringBuilder(RATE_SCHEMA + "\n# kind\tpowder per block (no pet)\tPowder Buff % when measured\tblocks behind it\n");
         for (int k = 0; k < KIND.length; k++) {
             sb.append(KIND[k]).append('\t').append(String.format(Locale.ROOT, "%.3f", rate[k])).append('\t').append(rateBuff[k])
                     .append('\t').append(Math.round(rateWeight[k])).append('\n');
@@ -716,18 +788,30 @@ public final class PowderTracker {
         for (int t = 0; t < 2; t++) {
             sb.append("#total\t").append(TYPE[t]).append('\t').append(estimate(t)).append('\t').append(buff[t]).append('\n');
         }
-        try {
-            Files.createDirectories(file("").getParent());
-            Files.writeString(file("powder-rates.txt"), sb, StandardCharsets.UTF_8);
-        } catch (IOException ignored) {
-        }
+        return sb.toString();
     }
 
     private static void loadRates() {
         Path p = file("powder-rates.txt");
         if (!Files.exists(p)) return;
         try {
-            for (String line : Files.readAllLines(p, StandardCharsets.UTF_8)) {
+            readRates(Files.readAllLines(p, StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static void readRates(List<String> lines) {
+        boolean trusted = lines.contains(RATE_SCHEMA);
+        if (!trusted) {
+            // The old file has no way to distinguish valid measurements from
+            // a one-block/downtime spike. Preserve balances, relearn rates once.
+            System.arraycopy(SEED_RATES, 0, rate, 0, rate.length);
+            java.util.Arrays.fill(rateBuff, 24);
+            java.util.Arrays.fill(rateWeight, 0);
+        }
+        java.util.Arrays.fill(liveVisit, false);
+        for (String line : lines) {
+            try {
                 String[] f = line.split("\t");
                 if (f.length >= 4 && f[0].equals("#total")) {
                     for (int t = 0; t < 2; t++) {
@@ -741,16 +825,21 @@ public final class PowderTracker {
                     }
                     continue;
                 }
-                if (f.length < 3 || line.startsWith("#")) continue;
+                if (!trusted || f.length < 3 || line.startsWith("#")) continue;
                 for (int k = 0; k < KIND.length; k++) {
                     if (!KIND[k].equals(f[0])) continue;
-                    rate[k] = Double.parseDouble(f[1]);
-                    rateBuff[k] = Integer.parseInt(f[2]);
-                    // A file from before the weights counts as one good visit's worth.
-                    rateWeight[k] = f.length > 3 ? Double.parseDouble(f[3]) : 1_000;
+                    double value = Double.parseDouble(f[1]);
+                    int atBuff = Integer.parseInt(f[2]);
+                    double weight = f.length > 3 ? Double.parseDouble(f[3]) : 0;
+                    if (!Double.isFinite(value) || value < 0 || atBuff < 0
+                            || !Double.isFinite(weight) || weight < 0) continue;
+                    rate[k] = value;
+                    rateBuff[k] = atBuff;
+                    rateWeight[k] = Math.min(RATE_WEIGHT_CAP, weight);
                 }
+            } catch (NumberFormatException ignored) {
+                // A malformed row must not hide valid saved balances below it.
             }
-        } catch (IOException | NumberFormatException ignored) {
         }
     }
 

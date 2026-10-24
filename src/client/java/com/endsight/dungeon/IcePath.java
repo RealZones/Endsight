@@ -12,7 +12,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.block.Blocks;
@@ -44,14 +43,13 @@ public final class IcePath {
     private static final String ID = "dungeon.icePath";
     private static final String ENTRY = "PUZZLE! Ice Path";
 
-    private static boolean enabled = true, throughWalls = true, announce = true, active;
+    private static boolean enabled = true, throughWalls = true, active;
     private static ClientLevel world;
     private static List<Vec3> points = List.of();
     private static BlockPos goalBlock;
     private static IcePathLogic.Sheet sheet;
     private static BlockPos scannedAt, plannedAt, lastFishAt;
     private static int scanTicks;
-    private static int lastHits = -1;
 
     private IcePath() { }
 
@@ -59,9 +57,7 @@ public final class IcePath {
         return new Module(ID, "Ice Path", "Draws the full silverfish route, highlighting the next slide.",
                 "Dungeons", () -> enabled, value -> { enabled = value; if (!value) reset(); }, List.of(
                 new Setting.Toggle("Through walls", "Keep the line visible through blocks.",
-                        () -> throughWalls, value -> throughWalls = value),
-                new Setting.Toggle("Say the hits", "Name the direction and how many hits are left in chat.",
-                        () -> announce, value -> announce = value)));
+                        () -> throughWalls, value -> throughWalls = value)));
     }
 
     public static void init() {
@@ -105,7 +101,7 @@ public final class IcePath {
     }
 
     private static void reset() {
-        active = false; world = null; points = List.of(); goalBlock = null; lastHits = -1;
+        active = false; world = null; points = List.of(); goalBlock = null;
         sheet = null; scannedAt = null; plannedAt = null; lastFishAt = null; scanTicks = 0;
     }
 
@@ -141,8 +137,7 @@ public final class IcePath {
         plannedAt = at;
         int floor = at.getY() - 1;
         List<IcePathLogic.Direction> route = IcePathLogic.solve(sheet, start);
-        if (route.isEmpty()) { points = List.of(); say(mc, -1, null); return; }
-        IcePathLogic.Direction first = route.get(0);
+        if (route.isEmpty()) { points = List.of(); return; }
         List<Vec3> planned = new ArrayList<>();
         IcePathLogic.Cell cursor = start;
         planned.add(new Vec3(cursor.x() + .5, floor + 1.1, cursor.z() + .5));
@@ -151,7 +146,6 @@ public final class IcePath {
             planned.add(new Vec3(cursor.x() + .5, floor + 1.1, cursor.z() + .5));
         }
         points = List.copyOf(planned);
-        say(mc, route.size(), first);
     }
 
     private static boolean isChest(ClientLevel level, BlockPos pos) {
@@ -201,17 +195,9 @@ public final class IcePath {
         return new IcePathLogic.Sheet(ice, blocked, goal);
     }
 
-    /** One line per change of plan, not per tick. */
-    private static void say(Minecraft mc, int hits, IcePathLogic.Direction direction) {
-        if (!announce || mc.player == null || hits == lastHits) return;
-        lastHits = hits;
-        if (hits < 0) {
-            mc.player.sendSystemMessage(Component.literal("§bIce Path §7- §eno route from where it is"));
-            return;
-        }
-        mc.player.sendSystemMessage(Component.literal("§bIce Path §7- hit it §f" + direction
-                + " §7(" + hits + (hits == 1 ? " hit" : " hits") + " left)"));
-    }
+    // No chat line per plan. It used to say "hit it SOUTH (2 hits left)" each time the plan
+    // changed, and the plan changes at every cell the fish crosses, so a single solve left
+    // a screen of lines; the drawn route already says it.
 
     private static Entity nearestSilverfish(Minecraft mc) {
         Entity best = null;

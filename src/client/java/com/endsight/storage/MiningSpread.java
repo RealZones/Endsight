@@ -118,7 +118,7 @@ public final class MiningSpread {
 
     public static Module module() {
         return new Module("mining.spread", "Mining Spread",
-                "Reads your Mining Spread stat and learns the extra blocks DragSim mines.", "Mining",
+                "Reads your Mining Spread stat and learns the extra blocks Dragsim mines.", "Mining",
                 () -> enabled, v -> enabled = v,
                 List.of(
                         new Setting.Toggle("Block overlay",

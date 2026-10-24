@@ -205,6 +205,26 @@ public final class TrackerRowsChecks {
         equal(parsedFuel[1], 50_000L);
         equal(call(PowderTracker.class, "parseFuel", new Class<?>[]{List.class},
                 List.of("Fuel Tank: Perfectly-Cut", "No fuel in this item")), null);
+        parsedFuel=(long[])call(PowderTracker.class,"parseFuel",new Class<?>[]{List.class},
+                List.of("Amethyst Fuel Tank","50,000 Fuel Capacity","§aDRILL FUEL","§f3,412 / 50,000","Refuel","SNEAK RIGHT CLICK"));
+        equal(parsedFuel[0],3_412L);equal(parsedFuel[1],50_000L);
+        equal(call(PowderTracker.class,"fuelText",new Class<?>[]{long.class,long.class},parsedFuel[0],parsedFuel[1]),"3,412/50K (7%)");
+        parsedFuel=(long[])call(PowderTracker.class,"parseFuel",new Class<?>[]{List.class},
+                List.of("DRILL FUEL","\uE000\uE001","","\uE0023,412\u00a0/\u200950,000\uE003"));
+        equal(parsedFuel[0],3_412L);equal(parsedFuel[1],50_000L);
+        parsedFuel=(long[])call(PowderTracker.class,"parseFuel",new Class<?>[]{List.class},
+                List.of("\uE010","3,412 / 50,000","\uE011","§6Refuel §e(SNEAK RIGHT CLICK)"));
+        equal(parsedFuel[0],3_412L);equal(parsedFuel[1],50_000L);
+        parsedFuel=(long[])call(PowderTracker.class,"parseFuel",new Class<?>[]{List.class},List.of("DRILL FUEL","0 / 50,000"));
+        equal(parsedFuel[0],0L);equal(parsedFuel[1],50_000L);
+        for(List<String> invalid:List.of(
+                List.of("50,000 Fuel Capacity","3,412 / 50,000"),
+                List.of("Kills","3,412 / 50,000"),
+                List.of("DRILL FUEL","Maniac Miner","3,412 / 50,000"),
+                List.of("DRILL FUEL","50,001 / 50,000"),
+                List.of("Fuel: 5/0"),List.of("Fuel: 9/8"),
+                List.of("DRILL FUEL","9223372036854775808 / 50,000")))
+            equal(call(PowderTracker.class,"parseFuel",new Class<?>[]{List.class},invalid),null);
     }
 
     private static Object bossRows(String boss, String period, boolean sample, long now) throws Exception {

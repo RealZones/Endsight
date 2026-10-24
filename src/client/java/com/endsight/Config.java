@@ -40,6 +40,7 @@ public final class Config {
             return;
         }
 
+        registry.loadBrowserState(p);
         String palette = p.getProperty("palette");
         if (palette != null) {
             for (Palette candidate : Theme.palettes()) {
@@ -134,6 +135,7 @@ public final class Config {
 
     public static void save(ModuleRegistry registry) {
         Properties p = new Properties();
+        registry.saveBrowserState(p);
         p.setProperty("palette", Theme.palette().name());
 
         com.endsight.hud.HudLayout.scales().forEach((id, s) -> p.setProperty("hud." + id + ".scale", String.valueOf(s)));

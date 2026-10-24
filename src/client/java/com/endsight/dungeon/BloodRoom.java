@@ -28,7 +28,7 @@ import java.util.List;
 public final class BloodRoom {
     private static final String ID = "dungeon.bloodRoom";
 
-    private static boolean enabled = true, countdown = true;
+    private static boolean enabled = true, countdown = true, rushMessage = true, fullRunMessage = true;
     private static long openedAt;
 
     private BloodRoom() { }
@@ -38,10 +38,15 @@ public final class BloodRoom {
                 "Dungeons", () -> enabled, value -> { enabled = value; if (!value) reset(); }, List.of(
                 new Setting.Toggle("Timer", "Show the countdown on screen while the Watcher talks.",
                         () -> countdown, value -> countdown = value),
+                new Setting.Toggle("Blood Rush PB", "Chat time from dungeon start to the blood door, with a PB per floor.",
+                        () -> rushMessage, value -> rushMessage = value),
+                new Setting.Toggle("Full Run PB", "Chat the server's completion time and your best time for this floor.",
+                        () -> fullRunMessage, value -> fullRunMessage = value),
                 new Setting.Action("Position", "Move the timer.", "Move", HudPlacementScreen::open)));
     }
 
     public static void init() {
+        BloodRush.init(() -> enabled && rushMessage, () -> enabled && fullRunMessage);
         ClientTickEvents.END_CLIENT_TICK.register(BloodRoom::tick);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> reset());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());

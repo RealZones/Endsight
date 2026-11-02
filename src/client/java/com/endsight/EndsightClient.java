@@ -22,6 +22,7 @@ import com.endsight.hud.HudPlacementScreen;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.ServerStats;
 import com.endsight.qol.AbilitySpam;
+import com.endsight.qol.AutoClicker;
 import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugMessage;
@@ -166,6 +167,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(LootFilter.module());
             registry.replace(LootRoll.module());
             registry.replace(AbilitySpam.module());
+            registry.add(AutoClicker.module());
             registry.replace(CopyChat.module());
             registry.replace(MiningSession.module());
             registry.replace(PowderTracker.module());

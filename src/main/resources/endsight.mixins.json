@@ -3,6 +3,7 @@
 	"package": "com.endsight.hooks",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"AutoClickerMouseMixin",
 		"ContainerSlotMixin",
 		"StorageOverviewContainerMixin",
 		"TerminalContainerMixin",

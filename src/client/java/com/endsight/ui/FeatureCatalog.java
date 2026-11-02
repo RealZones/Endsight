@@ -53,6 +53,7 @@ public final class FeatureCatalog {
         c.group("page.playerHud", "Player HUD", "Armor, pet, server stats and ability cooldowns.", "General", "hud.armor", "hud.activePet", "hud.stats", "visual.cooldowns");
         c.group("page.worldAppearance", "World appearance", "Lighting and explosion clouds.", "General", "visual.fullbright", "visual.explosionParticles");
         c.single("qol.damage", "General");
+        c.single("qol.autoclicker", "General");
         c.single("visual.etherwarp", "General");
         c.group("page.notifications", "Notifications", "Gameplay and loot alerts, independently controlled.", "General", "alerts", "dragon.loot");
         c.group("page.commands", "Commands & menu", "Command keybinds and menu shortcuts.", "General", "qol.commands", "qol.hotdButton");

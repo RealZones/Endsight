@@ -72,6 +72,22 @@ tasks.named('build') {
 sourceSets.test.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
 sourceSets.test.runtimeClasspath += sourceSets.client.runtimeClasspath
 
+tasks.register('clickCadenceChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.ClickCadenceChecks'
+}
+
+tasks.named('check') { dependsOn 'clickCadenceChecks' }
+
+tasks.register('autoClickerChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.AutoClickerChecks'
+}
+
+tasks.named('check') { dependsOn 'autoClickerChecks' }
+
 tasks.register('bossDropsChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath

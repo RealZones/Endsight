@@ -40,8 +40,8 @@ import java.util.zip.ZipFile;
  * the jars. The next launch is the new version.
  *
  * Which release is installed is the commit the jar was built from, stamped into it by
- * GitHub Actions. A jar built anywhere else has none and is never replaced - so a dev
- * build is never swapped for the public release underneath its author.
+ * GitHub Actions. A jar built anywhere else has none and is never replaced, preserving
+ * local builds instead of swapping them for a public release.
  *
  * Anything that goes wrong is said in game with a code, so a player can say "E4"
  * instead of sending a log: E1 GitHub did not answer; E2 the download failed; E3 the
@@ -123,7 +123,7 @@ public final class EndsightUpdater implements PreLaunchEntrypoint {
             String commit = cv != null && cv.getType() == CustomValue.CvType.STRING ? cv.getAsString().trim() : "";
             Path jar = jarOf(mod);
             if (commit.isEmpty() || jar == null) {
-                state("dev");
+                state("local");
                 return null;
             }
             Path dir = FabricLoader.getInstance().getGameDir().resolve("endsight-update");
@@ -219,7 +219,7 @@ public final class EndsightUpdater implements PreLaunchEntrypoint {
         }
     }
 
-    /** The mod's jar in mods/, or null when it is not a plain jar (a dev run, a nested jar). */
+    /** The mod's jar in mods/, or null for an unpacked run or a nested jar. */
     private static Path jarOf(ModContainer mod) {
         ModOrigin o = mod.getOrigin();
         if (o.getKind() != ModOrigin.Kind.PATH) return null;

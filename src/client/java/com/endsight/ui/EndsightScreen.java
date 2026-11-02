@@ -385,10 +385,13 @@ public class EndsightScreen extends Screen {
         int previousSettings = editingModule == null || editingModule.settings() == null ? 0 : editingModule.settings().size();
         if (editor != null && editor.mouseClicked(event, doubleClick)) {
             binding = null;
-            // New command rows need to be editable immediately even if the search
-            // that found their module would not match a freshly empty command.
-            if (editingModule.settings().size() > previousSettings) query = "";
             registry.invalidateSearch();
+            if (editingModule.settings().size() > previousSettings) {
+                // Keep the search context and bring the newly focused row into view.
+                layout();
+                int bottom = editor.focusedCommandBottom();
+                if (bottom > contentBottom()) { scroll += bottom - contentBottom(); layout(); }
+            }
             return true;
         }
         if (contains(searchX(), searchY(), searchW(), 23, mx, my)) {

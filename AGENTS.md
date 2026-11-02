@@ -75,6 +75,5 @@ wrong and how it was found, not just what the fix is.
   the cards got.
 - The gear icon is drawn from rectangles. It reads as a gear now but a small PNG would
   be better; Fear offered to supply one.
-  between turns and no bad days, which over an hour is its own pattern.
 - Sliders get no keybind chip - there is no second value for a key to jump to.
 - Modules left in `EndsightDemo` as `unimplemented` are placeholders wired to nothing.

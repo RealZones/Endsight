@@ -13,18 +13,14 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -50,7 +46,6 @@ import java.util.Set;
  * through the dungeon: a highlight that shows through walls is ESP, and that is a cheat.
  */
 public final class KeyAlert {
-    private static final Logger LOG = LoggerFactory.getLogger("endsight");
     private static final String ID = "dungeon.keys";
 
     enum Kind {
@@ -69,7 +64,6 @@ public final class KeyAlert {
     private static boolean enabled = true, highlight = true;
     /** Keyed by the carrier's id, so an item and the label over it make one mark. */
     private static final Map<Integer, Mark> marks = new LinkedHashMap<>();
-    private static final Set<Integer> logged = new HashSet<>();
     private static Object world;
     private static int countdown;
 
@@ -97,7 +91,7 @@ public final class KeyAlert {
     }
 
     private static void tick(Minecraft mc) {
-        if (mc.level != world) { world = mc.level; marks.clear(); logged.clear(); }
+        if (mc.level != world) { world = mc.level; marks.clear(); }
         if (!enabled || mc.level == null || mc.player == null || !DungeonContext.active()) { marks.clear(); return; }
         // Four times a second is plenty for something that lies on the floor until it is
         // picked up, and keeps a name check off every entity every tick.
@@ -108,7 +102,6 @@ public final class KeyAlert {
             List<Component> names = names(entity);
             Kind kind = null;
             for (Component name : names) if ((kind = kind(name)) != null) break;
-            note(entity, names, kind);
             if (kind == null) continue;
             Entity carrier = carrier(mc, entity);
             now.putIfAbsent(carrier.getId(), new Mark(kind, carrier.getId()));
@@ -198,27 +191,13 @@ public final class KeyAlert {
         return name == null ? null : kind(name.getString());
     }
 
+    /** Every name of every entity in the dungeon comes through here, four times a second. */
+    private static final java.util.regex.Pattern CODE = java.util.regex.Pattern.compile("§.");
+
     static Kind kind(String raw) {
-        String text = raw.replaceAll("§.", "").toLowerCase(Locale.ROOT);
+        String text = CODE.matcher(raw).replaceAll("").toLowerCase(Locale.ROOT);
         if (text.contains("wither key")) return Kind.WITHER;
         if (text.contains("blood key")) return Kind.BLOOD;
         return null;
-    }
-
-    /**
-     * Writes anything that mentions a key to the log, once each, up to 20 a world: the real
-     * shape of a dropped key, for when it changes. It used to log every item-like entity,
-     * and a dungeon's 40 decoration stands used the whole allowance before the key dropped.
-     */
-    private static void note(Entity entity, List<Component> names, Kind kind) {
-        if (logged.size() >= 20) return;
-        boolean mentionsKey = kind != null || names.stream().anyMatch(n -> n.getString().toLowerCase(Locale.ROOT).contains("key"));
-        if (!mentionsKey || !logged.add(entity.getId())) return;
-        String stand = entity instanceof ArmorStand a ? " marker=" + a.isMarker() + " small=" + a.isSmall() : "";
-        LOG.info("[Endsight] Key entity: {} at {} names={} key={} invisible={} nameShown={}{} head={} vehicle={}",
-                entity.getType().toShortString(), entity.blockPosition().toShortString(),
-                names.stream().map(Component::getString).toList(), kind, entity.isInvisible(), entity.isCustomNameVisible(), stand,
-                entity instanceof LivingEntity l ? l.getItemBySlot(EquipmentSlot.HEAD).getItem().toString() : "-",
-                entity.getVehicle() == null ? "-" : entity.getVehicle().getType().toShortString());
     }
 }

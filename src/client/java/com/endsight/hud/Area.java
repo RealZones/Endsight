@@ -39,6 +39,45 @@ public final class Area {
     private static Where where = Where.UNKNOWN;
     private static long lastRead;
     private static String lastPlace = "";
+    private static final java.util.regex.Pattern PLACE_PREFIX = java.util.regex.Pattern.compile("^[^\\p{L}]+");
+    private static final net.minecraft.ChatFormatting[] COLOURS = java.util.Arrays.stream(net.minecraft.ChatFormatting.values())
+            .filter(f -> f.isColor() && f.getColor() != null).toArray(net.minecraft.ChatFormatting[]::new);
+
+    /** One synchronous read, shared by callers asking several questions about the same sidebar. */
+    public record Sidebar(List<String> raw) {
+        public String line(String prefix) {
+            for (String text : raw) if (Zealots.strip(text).trim().startsWith(prefix)) return text;
+            return null;
+        }
+
+        public boolean shows(Where place) {
+            if (place == Where.UNKNOWN) return false;
+            for (String text : raw) if (placeLine(Zealots.strip(text).trim()) == place) return true;
+            return false;
+        }
+    }
+
+    public static Sidebar readSidebar(Minecraft mc) { return new Sidebar(sidebarRaw(mc)); }
+
+    private static Sidebar recent;
+    private static Object recentLevel;
+    private static long recentAt;
+
+    /**
+     * A read at most a tick old, for HUDs that decide every frame whether to show. The
+     * Slayer and Zealot Tracker HUDs each read the whole scoreboard every frame in the End,
+     * a few hundred times a second, for lines that change when a packet arrives. Anything
+     * that acts on what it reads, like the quest reminder, still reads it fresh.
+     */
+    public static Sidebar recentSidebar(Minecraft mc) {
+        long now = System.currentTimeMillis();
+        if (recent == null || recentLevel != mc.level || now - recentAt >= 50 || now < recentAt) {
+            recent = readSidebar(mc);
+            recentLevel = mc.level;
+            recentAt = now;
+        }
+        return recent;
+    }
 
     public static Where where() {
         return where;
@@ -67,8 +106,7 @@ public final class Area {
     /** A place line in the current sidebar, not just the last proxy warp hint. */
     public static boolean sidebarShows(Minecraft mc, Where place) {
         if (mc.level == null || place == Where.UNKNOWN) return false;
-        for (String line : sidebar(mc)) if (placeLine(line) == place) return true;
-        return false;
+        return readSidebar(mc).shows(place);
     }
 
     public static void init() {
@@ -103,7 +141,7 @@ public final class Area {
 
     /** A sidebar line that IS a place name, once the marker and colour in front of it are gone. */
     private static Where placeLine(String line) {
-        String s = line.replaceAll("^[^\\p{L}]+", "").trim().toLowerCase();
+        String s = PLACE_PREFIX.matcher(line).replaceFirst("").trim().toLowerCase();
         if (s.equals("the catacombs") || s.startsWith("the catacombs ")
                 || s.equals("catacombs") || s.startsWith("catacombs ")) return Where.DUNGEON;
         if (s.equals("crypts") || s.startsWith("crypts ")) return Where.CRYPTS;
@@ -137,13 +175,13 @@ public final class Area {
      * colour, and read that way it would silently vanish. Each coloured piece is given
      * its code back, so the reader sees the same thing either way.
      */
-    private static String legacy(net.minecraft.network.chat.Component c) {
+    public static String legacy(net.minecraft.network.chat.Component c) {
         StringBuilder sb = new StringBuilder();
         c.visit((style, text) -> {
             net.minecraft.network.chat.TextColor col = style.getColor();
             if (col != null && !text.contains("§")) {
-                for (net.minecraft.ChatFormatting f : net.minecraft.ChatFormatting.values()) {
-                    if (f.isColor() && f.getColor() != null && f.getColor() == col.getValue()) {
+                for (net.minecraft.ChatFormatting f : COLOURS) {
+                    if (f.getColor() == col.getValue()) {
                         sb.append('§').append(f.getChar());
                         break;
                     }
@@ -158,12 +196,12 @@ public final class Area {
     /** The sidebar line that starts with this, colour codes and all, or null. The codes say a pet's rarity. */
     public static String sidebarLine(Minecraft mc, String prefix) {
         if (mc.level == null) return null;
-        for (String raw : sidebarRaw(mc)) if (Zealots.strip(raw).trim().startsWith(prefix)) return raw;
-        return null;
+        return readSidebar(mc).line(prefix);
     }
 
     private static List<String> sidebarRaw(Minecraft mc) {
         List<String> out = new ArrayList<>();
+        if (mc.level == null) return out;
         try {
             Scoreboard sb = mc.level.getScoreboard();
             Objective obj = null;

@@ -26,6 +26,12 @@ final class ColorPicker {
     private static final int SQ = 120, SQ_H = 81, CELL = 3;   // the square and its cell
     private static final int BAR = 10;                          // hue bar width
     private static final int FIELD_W = 66;
+    private static final int[] HUE_BAR = new int[SQ_H];
+    static {
+        for (int cy = 0; cy < SQ_H; cy++) HUE_BAR[cy] = 0xFF000000 | Mth.hsvToRgb(cy / (float) (SQ_H - 1), 1f, 1f);
+    }
+    private final int[] spectrum = new int[(SQ / CELL) * (SQ_H / CELL)];
+    private float spectrumHue = Float.NaN;
     static final int W = 8 + SQ + 6 + BAR + 8 + FIELD_W + 8;
     static final int H = 8 + 9 + 8 + SQ_H + 8;
 
@@ -89,6 +95,7 @@ final class ColorPicker {
 
     void draw(GuiGraphicsExtractor g, Font font, int mx, int my) {
         if (setting == null) return;
+        g.nextStratum();
         Draw.roundedOutline(g, x, y, W, H, Theme.RADIUS, Theme.line(), Theme.raised());
 
         // the sixteen, 9px each with 3 between, hovered one a pixel bigger
@@ -100,15 +107,16 @@ final class ColorPicker {
         }
 
         // saturation across, value down
+        int[] colours = spectrum();
         for (int cy = 0; cy < SQ_H; cy += CELL) {
-            float v = 1f - cy / (float) (SQ_H - CELL);
+            g.nextStratum();
             for (int cx = 0; cx < SQ; cx += CELL) {
-                float s = cx / (float) (SQ - CELL);
-                Draw.rect(g, sqX() + cx, sqY() + cy, CELL, CELL, 0xFF000000 | Mth.hsvToRgb(hue, s, v));
+                Draw.rect(g, sqX() + cx, sqY() + cy, CELL, CELL, colours[(cy / CELL) * (SQ / CELL) + cx / CELL]);
             }
         }
+        g.nextStratum();
         for (int cy = 0; cy < SQ_H; cy++) {
-            Draw.rect(g, barX(), sqY() + cy, BAR, 1, 0xFF000000 | Mth.hsvToRgb(cy / (float) (SQ_H - 1), 1f, 1f));
+            Draw.rect(g, barX(), sqY() + cy, BAR, 1, HUE_BAR[cy]);
         }
 
         // markers: a ring on the square, a bar across the hue
@@ -135,6 +143,19 @@ final class ColorPicker {
                 chroma ? live : hov ? Theme.hover() : Theme.surface());
         Draw.textCentered(g, font, "Chroma", fieldX() + FIELD_W / 2, chromaY() + 6,
                 chroma ? Theme.bg() : Theme.text());
+    }
+
+    private int[] spectrum() {
+        if (Float.floatToIntBits(spectrumHue) == Float.floatToIntBits(hue)) return spectrum;
+        for (int cy = 0; cy < SQ_H; cy += CELL) {
+            float v = 1f - cy / (float) (SQ_H - CELL);
+            for (int cx = 0; cx < SQ; cx += CELL) {
+                float s = cx / (float) (SQ - CELL);
+                spectrum[(cy / CELL) * (SQ / CELL) + cx / CELL] = 0xFF000000 | Mth.hsvToRgb(hue, s, v);
+            }
+        }
+        spectrumHue = hue;
+        return spectrum;
     }
 
     private static void ring(GuiGraphicsExtractor g, int cx, int cy, int r, int c) {

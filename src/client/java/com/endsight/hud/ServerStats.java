@@ -127,15 +127,32 @@ public final class ServerStats {
     }
 
     /** Label, value, value colour - one per stat that is switched on. */
+    private static List<String[]> shownParts = List.of();
+    private static int shownFlags = -1, shownFps, shownPing;
+    private static double shownRate;
+    private static java.util.Locale shownLocale;
+
     private static List<String[]> parts(Minecraft mc, boolean sample) {
+        int flags = (fps ? 1 : 0) | (ping ? 2 : 0) | (tps ? 4 : 0) | (sample ? 8 : 0);
+        int frames = fps ? sample ? 240 : mc.getFps() : 0;
+        int ms = ping ? sample ? 48 : latency(mc) : 0;
+        double ticksPerSecond = tps && !sample ? rate : 20;
+        java.util.Locale locale = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
+        if (flags == shownFlags && frames == shownFps && ms == shownPing
+                && Double.doubleToLongBits(ticksPerSecond) == Double.doubleToLongBits(shownRate)
+                && locale.equals(shownLocale)) return shownParts;
         List<String[]> out = new ArrayList<>();
-        if (fps) out.add(new String[]{"FPS", sample ? "240" : String.valueOf(mc.getFps())});
+        if (fps) out.add(new String[]{"FPS", String.valueOf(frames)});
         if (ping) {
-            int ms = sample ? 48 : latency(mc);
             out.add(new String[]{"PING", ms < 0 ? "-" : ms + "ms"});
         }
         if (tps) out.add(new String[]{"TPS", sample ? "20.0" : String.format("%.1f", rate)});
-        return out;
+        shownFlags = flags;
+        shownFps = frames;
+        shownPing = ms;
+        shownRate = ticksPerSecond;
+        shownLocale = locale;
+        return shownParts = List.copyOf(out);
     }
 
     /** Text at 85% of the font: the pill is a glance, and full-size digits shout. */

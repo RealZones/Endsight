@@ -18,6 +18,25 @@ public final class Draw {
     private Draw() {
     }
 
+    private static final int[][] CAP_INSETS = new int[65][];
+    static {
+        for (int r = 0; r < CAP_INSETS.length; r++) {
+            CAP_INSETS[r] = new int[r];
+            for (int i = 0; i < r; i++) CAP_INSETS[r][i] = computeInset(r, i);
+        }
+    }
+
+    private static int computeInset(int r, int row) {
+        double dy = r - row - 0.5;
+        return (int) Math.round(r - Math.sqrt(Math.max(0, (double) r * r - dy * dy)));
+    }
+
+    static int capInset(int r, int row) {
+        // Geometry depends only on radius, never palette, scale or position. Bound
+        // the cache and retain the exact arithmetic for unusual larger radii.
+        return r < CAP_INSETS.length ? CAP_INSETS[r][row] : computeInset(r, row);
+    }
+
     public static void rect(GuiGraphicsExtractor g, int x, int y, int w, int h, int color) {
         if (w <= 0 || h <= 0) return;
         g.fill(x, y, x + w, y + h, color);
@@ -37,18 +56,7 @@ public final class Draw {
             return;
         }
 
-        g.fill(x, y + r, x + w, y + h - r, color);
-
-        for (int i = 0; i < r; i++) {
-            double dy = r - i - 0.5;
-
-            int inset = (int) Math.round(
-                    r - Math.sqrt(Math.max(0, (double) r * r - dy * dy))
-            );
-
-            g.fill(x + inset, y + i, x + w - inset, y + i + 1, color);
-            g.fill(x + inset, y + h - i - 1, x + w - inset, y + h - i, color);
-        }
+        ShapeRenderState.submit(g, ShapeRenderState.Kind.ROUNDED, x, y, w, h, r, 15, color);
     }
 
     /**
@@ -66,31 +74,8 @@ public final class Draw {
             return;
         }
 
-        g.fill(x, y + r, x + w, y + h - r, color);
-
-        for (int i = 0; i < r; i++) {
-            double dy = r - i - 0.5;
-
-            int inset = (int) Math.round(
-                    r - Math.sqrt(Math.max(0, (double) r * r - dy * dy))
-            );
-
-            g.fill(
-                    x + (tl ? inset : 0),
-                    y + i,
-                    x + w - (tr ? inset : 0),
-                    y + i + 1,
-                    color
-            );
-
-            g.fill(
-                    x + (bl ? inset : 0),
-                    y + h - i - 1,
-                    x + w - (br ? inset : 0),
-                    y + h - i,
-                    color
-            );
-        }
+        int corners = (tl ? 1 : 0) | (tr ? 2 : 0) | (bl ? 4 : 0) | (br ? 8 : 0);
+        ShapeRenderState.submit(g, ShapeRenderState.Kind.ROUNDED, x, y, w, h, r, corners, color);
     }
 
     /**
@@ -111,19 +96,36 @@ public final class Draw {
         if (w <= 1 || h <= 1) return;
         int r = Math.min(radius, Math.min(w, h) / 2);
 
+        if (r >= 0) {
+            ShapeRenderState.submit(g, ShapeRenderState.Kind.RING, x, y, w, h, r, 15, color);
+            return;
+        }
+
         rect(g, x + r, y, w - 2 * r, 1, color);
         rect(g, x + r, y + h - 1, w - 2 * r, 1, color);
         rect(g, x, y + r, 1, h - 2 * r, color);
         rect(g, x + w - 1, y + r, 1, h - 2 * r, color);
 
         for (int i = 0; i < r; i++) {
-            double dy = r - i - 0.5;
-            int inset = (int) Math.round(r - Math.sqrt(Math.max(0, (double) r * r - dy * dy)));
+            int inset = capInset(r, i);
             rect(g, x + inset, y + i, 1, 1, color);
             rect(g, x + w - inset - 1, y + i, 1, 1, color);
             rect(g, x + inset, y + h - i - 1, 1, 1, color);
             rect(g, x + w - inset - 1, y + h - i - 1, 1, 1, color);
         }
+    }
+
+    /** Four strips with the corner pixels absent, submitted as one GUI element. */
+    public static void frame(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
+        ShapeRenderState.submit(g, ShapeRenderState.Kind.FRAME, x, y, w, h, 0, 0, colour);
+    }
+
+    public static void corners(GuiGraphicsExtractor g, int x, int y, int w, int h, int length, int colour) {
+        ShapeRenderState.submit(g, ShapeRenderState.Kind.CORNERS, x, y, w, h, length, 0, colour);
+    }
+
+    public static void badge(GuiGraphicsExtractor g, int x, int y, int size, int colour) {
+        ShapeRenderState.submit(g, ShapeRenderState.Kind.BADGE, x, y, size, size, 0, 0, colour);
     }
 
     /** A fixed-size texture keeps the gear legible regardless of the active font pack. */

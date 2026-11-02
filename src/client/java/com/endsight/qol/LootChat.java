@@ -17,17 +17,20 @@ public final class LootChat {
     private static final Module COMPACT = LootRoll.module();
     private static final Setting.Slider CUTOFF = (Setting.Slider) FILTER.settings().get(0);
     private static final Setting.Toggle BOTH_ENDS = (Setting.Toggle) FILTER.settings().get(1);
-    private static final List<String> VIEWS = List.of("Original", "Close calls", "Compact", "Compact + close calls");
+    // Compact was once a fourth way to see every roll. Picking it turned close calls off,
+    // so a custom debug message, which has nothing to fold, lost its filter with nothing
+    // else changing (Fear, November 1). Now Compact is close calls, folded.
+    private static final List<String> VIEWS = List.of("Original", "Close calls", "Compact");
 
     public static Module module() {
         return Module.group("qol.lootChat", "Loot & Debug",
                 "How the server's loot rolls appear in chat.", "Chat", List.of(
                 new Setting.Section("Controls"),
                 new Setting.Choice("Chat view",
-                        "Original messages, close calls, compact detailed rolls, or both together.",
+                        "Every roll as sent, close calls only, or close calls folded to one line a kill.",
                         VIEWS, LootChat::view, LootChat::view),
                 new Setting.Slider("Close call under",
-                        "Only used by close-call views; real drops always pass.",
+                        "Used by Close calls and Compact; drops always show.",
                         CUTOFF.min(), CUTOFF.max(), CUTOFF.step(), CUTOFF.get(), CUTOFF.set(), CUTOFF.unit()),
                 new Setting.Toggle("Both ends", BOTH_ENDS.description(), BOTH_ENDS.get(), BOTH_ENDS.set()),
                 new Setting.Section("Individual keybinds"),
@@ -37,13 +40,14 @@ public final class LootChat {
                         "Toggle", COMPACT::toggle)));
     }
 
-    private static String view() {
-        if (COMPACT.isEnabled()) return FILTER.isEnabled() ? "Compact + close calls" : "Compact";
+    /** A config saved as either old Compact view reads as the new one; the filter comes with it. */
+    static String view() {
+        if (COMPACT.isEnabled()) return "Compact";
         return FILTER.isEnabled() ? "Close calls" : "Original";
     }
 
-    private static void view(String value) {
-        COMPACT.setEnabled().accept(value.equals("Compact") || value.equals("Compact + close calls"));
-        FILTER.setEnabled().accept(value.equals("Close calls") || value.equals("Compact + close calls"));
+    static void view(String value) {
+        COMPACT.setEnabled().accept(value.equals("Compact"));
+        FILTER.setEnabled().accept(value.equals("Close calls"));
     }
 }

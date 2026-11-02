@@ -30,9 +30,8 @@ public final class ProfileClient {
                 new com.endsight.ui.Setting.Toggle("Count skins and dyes","Add loose skins and dyes to networth.",ProfileClient::countCosmetics,ProfileClient::countCosmetics)));
     }
 
-    // Off by default: loose skins and dyes are the hardest items to price, so counting them
-    // is a choice. Applied ones always count as part of their item.
-    private static boolean countCosmetics;
+    // Match /networth's full view by default; applied cosmetics already ride on their item.
+    private static boolean countCosmetics=true;
     public static boolean countCosmetics() { return countCosmetics; }
     public static void countCosmetics(boolean value) { countCosmetics = value; }
 

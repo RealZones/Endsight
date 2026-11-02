@@ -205,11 +205,31 @@ public final class BossDropsChecks {
                 List.of("Aspect of the Dragons", "Crystal Fragment"), "Wise Dragon"), "Wise Dragon");
         dragonEyeExclusion();
         dragonOwnershipChecks();
+        dragonPhaseLootChecks();
         familyProfitChecks();
         pendingDropChecks();
         BossDropsBoundaryChecks.main(args);
         familyHudChecks();
+        stackChecks();
         System.out.println(checks + " Boss Drops preservation checks passed");
+    }
+
+    /** One pet saved with and without its rarity reads as one row (Fear's /drops, 2026-11-01). */
+    private static void stackChecks() {
+        Map<String, Integer> warden = new java.util.LinkedHashMap<>();
+        warden.put("Giant's Core", 1);
+        warden.put("[Lvl 1] Warden", 1);
+        warden.put("[Lvl 1] Warden (Legendary)", 1);
+        warden.put("Livid Dagger", 5);
+        Map<String, Integer> stack = BossDrops.stacked(warden);
+        equal(stack.size(), 3);
+        equal(stack.get("[Lvl 1] Warden (Legendary)"), 2);
+        equal(stack.get("Giant's Core"), 1);
+        equal(stack.get("Livid Dagger"), 5);
+        Map<String, Integer> dragon = new java.util.LinkedHashMap<>();
+        dragon.put("[Lvl 1] Ender Dragon (Epic)", 1);
+        dragon.put("[Lvl 1] Ender Dragon (Legendary)", 2);
+        equal(BossDrops.stacked(dragon), Map.of("[Lvl 1] Ender Dragon (Legendary)", 3));
     }
 
     private static void dragonEyeExclusion() throws Exception {
@@ -272,6 +292,86 @@ public final class BossDropsChecks {
         setStatic("dragonActivityWorld", null);
         setStatic("ownedDragonPayoutAt", 0L);
         setStatic("ownedDragonPayoutWorld", null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void dragonPhaseLootChecks() throws Exception {
+        Object world = new Object(), otherWorld = new Object();
+        long now = 200_000L;
+        // Sanitized 2026-10-29 log sequence: a summoned Superior has a damage box
+        // and a personal pet receipt, but no de-spawn and no pet in its summary.
+        String box = "SUPERIOR DRAGON DOWN!\nYour Damage: 114,567,475 (Position #3)";
+        String raw = "[DRAGON] Player §ehas obtained §6§7[Lvl 1] §6Black Cat§e!";
+        Class<?>[] boxArgs = {String.class, long.class, Object.class};
+        setStatic("death", null);
+        setStatic("ownedDragonPayoutAt", 0L);
+        setStatic("ownedDragonPayoutWorld", null);
+        setStatic("eyes", 4);
+        setStatic("dragonActivityWorld", world);
+        call("clearDragonPhase", new Class<?>[]{});
+        equal(phaseReceipt(raw, now, world), List.of()); // eye alone is not a receipt source
+        equal(call("bossBox", boxArgs, box, now, world), true);
+        equal(staticValue("death"), null); // no extra dragon kill was opened
+        equal(staticValue("ownedDragonPayoutAt"), 0L); // phase summary cannot repair a main kill
+        equal(phaseReceipt(raw, now + 1_000, world), List.of("Superior Dragon", new Drops.Drop("[Lvl 1] Black Cat", 3)));
+        equal(phaseReceipt(raw.replace("Player", "SomeoneElse"), now + 1_001, world), List.of());
+        equal(phaseReceipt("[DRAGON] SomeoneElse: " + raw, now + 1_002, world), List.of());
+        equal(phaseReceipt(raw, now + 1_003, otherWorld), List.of());
+        equal(phaseReceipt(raw, now + 1_003, null), List.of());
+        equal(phaseReceipt(raw, now - 1, world), List.of());
+        equal(phaseReceipt(raw, now + 30_001, world), List.of());
+        setStatic("eyes", 0);
+        equal(phaseReceipt(raw, now + 1_004, world), List.of());
+        call("clearDragonPhase", new Class<?>[]{});
+        equal(call("bossBox", boxArgs, box, now, world), true); // top damage without an eye is insufficient
+        equal(phaseReceipt(raw, now + 1_005, world), List.of());
+
+        setStatic("eyes", 4);
+        equal(call("bossBox", boxArgs, "DRAGON DOWN!\nYour Damage: 10 (Position #1)", now, world), true);
+        equal(phaseReceipt(raw, now + 1_006, world), List.of("Dragon", new Drops.Drop("[Lvl 1] Black Cat", 3)));
+        call("clearDragonPhase", new Class<?>[]{}); // same reset used at spawn, death, egg and disconnect
+        equal(phaseReceipt(raw, now + 1_007, world), List.of());
+        equal(call("bossBox", boxArgs, box, now, otherWorld), true);
+        equal(phaseReceipt(raw, now + 1_008, world), List.of());
+        equal(DragonTimer.isPlayerChat("[DRAGON] Someone: " + box), true);
+        call("clearDragonPhase", new Class<?>[]{});
+        equal(call("bossBox", boxArgs, "not a damage box", now, world), false);
+
+        // Normal late receipts retain the main dragon's payout window.
+        setStatic("eyes", 0);
+        setStatic("lastDragon", "Chaotic Dragon");
+        setStatic("ownedDragonPayoutAt", now);
+        setStatic("ownedDragonPayoutWorld", world);
+        equal(phaseReceipt(raw, now + 14_000, world), List.of("Chaotic Dragon", new Drops.Drop("[Lvl 1] Black Cat", 3)));
+        setStatic("ownedDragonPayoutAt", 0L);
+        setStatic("ownedDragonPayoutWorld", null);
+        setStatic("messageWorld", world);
+        Object pending = call("open", new Class<?>[]{String.class, long.class, boolean.class}, "Chaotic Dragon", now, false);
+        set(pending, "place", 1);
+        equal(phaseReceipt(raw, now + 1_000, world), List.of());
+        equal(((List<Drops.Drop>) value(pending, "drops")), List.of(new Drops.Drop("[Lvl 1] Black Cat", 3)));
+        equal(phaseReceipt(raw, now + 1_001, otherWorld), List.of());
+        equal(((List<?>) value(pending, "drops")).size(), 1);
+        setStatic("death", null);
+
+        String key = (String) call("petKey", new Class<?>[]{String.class, int.class}, "[Lvl 1] Black Cat", 3);
+        equal(key, "[Lvl 1] Black Cat (Legendary)");
+        equal(call("repeatedDrop", new Class<?>[]{String.class, String.class, long.class}, "Superior Dragon", key, now), false);
+        equal(call("repeatedDrop", new Class<?>[]{String.class, String.class, long.class}, "Chaotic Dragon", key, now + 1_000), true);
+        call("clearDragonPhase", new Class<?>[]{});
+        setStatic("dragonActivityWorld", null);
+        setStatic("messageWorld", null);
+    }
+
+    private static List<Object> phaseReceipt(String raw, long now, Object world) throws Exception {
+        List<Object> paid = new java.util.ArrayList<>();
+        java.util.function.BiConsumer<String, Drops.Drop> payout = (boss, drop) -> {
+            paid.add(boss);
+            paid.add(drop);
+        };
+        call("obtained", new Class<?>[]{String.class, String.class, String.class, long.class, Object.class, java.util.function.BiConsumer.class},
+                raw, com.endsight.zealots.Zealots.strip(raw), "Player", now, world, payout);
+        return paid;
     }
 
     private static void familyHudChecks() throws Exception {

@@ -255,9 +255,12 @@ public final class Quiz {
         Entity best = null;
         double nearest = 20 * 20;
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (entity instanceof Player || !bare.equals(QuizLogic.option(plain(label(entity))))) continue;
+            if (entity instanceof Player) continue;
             double distance = entity.distanceToSqr(mc.player);
-            if (distance < nearest) { nearest = distance; best = entity; }
+            if (distance < nearest && bare.equals(QuizLogic.option(plain(label(entity))))) {
+                nearest = distance;
+                best = entity;
+            }
         }
         return best;
     }

@@ -1,5 +1,6 @@
 package com.endsight.hooks;
 
+import com.endsight.qol.DebugMessage;
 import com.endsight.qol.SlotLock;
 import com.endsight.visual.RarityOutline;
 import com.endsight.storage.ForgeRecipes;
@@ -33,6 +34,7 @@ abstract class ContainerSlotMixin {
     @Inject(method = "extractSlot", at = @At("TAIL"))
     private void endsight$overSlot(GuiGraphicsExtractor g, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
         ForgeRecipes.overSlot((AbstractContainerScreen<?>) (Object) this, g, slot);
+        DebugMessage.overSlot((AbstractContainerScreen<?>) (Object) this, g, slot);
         SlotLock.overSlot(g, slot);
     }
 }

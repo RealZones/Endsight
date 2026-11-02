@@ -12,8 +12,8 @@ import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 /**
- * Every item, in every window and on the hotbar, with a ring of its rarity's colour
- * on the slot's border - the one pixel round an item that nothing ever covers.
+ * Rarity-coloured highlights behind items, in windows and on the hotbar. Edges and
+ * underlines use the slot's border so the icon and item count remain unobstructed.
  *
  * Drawn from inside the game's own slot drawing - {@code extractSlot} on the container
  * screen and on the HUD - just before it draws the item, so the colour sits behind the
@@ -30,8 +30,15 @@ public final class RarityOutline {
     }
 
     private static boolean enabled = true;
-    private static final List<String> STYLES = List.of("Corners", "Outline", "Glow", "Pixel");
-    private static String style = "Corners";
+    /*
+     * Glow is gone: it was the Outline with a faint second ring outside it, and next to the
+     * Outline nobody could tell which was which - Fear included ("idk the diff"). A saved
+     * "Glow" is no longer an option, so Config drops it and the player lands on the default.
+     * Underline is the default on Fear's call; it is the style he plays with. Every older
+     * config has Corners saved, so Config moves that to Underline once (see its migrate).
+     */
+    private static final List<String> STYLES = List.of("Corners", "Outline", "Pixel", "Underline");
+    private static String style = "Underline";
     private static double opacity = 0.75;
 
     public static Module module() {
@@ -39,7 +46,7 @@ public final class RarityOutline {
                 "Rarity colour round every item, in windows and on the hotbar.", "Visual",
                 () -> enabled, v -> enabled = v,
                 List.of(
-                        new Setting.Choice("Style", "Corners, outlines, glow or a stepped pixel background.",
+                        new Setting.Choice("Style", "Corners, an outline, a pixel background or an underline.",
                                 STYLES, () -> style, v -> style = v),
                         new Setting.Slider("Opacity", "How solid the rarity highlight is.",
                                 0.2, 1, 0.05, () -> opacity, v -> opacity = v, "")));
@@ -64,38 +71,21 @@ public final class RarityOutline {
         if (colour == 0) return;
         int c = Draw.alpha(colour | 0xFF000000, (float) opacity);
         switch (style) {
+            case "Corners" -> corners(g, x - 1, y - 1, 18, 18, c);
             case "Outline" -> frame(g, x - 1, y - 1, 18, 18, c);
-            case "Glow" -> glow(g, x - 2, y - 2, 20, 20, colour | 0xFF000000);
             case "Pixel" -> pixel(g, x - 1, y - 1, colour | 0xFF000000);
-            default -> corners(g, x - 1, y - 1, 18, 18, c);
+            default -> underline(g, x, y, colour | 0xFF000000);
         }
     }
 
     /** A one-pixel ring with its corner pixels left out, which is what makes it read rounded. */
     private static void frame(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
-        Draw.rect(g, x + 1, y, w - 2, 1, colour);
-        Draw.rect(g, x + 1, y + h - 1, w - 2, 1, colour);
-        Draw.rect(g, x, y + 1, 1, h - 2, colour);
-        Draw.rect(g, x + w - 1, y + 1, 1, h - 2, colour);
+        Draw.frame(g, x, y, w, h, colour);
     }
 
     /** Four short Ls: enough to identify rarity without boxing every icon in. */
     private static void corners(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
-        int n = 5;
-        Draw.rect(g, x + 1, y, n, 1, colour);
-        Draw.rect(g, x, y + 1, 1, n, colour);
-        Draw.rect(g, x + w - 1 - n, y, n, 1, colour);
-        Draw.rect(g, x + w - 1, y + 1, 1, n, colour);
-        Draw.rect(g, x + 1, y + h - 1, n, 1, colour);
-        Draw.rect(g, x, y + h - 1 - n, 1, n, colour);
-        Draw.rect(g, x + w - 1 - n, y + h - 1, n, 1, colour);
-        Draw.rect(g, x + w - 1, y + h - 1 - n, 1, n, colour);
-    }
-
-    /** The loud version: a faint halo plus the normal frame. */
-    private static void glow(GuiGraphicsExtractor g, int x, int y, int w, int h, int colour) {
-        frame(g, x, y, w, h, Draw.alpha(colour, (float) opacity * 0.35f));
-        frame(g, x + 1, y + 1, w - 2, h - 2, Draw.alpha(colour, (float) opacity));
+        Draw.corners(g, x, y, w, h, 5, colour);
     }
 
     private static void pixel(GuiGraphicsExtractor g, int x, int y, int colour) {
@@ -105,11 +95,19 @@ public final class RarityOutline {
                 Draw.alpha(Draw.lerp(Theme.bg(), colour, 0.32f), (float) opacity));
     }
 
+    private static void underline(GuiGraphicsExtractor g, int x, int y, int colour) {
+        float strength = (float) opacity;
+        g.fillGradient(x - 1, y + 4, x + 17, y + 16,
+                colour & 0xFFFFFF, Draw.alpha(colour, strength * .45f));
+        g.fill(x, y + 16, x + 16, y + 17, Draw.alpha(colour, strength));
+        // Span the full 18-pixel slot, with softer tips so neighbouring items do
+        // not read as one continuous stripe when they share a rarity.
+        int tip = Draw.alpha(colour, strength * .4f);
+        g.fill(x - 1, y + 16, x, y + 17, tip);
+        g.fill(x + 16, y + 16, x + 17, y + 17, tip);
+    }
+
     private static void badge(GuiGraphicsExtractor g, int x, int y, int size, int colour) {
-        Draw.rect(g, x + 4, y, size - 8, 2, colour);
-        Draw.rect(g, x + 2, y + 2, size - 4, 2, colour);
-        Draw.rect(g, x, y + 4, size, size - 8, colour);
-        Draw.rect(g, x + 2, y + size - 4, size - 4, 2, colour);
-        Draw.rect(g, x + 4, y + size - 2, size - 8, 2, colour);
+        Draw.badge(g, x, y, size, colour);
     }
 }

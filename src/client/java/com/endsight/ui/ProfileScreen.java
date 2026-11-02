@@ -667,15 +667,37 @@ public final class ProfileScreen extends Screen {
             // Preserve full section height and ordering, but do no text, icon or
             // leaderboard preparation for rows clipped out of the viewport.
             if(yy+26<=top || yy>=bottom) continue;
-            card(g,x,yy,w,26,ProfileStyle.surface());
+            boolean bestiary=name.startsWith("Bestiary");
+            int cap=bestiary ? BestiaryProgress.cap(value.key())
+                    : name.equals("Collections") ? BestiaryProgress.collectionCap(value.key()) : 0;
+            boolean maxed=BestiaryProgress.reached(cap,value.value());
+            int gold=ProfileStyle.complete();
+            card(g,x,yy,w,26,maxed ? Draw.lerp(ProfileStyle.surface(),gold,.045f) : ProfileStyle.surface());
+            if(maxed) card(g,x,yy+6,2,14,Draw.alpha(gold,.7f));
             emblem(g,sectionSymbol(name,value.key()),x+7,yy+5);
             String amount=format.apply(value.value());
             String label=value.label();
+            if(g!=null && cap>0 && inside(mx,my,x,yy,w,26) && my>=top && my<bottom) {
+                g.setTooltipForNextFrame(font,List.of(Component.literal(label).withColor(ProfileStyle.text()),
+                        Component.literal((bestiary ? "Kills: " : "Collected: ")+ProfileFormat.number(value.value())+" / "+ProfileFormat.number(cap)).withColor(ProfileStyle.muted()),
+                        Component.literal(maxed ? "MAX" : ProfileFormat.number(cap-value.value())+(bestiary ? " kills to max" : " to max"))
+                                .withColor(maxed ? gold : ProfileStyle.dim())),Optional.empty(),mx,my);
+            }
+            int stampWidth=maxed ? font.width("MAX")+12 : 0;
+            int reserved=maxed ? stampWidth+8 : 0;
+            if(maxed) {
+                int stampX=x+w-10-font.width(amount)-8-stampWidth;
+                // A quiet inset border separates completion from leaderboard pills.
+                // Use card() for both layers so partially scrolled badges clip cleanly.
+                card(g,stampX,yy+5,stampWidth,16,Draw.lerp(ProfileStyle.input(),gold,.38f));
+                card(g,stampX+1,yy+6,stampWidth-2,14,Draw.lerp(ProfileStyle.input(),gold,.12f));
+                text(g,"MAX",stampX+6,yy+9,gold,stampWidth-12);
+            }
             // Bestiary entries with a Dragsim board (Golden Dragons) carry their rank.
-            int ranked=name.startsWith("Bestiary") ? badge(g,"bestiary_"+value.key(),label+" kills",
-                    value.value(),x+w-10-font.width(amount)-6,yy+9) : 0;
-            text(g,label,x+31,yy+9,ProfileStyle.muted(),w-45-font.width(amount)-ranked);
-            right(g,amount,x+w-10,yy+9,ProfileStyle.text());
+            int ranked=bestiary ? badge(g,"bestiary_"+value.key(),label+" kills",
+                    value.value(),x+w-10-font.width(amount)-6-reserved,yy+9) : 0;
+            text(g,label,x+31,yy+9,maxed ? ProfileStyle.text() : ProfileStyle.muted(),w-45-font.width(amount)-ranked-reserved);
+            right(g,amount,x+w-10,yy+9,maxed ? gold : ProfileStyle.text());
         }
         return offset+(values.size()+columns-1)/columns*29+15;
     }
@@ -704,7 +726,7 @@ public final class ProfileScreen extends Screen {
     private void bestiary(GuiGraphicsExtractor g) {
         heading(g,"Bestiary & collections","Every recorded kill and gathered collection.");
         int offset=42;
-        offset=section(g,"Collections",object(data.profile,"collections"),offset,ProfileFormat::compact);
+        offset=section(g,"Collections",prepared().collections,offset,ProfileFormat::compact);
         offset=groupedSection(g,"Bestiary",prepared().bestiary,offset);
         offset=groupedSection(g,"RNG meters",prepared().meters,offset);
         contentHeight=offset;
@@ -765,7 +787,8 @@ public final class ProfileScreen extends Screen {
             text(g,"PRICING",x,sy,ProfileStyle.dim(),priceW);
             metric(g,"Value",money(value),x,sy+24,priceW);
             metric(g,"From",method.isEmpty() ? "—" : method,x,sy+65,priceW);
-            String note=prices==null ? "Prices unavailable." : bool(estimate,"cosmetic") ? "Skins and dyes are not counted in networth."
+            String note=prices==null ? "Prices unavailable." : bool(estimate,"cosmetic")
+                    ? (ProfileClient.countCosmetics() ? "Skin or dye · counted in networth." : "Skin or dye · not counted in networth.")
                     : "Priced like dragsim.co, with craft cost and older sales where it has none.";
             int dy=sy+105;
             for(String line:Draw.wrap(font,note,priceW,4)) { text(g,line,x,dy,ProfileStyle.dim(),priceW); dy+=12; }

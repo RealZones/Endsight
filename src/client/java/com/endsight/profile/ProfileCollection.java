@@ -10,6 +10,14 @@ public final class ProfileCollection {
     public final JsonObject catalog;
     public final List<ProfileData.Item> accessories, missingAccessories, pets, missingPets;
     private static final List<String> TIERS=List.of("COMMON","UNCOMMON","RARE","EPIC","LEGENDARY","MYTHIC","DIVINE","SPECIAL","VERY_SPECIAL");
+    // The public catalog also lists beta items that cannot yet be obtained.
+    private static final Set<String> UNRELEASED_ACCESSORIES=Set.of("auto_recombobulator","scarf_thesis");
+    private static final Set<String> UNRELEASED_PETS=Set.of("blaze","blue_whale");
+    // Players own Phoenixes (Secrets__, Legendary) but the public catalog does not list the
+    // pet or its head texture yet, so it is added here with a vanilla icon standing in.
+    // A catalog entry of the same name wins once Dragsim publishes one.
+    private static final Map<String,JsonElement> EXTRA_PETS=Map.of("phoenix",JsonParser.parseString(
+            "{\"display\":\"Phoenix\",\"rarities\":[\"LEGENDARY\"],\"material\":\"minecraft:fire_charge\"}"));
     public static int rank(String rarity) { return TIERS.indexOf(rarity.toUpperCase(Locale.ROOT)); }
     public ProfileCollection(ProfileData data,JsonObject catalog) {
         this.data=data; this.catalog=catalog;
@@ -26,6 +34,7 @@ public final class ProfileCollection {
         Map<String,String> targets=new TreeMap<>();
         for(var entry:definitions.entrySet()) if(entry.getValue().isJsonObject() && accessory(entry.getValue().getAsJsonObject())) {
             String id=entry.getKey(),family=family(id,entry.getValue().getAsJsonObject()),old=targets.get(family);
+            if(UNRELEASED_ACCESSORIES.contains(id)) continue;
             if(old==null || rank(text(entry.getValue().getAsJsonObject(),"tier","COMMON"))>rank(text(object(definitions,old),"tier","COMMON"))) targets.put(family,id);
         }
         List<ProfileData.Item> missing=new ArrayList<>();
@@ -38,13 +47,17 @@ public final class ProfileCollection {
         Set<String> species=new HashSet<>();
         for(ProfileData.Item pet:pets) species.add(text(object(object(pet.raw(),"extra"),"pet_data"),"type","").toLowerCase(Locale.ROOT));
         List<ProfileData.Item> absent=new ArrayList<>();
-        for(var entry:object(catalog,"pets").entrySet()) if(entry.getValue().isJsonObject() && !species.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
+        Map<String,JsonElement> known=new LinkedHashMap<>();
+        for(var entry:object(catalog,"pets").entrySet()) known.put(entry.getKey(),entry.getValue());
+        EXTRA_PETS.forEach(known::putIfAbsent);
+        for(var entry:known.entrySet()) if(entry.getValue().isJsonObject() && !species.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
+            if(UNRELEASED_PETS.contains(entry.getKey().toLowerCase(Locale.ROOT))) continue;
             JsonObject pet=entry.getValue().getAsJsonObject(),def=new JsonObject();
             def.addProperty("name",text(pet,"display",title(entry.getKey())));
             String rarity="COMMON";
             for(JsonElement tier:array(pet,"rarities")) if(tier.isJsonPrimitive() && rank(tier.getAsString())>rank(rarity)) rarity=tier.getAsString();
             def.addProperty("tier",rarity); def.addProperty("category","PET");
-            def.addProperty("material","minecraft:player_head");
+            def.addProperty("material",text(pet,"material","minecraft:player_head"));
             ProfileData.Item item=suggestion("pets",entry.getKey()+"_pet_"+rarity.toLowerCase(Locale.ROOT),def,absent.size());
             JsonObject extra=new JsonObject(),petData=new JsonObject(); petData.addProperty("type",entry.getKey());
             extra.add("pet_data",petData); item.raw().add("extra",extra);

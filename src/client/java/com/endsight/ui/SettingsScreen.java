@@ -2,10 +2,12 @@ package com.endsight.ui;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.font.TextFieldHelper;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.StringUtil;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,6 +45,7 @@ public class SettingsScreen extends Screen {
     private boolean suppressCharacter;
     /** The command row being typed into, or null. */
     private Setting.Command editing;
+    private TextFieldHelper commandInput;
     /** The colour picker; open when a Color row's swatch was clicked. */
     private final ColorPicker picker = new ColorPicker();
 
@@ -56,7 +59,10 @@ public class SettingsScreen extends Screen {
     private final Map<Setting.Note, WrappedNote> wrappedNotes = new IdentityHashMap<>();
 
     private static final int ROW_H = 46;
-    private static final int SECTION_ROW_H = 30;
+    /** Lower than a setting row, so a heading reads as a break in the list rather than another item in it. */
+    private static final int SECTION_ROW_H = 24;
+    /** Room above a grouped page's next feature, with a rule in it. */
+    private static final int HEAD_GAP = 10;
     /** A note wraps to this many lines at most; a tier with forty items is still a glance. */
     private static final int NOTE_LINES = 6;
 
@@ -148,6 +154,22 @@ public class SettingsScreen extends Screen {
     boolean capturesKeyboard() { return binding != null || editing != null || picker.typing() || suppressCharacter; }
     boolean bindingKey() { return binding != null; }
 
+    int focusedCommandBottom() {
+        for (Row row : rows) if (row.setting() == editing) return row.y() + row.h() + 4;
+        return -1;
+    }
+
+    private void focusCommand(Setting.Command command) {
+        editing = command;
+        binding = null;
+        // Vanilla editing supplies selection, Unicode-safe deletion and clipboard
+        // shortcuts without replacing the hand-laid-out row with a separate widget.
+        commandInput = new TextFieldHelper(command::command, command::command,
+                () -> StringUtil.filterText(TextFieldHelper.getClipboardContents(minecraft)),
+                TextFieldHelper.createClipboardSetter(minecraft), value -> true);
+        commandInput.setCursorToEnd();
+    }
+
     void cancelInteractions() {
         dragging = null; binding = null; editing = null; suppressCharacter = false; picker.close();
     }
@@ -187,11 +209,12 @@ public class SettingsScreen extends Screen {
         int start = embedded ? embeddedY : contentTop() + Theme.PAD - scroll;
         int y = start;
 
-        for (SettingsOutline.Entry entry : SettingsOutline.visible(module.settings(), settingsQuery, collapsed)) {
+        for (SettingsOutline.Entry entry : SettingsOutline.visible(module.settings(), settingsQuery, collapsed, editing)) {
             Setting s = entry.setting();
-            int h = s instanceof Setting.Section ? (embedded ? 24 : SECTION_ROW_H)
+            int h = s instanceof Setting.Section ? (embedded ? 20 : SECTION_ROW_H)
                     : s instanceof Setting.Note n ? noteH(n, w)
                     : embedded && !(s instanceof Setting.Slider) ? 34 : ROW_H;
+            if (FeatureCatalog.head(s) && y != start) y += HEAD_GAP;
             rows.add(new Row(s, entry.index(), entry.expanded(), entry.matching(), entry.children(), x, y, w, h));
             y += h + 4;
         }
@@ -347,8 +370,8 @@ public class SettingsScreen extends Screen {
                 int color = r.matching ? Theme.accent() : Theme.muted();
                 MenuIcons.arrow(g, r.x, ty - 2,
                         r.expanded ? MenuIcons.Arrow.DOWN : MenuIcons.Arrow.RIGHT, color);
-                Draw.text(g, font, Draw.fit(font, sec.label(), r.w - 46), r.x + 16, ty, color);
-                Draw.textRight(g, font, Integer.toString(r.children), r.x + r.w, ty, Theme.dim());
+                // No child count: an open section shows it, and on a closed one a "1" only asked for a click.
+                Draw.text(g, font, Draw.fit(font, sec.label(), r.w - 16), r.x + 16, ty, color);
                 Draw.rect(g, r.x, r.y + r.h - 1, r.w, 1, Theme.hair());
                 continue;
             }
@@ -363,6 +386,8 @@ public class SettingsScreen extends Screen {
                 continue;
             }
 
+            if (FeatureCatalog.head(r.setting) && r != rows.getFirst())
+                Draw.rect(g, r.x - 8, r.y - HEAD_GAP / 2 - 3, r.w + 16, 1, Theme.line());
             boolean hovered = contains(r.x, r.y, r.w, r.h, mouseX, mouseY);
             float h = anim("row:" + r.setting.label()).to(hovered ? 1f : 0f, Theme.EASE_FAST);
             Draw.roundedRect(g, r.x - 8, r.y, r.w + 16, r.h, Theme.RADIUS,
@@ -540,11 +565,24 @@ public class SettingsScreen extends Screen {
         if (focus) Draw.roundedOutline(g, r.x, fy, fw, 20, Theme.RADIUS - 2, Theme.accent(), Theme.raised());
         String text = c.command();
         boolean empty = text.isEmpty();
-        String shown = empty && !focus ? "type a command, /warp end" : text;
-        // Long commands scroll so the end - what you are typing - stays in view.
-        while (font.width(shown) > fw - 14 && shown.length() > 1) shown = shown.substring(1);
-        if (focus && (System.currentTimeMillis() / 500) % 2 == 0) shown += "_";
+        int cursor = focus ? commandInput.getCursorPos() : text.length();
+        int start = 0;
+        while (start < cursor && font.width(text.substring(start, cursor)) > fw - 15)
+            start = text.offsetByCodePoints(start, 1);
+        String shown = font.plainSubstrByWidth(empty && !focus ? "type a command, /warp end"
+                : text.substring(start), fw - 14);
+        if (focus && commandInput.isSelecting()) {
+            int from = Math.clamp(Math.min(cursor, commandInput.getSelectionPos()) - start, 0, shown.length());
+            int to = Math.clamp(Math.max(cursor, commandInput.getSelectionPos()) - start, 0, shown.length());
+            int left = r.x + 7 + font.width(shown.substring(0, from));
+            int right = r.x + 7 + font.width(shown.substring(0, to));
+            g.fill(left, fy + 4, right, fy + 15, Draw.alpha(Theme.accent(), .35f));
+        }
         Draw.text(g, font, shown, r.x + 7, fy + 6, empty && !focus ? Theme.dim() : Theme.text());
+        if (focus && (System.currentTimeMillis() / 500) % 2 == 0) {
+            int caret = r.x + 7 + font.width(text.substring(start, cursor));
+            g.fill(caret, fy + 4, caret + 1, fy + 15, Theme.text());
+        }
 
         drawChip(g, font, c.id(), r.x + fw + 8, r.y + r.h / 2 - CHIP_H / 2, mouseX, mouseY);
 
@@ -636,8 +674,7 @@ public class SettingsScreen extends Screen {
             if (r.setting instanceof Setting.Command c) {
                 int fy = r.y + r.h / 2 - 10, fw = cmdFieldW(r);
                 if (contains(r.x, fy, fw, 20, mx, my)) {
-                    editing = c;
-                    binding = null;
+                    focusCommand(c);
                 } else if (contains(r.x + fw + 8, r.y + r.h / 2 - CHIP_H / 2, CHIP_W, CHIP_H, mx, my)) {
                     editing = null;
                     return listen(c.id(), event);
@@ -676,7 +713,10 @@ public class SettingsScreen extends Screen {
                 return true;
             }
             if (r.setting instanceof Setting.Action a) {
+                List<Setting> before = List.copyOf(module.settings());
                 a.run().run();
+                for (Setting setting : module.settings())
+                    if (setting instanceof Setting.Command command && !before.contains(setting)) focusCommand(command);
                 return true;
             }
         }
@@ -747,7 +787,7 @@ public class SettingsScreen extends Screen {
             return true;
         }
         if (editing != null) {
-            if (event.isAllowedChatCharacter()) editing.command(editing.command() + event.codepointAsString());
+            commandInput.charTyped(event);
             return true;
         }
         return embedded ? false : super.charTyped(event);
@@ -758,11 +798,9 @@ public class SettingsScreen extends Screen {
         if (picker.keyPressed(event.key())) return true;
         if (event.key() == 256 && picker.open()) { picker.close(); return true; }
         if (editing != null) {
-            if (event.key() == 259 && !editing.command().isEmpty()) {          // backspace
-                editing.command(editing.command().substring(0, editing.command().length() - 1));
-            } else if (event.key() == 257 || event.key() == 256 || event.key() == 335) {   // enter, escape, numpad enter
+            if (event.key() == 257 || event.key() == 256 || event.key() == 335) {   // enter, escape, numpad enter
                 editing = null;
-            }
+            } else commandInput.keyPressed(event);
             return true;
         }
         if (binding != null) {

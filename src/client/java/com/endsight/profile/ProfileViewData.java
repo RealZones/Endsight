@@ -10,7 +10,10 @@ public final class ProfileViewData {
     public record Group(String name,JsonObject values) { }
     private record Filtered(String query,boolean rarity,List<ProfileData.Item> values) { }
     public final ProfileData data;
-    public final JsonObject catalog,bestiary=new JsonObject(),meters=new JsonObject(),unknownNodes=new JsonObject(),dungeonSummary=new JsonObject();
+    public final JsonObject catalog,collections=new JsonObject(),bestiary=new JsonObject(),meters=new JsonObject(),unknownNodes=new JsonObject(),dungeonSummary=new JsonObject();
+    // The profile counts these two like collections, but the game has no collection for
+    // either (Fear, 2026-10-31), so /pv would show progress toward nothing.
+    private static final Set<String> NOT_COLLECTIONS=Set.of("summoning_eye","null_ovoid");
     public final long dragons;
     private final Map<String,List<ProfileData.Container>> pages=new HashMap<>(),usedPages=new HashMap<>();
     private final Map<String,List<ProfileData.Item>> contents=new HashMap<>();
@@ -27,6 +30,8 @@ public final class ProfileViewData {
             pages.put(type,selected);usedPages.put(type,selected.stream().filter(c -> !c.slots().isEmpty()).toList());
             contents.put(type,selected.stream().flatMap(c -> c.slots().values().stream()).toList());
         }
+        for(var entry:object(data.profile,"collections").entrySet())
+            if(!NOT_COLLECTIONS.contains(entry.getKey().toLowerCase(Locale.ROOT))) collections.add(entry.getKey(),entry.getValue());
         long killed=0;
         for(var entry:object(data.profile,"bestiary").entrySet()) {
             double count=number(entry.getValue().isJsonObject() ? entry.getValue().getAsJsonObject() : null,"kills",0);

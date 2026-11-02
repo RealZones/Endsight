@@ -170,12 +170,10 @@ public final class SlotLock {
         keyHeld = true;
         heldScreen = screen;
         heldFrom = index(cursorSlot(screen));
-        System.out.println("[Endsight] Slot Lock key start: " + heldFrom);
     }
 
     private static void finish(AbstractContainerScreen<?> screen) {
         int from = heldFrom, to = index(cursorSlot(screen));
-        System.out.println("[Endsight] Slot Lock key release: " + from + " -> " + to);
         if (from < 0 || to < 0) return;
         if (from == to) {
             toggle(from);

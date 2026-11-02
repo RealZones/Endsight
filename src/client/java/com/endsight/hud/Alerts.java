@@ -1,6 +1,7 @@
 package com.endsight.hud;
 
 import com.endsight.dragons.DragonTimer;
+import com.endsight.qol.GoopBaitReminder;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.zealots.Zealots;
@@ -41,6 +42,8 @@ public final class Alerts {
     private static boolean fireball = true;
     private static boolean fullInventory = true;
     private static boolean stash = true;
+    private static boolean goopBait = true;
+    private static final GoopBaitReminder GOOP_BAIT = new GoopBaitReminder();
 
     /**
      * The dragon announces its fireball in chat, in character - "[BOSS] Young Dragon:
@@ -57,7 +60,7 @@ public final class Alerts {
 
     public static Module module() {
         return new Module("alerts", "Alerts",
-                "Alerts for minibosses, slayer bosses, the Protector, fireballs and a full inventory.", "Alerts",
+                "Gameplay alerts for bosses, Goop Bait, inventory and stash.", "Alerts",
                 () -> enabled, v -> {
                     enabled = v;
                     if (!v) Alert.clear();          // an alert already showing goes too
@@ -82,6 +85,9 @@ public final class Alerts {
                         new Setting.Toggle("Stash warning",
                                 "When mined materials go to your stash.",
                                 () -> stash, v -> stash = v),
+                        new Setting.Toggle("Goop Bait reminder",
+                                "A five-second countdown before Goop Bait expires.",
+                                () -> goopBait, v -> goopBait = v),
 
                         new Setting.Section("How they look"),
                         new Setting.Slider("Size",
@@ -99,9 +105,18 @@ public final class Alerts {
     }
 
     public static void init() {
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> clearGoopBait());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register(
+                (handler, client) -> clearGoopBait());
+        ClientReceiveMessageEvents.GAME_CANCELED.register((message, overlay) -> {
+            if (!overlay && GOOP_BAIT.chat(message.getString(), System.currentTimeMillis())) Alert.clear("GOOP BAIT");
+        });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay || !enabled) return;
+            if (overlay) return;
             String line = Zealots.strip(message.getString()).trim();
+            if (GOOP_BAIT.chat(line, System.currentTimeMillis())) Alert.clear("GOOP BAIT");
+            if (!enabled) return;
             if (DragonTimer.isPlayerChat(line)) return;
             if (fireball && FIREBALL.matcher(line).find()) {
                 fire("FIREBALL", "incoming", ORANGE, 1.15f);
@@ -113,7 +128,18 @@ public final class Alerts {
             }
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            if (mc.player == null) return;
+            if (mc.player == null || mc.level == null) { clearGoopBait(); return; }
+            // Consume the expiry even while alerts are off, so enabling them later
+            // cannot produce a stale reminder for an already expired buff.
+            var baitNotice = GOOP_BAIT.poll(System.currentTimeMillis());
+            if (baitNotice != null && enabled && goopBait) {
+                if (baitNotice.seconds() == 0) {
+                    fire("Goop Bait Expired", "Use another Goop Bait to refresh the boost.", YELLOW, 1f);
+                } else {
+                    Alert.countdown("Goop Bait Expires In", baitNotice.seconds(), YELLOW, 1f, seconds);
+                    if (baitNotice.first()) ping();
+                }
+            }
             boolean full = true;
             for (ItemStack s : mc.player.getInventory().getNonEquipmentItems()) {
                 if (s.isEmpty()) {
@@ -128,11 +154,25 @@ public final class Alerts {
 
     private static void fire(String title, String sub, int colour, float weight) {
         Alert.show(title, sub, colour, weight, seconds);
+        ping();
+    }
+
+    private static void ping() {
         Minecraft mc = Minecraft.getInstance();
         if (sound && mc.player != null) mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1f, 1.6f);
     }
 
     // ── what the modules ask ──────────────────────────────────────────────────
+
+    public static void goopBaitTab(String text) {
+        long now = System.currentTimeMillis();
+        if (GOOP_BAIT.tab(text, now) && !GOOP_BAIT.countingDown(now)) Alert.clear("Goop Bait Expires In");
+    }
+
+    private static void clearGoopBait() {
+        GOOP_BAIT.clear();
+        Alert.clear("GOOP BAIT");
+    }
 
     public static boolean miniboss() {
         return enabled && miniboss;

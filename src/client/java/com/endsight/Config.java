@@ -24,6 +24,31 @@ public final class Config {
         return FabricLoader.getInstance().getConfigDir().resolve("endsight.properties");
     }
 
+    /**
+     * Raised when saved values have to change once. Every setting is written on save, so a
+     * default changed later never reaches anyone who already has the old one saved - the
+     * file holds it whether they chose it or not, and nothing tells the two apart.
+     */
+    private static final int VERSION = 2;
+
+    /**
+     * Changes made once to a config written by an older build.
+     *
+     * 2: Rarity Outlines' default moved from Corners to Underline in 1.8.0, and Fear wanted
+     * every player moved, not only new installs. Corners chosen after this stays, because
+     * the file is saved as version 2 from then on.
+     */
+    private static void migrate(Properties p) {
+        int version;
+        try {
+            version = Integer.parseInt(p.getProperty("configVersion", "1"));
+        } catch (NumberFormatException e) {
+            version = 1;
+        }
+        if (version < 2 && "Corners".equals(p.getProperty("module.visual.rarity.set.Style")))
+            p.setProperty("module.visual.rarity.set.Style", "Underline");
+    }
+
     // ── load ──────────────────────────────────────────────────────────────────
 
     public static void load(ModuleRegistry registry) {
@@ -39,6 +64,7 @@ public final class Config {
             System.err.println("[Endsight] could not read config, using defaults: " + e);
             return;
         }
+        migrate(p);
 
         registry.loadBrowserState(p);
         String palette = p.getProperty("palette");
@@ -135,6 +161,7 @@ public final class Config {
 
     public static void save(ModuleRegistry registry) {
         Properties p = new Properties();
+        p.setProperty("configVersion", String.valueOf(VERSION));
         registry.saveBrowserState(p);
         p.setProperty("palette", Theme.palette().name());
 

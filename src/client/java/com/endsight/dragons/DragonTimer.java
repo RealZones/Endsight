@@ -384,7 +384,7 @@ public final class DragonTimer {
     }
 
     private static String plain(Component c) {
-        return c == null ? "" : c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        return c == null ? "" : com.endsight.zealots.Zealots.strip(c.getString());
     }
 
     private static int parse(String s, int fallback) {

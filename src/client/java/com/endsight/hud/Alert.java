@@ -14,10 +14,11 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
  * popup on screen at a time by design - two things shouting at once is the same as
  * neither, so a new alert replaces whatever was showing.
  *
- * Geometry is vanilla's title overlay exactly: dead centre, title above the midline at
+ * Ordinary alerts follow vanilla's title overlay: dead centre, title above the midline at
  * 4x, subtitle below at 2x, 2 ticks in and 6 out. What is NOT vanilla is the size and
  * opacity, which vanilla hard-locks and which need to be adjustable - so those are
- * settings and everything else is copied.
+ * settings and everything else is copied. Countdowns put a smaller caption above one
+ * large numeral so the remaining time is what you read first.
  */
 public final class Alert {
 
@@ -30,6 +31,7 @@ public final class Alert {
     private static float weight = 1f;
     private static long shown;
     private static long until;
+    private static boolean countdown;
 
     /** Shared appearance, driven by the sliders on Miniboss Alerts. */
     private static double scalePct = 80;
@@ -57,6 +59,7 @@ public final class Alert {
      *               event is visibly heavier rather than merely another flash.
      */
     public static void show(String title, String subtitle, int rgb, float weight, double seconds) {
+        countdown = false;
         text = title;
         sub = subtitle;
         color = rgb;
@@ -65,8 +68,23 @@ public final class Alert {
         until = shown + (long) (seconds * 1000);
     }
 
+    public static void countdown(String caption, int remaining, int rgb, float weight, double seconds) {
+        boolean continuing = countdown && caption.equals(text) && active();
+        long originalShown = shown;
+        show(caption, Integer.toString(remaining), rgb, weight, Math.max(1.5, seconds));
+        countdown = true;
+        // Changing the numeral must not restart the fade on every second.
+        if (continuing) shown = originalShown;
+    }
+
     public static void clear() {
         text = null;
+        countdown = false;
+    }
+
+    /** A refreshed buff must dismiss its own countdown without hiding another alert. */
+    public static void clear(String prefix) {
+        if (text != null && text.regionMatches(true, 0, prefix, 0, prefix.length())) clear();
     }
 
     public static boolean active() {
@@ -97,6 +115,20 @@ public final class Alert {
 
         g.nextStratum();
         var pose = g.pose();
+
+        if (countdown) {
+            pose.pushMatrix();
+            pose.translate(sw / 2f, sh / 2f);
+            pose.scale(2f * s, 2f * s);
+            Draw.textCentered(g, font, text, 0, -20, Draw.alpha(Theme.text(), alpha));
+            pose.popMatrix();
+            pose.pushMatrix();
+            pose.translate(sw / 2f, sh / 2f);
+            pose.scale(5f * s, 5f * s);
+            Draw.textCentered(g, font, sub, 0, 0, Draw.alpha(color, alpha));
+            pose.popMatrix();
+            return;
+        }
 
         // Scale goes through the pose because Font has no size - text is drawn once and
         // transformed, which is exactly how vanilla gets its 4x title. Title and

@@ -294,6 +294,9 @@ public final class BossDrops {
     private static int eyes;
     private static long summaryAt, dragonKillAt, ownedDragonPayoutAt;
     private static Object summaryWorld, ownedDragonPayoutWorld;
+    private static String dragonPhaseBoss;
+    private static long dragonPhaseAt;
+    private static Object dragonPhaseWorld;
     /**
      * Dragons since the last Superior and since the last Ender Dragon pet. A save from
      * before these existed has totals but no order, so each starts unknown and counts up
@@ -406,7 +409,7 @@ public final class BossDrops {
                                 "Lowest dragon drop tier printed by /drops.",
                                 Drops.TIERS, () -> minTier, v -> minTier = v),
                         new Setting.Section("Prices"),
-                        new Setting.Toggle("Learn Slayer sale prices", "Use a Slayer drop's value after its first sale; off uses custom or built-in prices.",
+                        new Setting.Toggle("Learn Slayer sale prices", "Price Slayer drops from your own sales.",
                                 NpcPrices::learning, NpcPrices::learning),
                         new Setting.Action("Slayer drop prices", "Edit prices and reload a shared Slayer price file.",
                                 "Edit", DropPricesScreen::open)));
@@ -419,11 +422,12 @@ public final class BossDrops {
                 "Loot, spawn costs and profit per hour during your Slayer quest.", "Trackers",
                 () -> hud.enabled, v -> hud.enabled = v,
                 List.of(
-                        new Setting.Choice("Period", "Switch the counts; click the HUD label in chat or inventory.",
+                        new Setting.Choice("Period", "Session or all-time counts.",
                                 List.of("Session", "All Time"), () -> hud.period, v -> hud.period = v),
-                        new Setting.Toggle("Compact list", "Show the five highest-value items; profit still includes every priced drop.",
+                        // Profit still counts every priced drop; only the list is cut.
+                        new Setting.Toggle("Compact list", "Show the top five items.",
                                 () -> hud.compact, v -> hud.compact = v),
-                        new Setting.Toggle("Learn Slayer sale prices", "Use a Slayer drop's value after its first sale; off uses custom or built-in prices.",
+                        new Setting.Toggle("Learn Slayer sale prices", "Price Slayer drops from your own sales.",
                                 NpcPrices::learning, NpcPrices::learning),
                         new Setting.Action("Slayer drop prices", "Edit prices shared by your Slayer profit trackers.",
                                 "Edit", DropPricesScreen::open)));
@@ -523,6 +527,7 @@ public final class BossDrops {
                 return;
             }
             if (EYE_PLACED.matcher(line).find()) {
+                if (eyes == 0) clearDragonPhase();
                 eyes++;
                 show(DRAGON);
                 return;
@@ -531,6 +536,7 @@ public final class BossDrops {
                 // A new dragon closes the previous payout window even if its
                 // summary was delayed or omitted.
                 clearOwnedDragonPayout();
+                clearDragonPhase();
                 if (eyes == 0) clearDragonActivity();
                 return;
             }
@@ -541,6 +547,7 @@ public final class BossDrops {
                 // across that boundary even when the de-spawn line was missed.
                 if (eyes > 0) rememberOwnedDragonPayout(now);
                 eyes = 0;
+                clearDragonPhase();
                 return;
             }
             if (line.contains(TREMBLE)) {
@@ -549,6 +556,7 @@ public final class BossDrops {
             }
             m = DRAGON_DEAD.matcher(line);
             if (m.find()) {
+                clearDragonPhase();
                 // Yours if you put an eye in. Its drops are announced by name, seconds
                 // later, or as a debug loot line right after the summary box.
                 if (eyes > 0) {
@@ -563,13 +571,7 @@ public final class BossDrops {
                 eyes = 0;
                 return;
             }
-            m = BOX.matcher(line);
-            if (m.find()) {
-                String who = m.group(1);
-                String boss = who.startsWith("THE WARDEN") ? WARDEN : who.startsWith("ENDSTONE") ? GOLEM : DRAGON;
-                if (!DRAGON.equals(boss)) open(boss, now, true).place = Integer.parseInt(m.group(2));
-                return;
-            }
+            if (bossBox(line, now, messageWorld)) return;
             if (line.contains(WARDEN_DEAD)) {
                 open(WARDEN, now, true).dead = true;
                 return;
@@ -588,20 +590,8 @@ public final class BossDrops {
                 x.atomReward = takeAtomReward();
                 return;
             }
-            m = OBTAINED.matcher(line);
-            if (m.find()) {
-                Minecraft mc = Minecraft.getInstance();
-                if (mc.player != null && m.group(1).equalsIgnoreCase(mc.player.getName().getString())) {
-                    String item = m.group(2).trim();
-                    // A dragon's kill is counted 2.5 s after it de-spawns, and in his logs about
-                    // one obtained line in six landed inside that wait (201 of 1,310 within 2 s).
-                    // Dropped straight away, a pet reset "since pet" and the kill then made it
-                    // 1. Held with the kill, it is counted after it.
-                    if (death != null && isDragon(death.boss) && death.place <= PLACES)
-                        death.drops.add(obtainedDrop(raw, item));
-                    else if (ownedDragonPayout(now, messageWorld)) drop(lastDragon, obtainedDrop(raw, item));
-                }
-            }
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) obtained(raw, line, mc.player.getName().getString(), now, messageWorld, BossDrops::drop);
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             long now = System.currentTimeMillis();
@@ -615,6 +605,7 @@ public final class BossDrops {
                 eyes = 0;
                 clearDragonActivity();
                 clearOwnedDragonPayout();
+                clearDragonPhase();
                 summaryAt = 0;
                 summaryWorld = null;
                 summary.clear();
@@ -1045,6 +1036,45 @@ public final class BossDrops {
                 && now >= ownedDragonPayoutAt && now - ownedDragonPayoutAt <= DRAGON_PAYOUT_MS;
     }
 
+    private static void clearDragonPhase() {
+        dragonPhaseBoss = null;
+        dragonPhaseAt = 0;
+        dragonPhaseWorld = null;
+    }
+
+    private static boolean bossBox(String line, long now, Object world) {
+        Matcher box = BOX.matcher(line);
+        if (!box.find()) return false;
+        String who = box.group(1);
+        String boss = who.startsWith("THE WARDEN") ? WARDEN : who.startsWith("ENDSTONE") ? GOLEM : DRAGON;
+        if (!DRAGON.equals(boss)) open(boss, now, true).place = Integer.parseInt(box.group(2));
+        else if (eyes > 0 && world != null && world == dragonActivityWorld) {
+            // A Chaotic Dragon's summoned Superior pays loot without a de-spawn
+            // line (observed 2026-10-29). Remember its named box for our receipt,
+            // but do not turn the extra phase into another placed-eye kill.
+            String kind = DRAGON.equalsIgnoreCase(who) ? "" : who.substring(0, who.length() - " DRAGON".length());
+            dragonPhaseBoss = KINDS.stream().filter(k -> k.equalsIgnoreCase(kind))
+                    .findFirst().map(k -> k + " Dragon").orElse(DRAGON);
+            dragonPhaseAt = now;
+            dragonPhaseWorld = world;
+        }
+        return true;
+    }
+
+    private static void obtained(String raw, String line, String player, long now, Object world,
+                                 java.util.function.BiConsumer<String, Drops.Drop> payout) {
+        Matcher receipt = OBTAINED.matcher(line);
+        if (!receipt.matches() || !receipt.group(1).equalsIgnoreCase(player)) return;
+        // Keep normal rewards with their pending kill: otherwise an early pet
+        // receipt resets "since pet" before the kill increments it back to one.
+        if (death != null && isDragon(death.boss) && death.place <= PLACES && world != null && death.level == world)
+            death.drops.add(obtainedDrop(raw, receipt.group(2).trim()));
+        else if (eyes > 0 && world != null && world == dragonActivityWorld && world == dragonPhaseWorld
+                && dragonPhaseBoss != null && now >= dragonPhaseAt && now - dragonPhaseAt <= DRAGON_PAYOUT_MS)
+            payout.accept(dragonPhaseBoss, obtainedDrop(raw, receipt.group(2).trim()));
+        else if (ownedDragonPayout(now, world)) payout.accept(lastDragon, obtainedDrop(raw, receipt.group(2).trim()));
+    }
+
     /** Count a summary only when this client's eye placement identified that run as ours. */
     private static void settleSummary() {
         if (summaryAt == 0) return;
@@ -1472,7 +1502,7 @@ public final class BossDrops {
         }
         List<HudCard.Row> rows = new ArrayList<>();
         rows.add(new HudCard.Row("Kills", sample ? "12" : String.format(Locale.ROOT, "%,d", c.kills)));
-        List<Map.Entry<String, Integer>> list = hudSorted(boss, c.drops);
+        List<Map.Entry<String, Integer>> list = hudSorted(boss, stacked(c.drops));
         int limit = compact ? 5 : 10;
         for (Map.Entry<String, Integer> drop : list.stream().limit(limit).toList()) {
             String value = String.format(Locale.ROOT, "%,d", drop.getValue());
@@ -1497,6 +1527,36 @@ public final class BossDrops {
     /** A name to sort by: a pet's "[Lvl 1] " is not part of what it is, and "[" sorts before every letter. */
     private static String plain(String item) {
         return petBase(item).replaceFirst("^\\[[^\\]]*\\]\\s*", "");
+    }
+
+    /**
+     * One entry per name, for showing. A pet is kept with its rarity, "[Lvl 1] Warden
+     * (Legendary)", but one counted before the rarity could be read has none, and both
+     * draw as "Warden" - so the readout and /drops showed one pet on two rows (Fear's
+     * /drops on 2026-11-01: "[Lvl 1] Warden 1" over "[Lvl 1] Warden (Legendary) 1"; a
+     * player's Warden HUD the same day: "Warden 2" over "Warden 6"). The counts are summed
+     * under the key naming the best rarity, which is the colour the row then takes. What
+     * is saved keeps its keys; this is only how they read.
+     */
+    static Map<String, Integer> stacked(Map<String, Integer> drops) {
+        Map<String, String> key = new LinkedHashMap<>();
+        Map<String, Integer> count = new HashMap<>();
+        for (Map.Entry<String, Integer> e : drops.entrySet()) {
+            String name = plain(e.getKey()).toLowerCase(Locale.ROOT);
+            key.merge(name, e.getKey(), (kept, other) -> stackRank(other) > stackRank(kept) ? other : kept);
+            count.merge(name, e.getValue(), Integer::sum);
+        }
+        Map<String, Integer> out = new LinkedHashMap<>();
+        key.forEach((name, k) -> out.put(k, count.get(name)));
+        return out;
+    }
+
+    /**
+     * The key a stacked row keeps: one that names its rarity, the best one named. A key
+     * without one only has the list's guess, which is not worth more than what was read.
+     */
+    private static int stackRank(String item) {
+        return PET_NAME.matcher(item).find() && PET_RARITY.matcher(item).find() ? 1 + tier(item) : 0;
     }
 
     public static List<String> knownSlayerDropNames() {
@@ -1589,15 +1649,17 @@ public final class BossDrops {
             for (String k : KINDS) if (of(m, k + " Dragon").kills > 0) kinds.append(k).append(' ').append(of(m, k + " Dragon").kills).append("  ");
             if (kinds.length() > 4) mc.player.sendSystemMessage(Component.literal(kinds.toString().trim()));
         }
-        List<Map.Entry<String, Integer>> list = sorted(boss, c.drops);
+        List<Map.Entry<String, Integer>> list = sorted(boss, stacked(c.drops));
         if (list.isEmpty()) {
             mc.player.sendSystemMessage(Component.literal("§8  nothing worth a row yet"));
             return 1;
         }
         for (Map.Entry<String, Integer> e : list) {
             int colour = Rarity.colour(e.getKey(), Drops.colour(tier(e.getKey())));
+            // A row that took in another key no longer stands for that one rarity.
+            String name = e.getValue().equals(c.drops.get(e.getKey())) ? e.getKey() : petBase(e.getKey());
             mc.player.sendSystemMessage(Component.literal("  ")
-                    .append(Component.literal(e.getKey()).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(colour & 0xFFFFFF))))
+                    .append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(colour & 0xFFFFFF))))
                     .append(Component.literal("  §f" + e.getValue())));
         }
         return 1;

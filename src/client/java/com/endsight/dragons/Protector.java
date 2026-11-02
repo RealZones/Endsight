@@ -94,7 +94,7 @@ public final class Protector {
 
     public static Module module() {
         return new Module("dragon.protector", "Golem Status",
-                "Server-wide Protector stage and kills toward its spawn. Shows Warden transformations too.", "Trackers",
+                "Protector stage, kills to its spawn, and the Warden.", "Trackers",
                 () -> enabled, v -> enabled = v,
                 List.of());
     }
@@ -284,7 +284,7 @@ public final class Protector {
     }
 
     private static String plain(Component c) {
-        return c == null ? "" : c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim();
+        return c == null ? "" : com.endsight.zealots.Zealots.strip(c.getString()).trim();
     }
 
     private static int parse(String s) {

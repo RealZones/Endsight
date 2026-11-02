@@ -20,5 +20,6 @@ final class ProfileStyle {
     static int accent() { return P.accentColor(); }
     static int pos() { return P.posColor(); }
     static int obs() { return P.obsColor(); }
+    static int complete() { return P.obsColor(); }
     static int scrim() { return 0xAC000000; }
 }

@@ -8,9 +8,6 @@ run/
 .fabric/
 remappedSrc/
 
-# Endsight dev output
-endsight-entity-dump.txt
-
 # IDE
 .idea/
 *.iml

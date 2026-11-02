@@ -128,9 +128,52 @@ public final class ZealotTrackerChecks {
         line.invoke(null, "RARE DROP! (Summoning Eye)");
         ZealotTracker.recordKill(true);
         eq(count("sinceSpecial"), 1, "later Special death or eye payout reset the spawn streak");
+        // The configurable /debug format observed by LootRoll also carries the
+        // personal spawn outcome; it must work with MF/PL hidden or reordered.
+        line.invoke(null, "[Debug] Zealot · Roll 0.1/100 · MF 408.06802 · PL 66.12 · Special Zealot HIT · Chance 0.23371%");
+        eq(count("sinceSpecial"), 0, "configurable debug HIT did not reset the streak");
         ZealotTracker.recordKill(false);
+        line.invoke(null, "[Debug] Zealot · Roll 64.78413/100 · MF 408.06802 · PL 66.12 · Special Zealot miss · Chance 0.23371%");
+        line.invoke(null, "[Debug] Zealot · Roll 0.1/100 · Summoning Eye HIT · Chance 17%");
+        line.invoke(null, "[VIP+] Someone: [Debug] Zealot · Roll 0.1/100 · Special Zealot HIT · Chance 0.23371%");
+        line.invoke(null, "[Debug] Zealot · Table 0.1/100 · Special Zealot HIT · Chance 0.23371%");
+        eq(count("sinceSpecial"), 1, "miss, other drop, pasted HIT or table reset the streak");
+        String minimalSpawn = "[Debug] Zealot · Roll 0.15/100 · Special Zealot hit";
+        yes((boolean) spawn.invoke(null, minimalSpawn, 10_000L), "debug HIT without optional fields was ignored");
+        eq(count("sinceSpecial"), 0, "minimal debug HIT did not reset the streak");
+        ZealotTracker.recordKill(false);
+        spawn.invoke(null, minimalSpawn, 10_100L);
+        eq(count("sinceSpecial"), 1, "duplicate debug HIT erased a later normal kill");
+        line.invoke(null, "[Debug] Zealot · Roll 0.2/100 · PL 66.12 · MF 408.06802 · Special Zealot hit · Chance 0.23371%");
+        eq(count("sinceSpecial"), 0, "reordered optional debug fields hid a successful spawn");
+        ZealotTracker.recordKill(false);
+        // The source field off, as on the server's default line (Fear's log, November 1).
+        yes((boolean) spawn.invoke(null, "[Debug] Roll 0.000695/100 · Special Zealot HIT · Chance 0.247293% · 1 item odds (hover)", 30_000L),
+                "debug HIT without its source was ignored");
+        eq(count("sinceSpecial"), 0, "debug HIT without its source did not reset the streak");
         reset.invoke(null);
         eq(count("sinceSpecial"), 0, "dry streak survived session reset");
+
+        ZealotTracker.recordKill(false);
+        yes(ZealotTracker.recordSpecialTitle("§5Special Zealot", false, 20_000L), "personal title was ignored without debug");
+        eq(count("sinceSpecial"), 0, "personal title did not reset dry streak");
+        ZealotTracker.recordKill(false);
+        yes(ZealotTracker.recordSpecialTitle("§aA Special Zealot has spawned nearby!", true, 20_050L), "spawn subtitle was ignored");
+        eq(count("sinceSpecial"), 1, "title's companion subtitle erased a later kill");
+        spawn.invoke(null, "[Debug] Zealot · Roll 0.12/100 · Special Zealot hit", 20_100L);
+        eq(count("sinceSpecial"), 1, "popup's companion debug roll erased a later kill");
+        spawn.invoke(null, "[Debug] Zealot · Roll 0.13/100 · Special Zealot hit", 20_200L);
+        eq(count("sinceSpecial"), 0, "second distinct personal spawn was mistaken for a duplicate");
+        ZealotTracker.recordKill(false);
+        ZealotTracker.recordSpecialTitle("SPECIAL ZEALOT!", false, 20_250L);
+        eq(count("sinceSpecial"), 1, "debug's companion title erased a later kill");
+        yes(!ZealotTracker.recordSpecialTitle("Someone: Special Zealot", false, 20_300L), "player-like popup text reset the streak");
+        yes(!ZealotTracker.recordSpecialTitle("Special Zealot 0.42% chance", false, 20_300L), "unrelated Special text reset the streak");
+        yes(!ZealotTracker.recordSpecialTitle("Golden Eye", false, 20_300L), "drop title reset spawn streak");
+        eq(count("sinceSpecial"), 1, "unrelated popup changed the streak");
+        ZealotTracker.recordSpecialTitle("A Special Zealot has spawned nearby!", true, 22_000L);
+        eq(count("sinceSpecial"), 0, "subtitle-only popup did not work without debug");
+        reset.invoke(null);
 
         // Real drop lines from the October logs: only personal announcements count.
         line.invoke(null, "RNGESUS DROP! [Lvl 1] Enderman");

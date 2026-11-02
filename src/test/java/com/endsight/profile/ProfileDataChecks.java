@@ -63,7 +63,9 @@ public final class ProfileDataChecks {
         ProfileCollection collection=new ProfileCollection(collectionData,collectionCatalog);
         require(collection.accessories.size()==1 && collection.missingAccessories.size()==1,"Only the next highest family goal is missing");
         require(collection.missingAccessories.getFirst().entry().equals("artifact"),"An owned lower tier does not hide the upgrade");
-        require(collection.missingPets.size()==1 && collectionData.assets.size()==1,"Catalog suggestions never become owned assets");
+        // The catalog's one pet, plus the Phoenix ProfileCollection adds while the public catalog lacks it.
+        require(collection.missingPets.size()==2 && collectionData.assets.size()==1,"Catalog suggestions never become owned assets");
+        require(collection.missingPets.stream().anyMatch(pet -> pet.raw().getAsJsonObject("extra").getAsJsonObject("pet_data").get("type").getAsString().equals("phoenix")),"The built-in Phoenix is not suggested");
         collectionRoot.getAsJsonObject("profile").getAsJsonObject("inventory").add("1",item("artifact",1));
         require(new ProfileCollection(new ProfileData(collectionRoot),collectionCatalog).missingAccessories.isEmpty(),"Owning the top family tier suppresses lower missing tiers");
         boolean rejected=false;

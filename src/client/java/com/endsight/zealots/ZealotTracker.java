@@ -7,6 +7,7 @@ import com.endsight.hud.HudCard;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.TrackerHud;
 import com.endsight.qol.NpcPrices;
+import com.endsight.qol.DebugMessage;
 import com.endsight.qol.LootDebug;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -94,12 +95,18 @@ public final class ZealotTracker {
     private static final String GOLDEN = "EPIC DROP! Golden Eye";
     private static final String CATALYST = "EPIC DROP! Warden Catalyst";
     private static final String RIFT_PASS = "LEGENDARY DROP! Rift Pass";
-    // This is the personal successful spawn roll, observed in the server's detailed
-    // debug output. Seeing another player's Special entity proves no ownership.
+    // A personal successful spawn roll supplements the title popup. Merely seeing
+    // another player's Special entity still proves no ownership.
     private static final Pattern SPECIAL_SPAWN = Pattern.compile(
             "^(?:▶\\s*)?rare roll Special Zealot \\(1 in [\\d,]+, [\\d.]+%\\) rolled [\\d.]+ HIT$");
+    private static final Pattern MODERN_SPECIAL_SPAWN = Pattern.compile(
+            "^Special Zealot(?:;[^\\r\\n]*?)?\\s+hit(?:\\s+·\\s+Chance\\s+[\\d.]+%)?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SPECIAL_POPUP = Pattern.compile(
+            "^(?:a\\s+)?special zealot(?:\\s+has spawned(?:\\s+nearby)?)?[!.]?$", Pattern.CASE_INSENSITIVE);
     private static String lastSpecialSpawnLine;
     private static long lastSpecialSpawnAt;
+    private static long lastSpecialSignalAt;
+    private static int specialSignalSources;
 
     /** A swing kills what it hit and what stood within this of it, inside this long. */
     private static final double SWEEP = 6.0;
@@ -262,6 +269,8 @@ public final class ZealotTracker {
         lastActivity = 0;
         lastSpecialSpawnLine = null;
         lastSpecialSpawnAt = 0;
+        lastSpecialSignalAt = 0;
+        specialSignalSources = 0;
     }
 
     public static void init() {
@@ -369,15 +378,47 @@ public final class ZealotTracker {
         if (raw == null || !raw.contains("Special Zealot")) return false;
         String line = Zealots.strip(raw).trim();
         LootDebug.Rare rare = LootDebug.rare(line);
-        boolean modern = rare != null && rare.hit() && rare.name().equals("Special Zealot");
-        if (!modern && !SPECIAL_SPAWN.matcher(line).matches()) return false;
+        LootDebug.Modern detailed = LootDebug.modern(line);
+        // /debug now emits a configurable [Debug] Roll line. Chat folding already
+        // understands it; the tracker must read that same personal HIT even when hidden.
+        boolean rolled = rare != null && rare.hit() && rare.name().equals("Special Zealot");
+        boolean modern = detailed != null && !detailed.main() && detailed.hit()
+                && MODERN_SPECIAL_SPAWN.matcher(detailed.result()).matches();
+        // A custom debug message prints the same result, "Special Zealot HIT", in its own words.
+        DebugMessage.Read own = DebugMessage.read(line);
+        boolean custom = own != null && own.result() != null && MODERN_SPECIAL_SPAWN.matcher(own.result()).matches();
+        if (!rolled && !modern && !custom && !SPECIAL_SPAWN.matcher(line).matches()) return false;
         // One folded/raw signal can be delivered again within the same server tick.
         // A repeated copy must not wipe ordinary kills counted after that spawn.
         if (line.equals(lastSpecialSpawnLine) && now >= lastSpecialSpawnAt && now - lastSpecialSpawnAt < 250) return true;
         lastSpecialSpawnLine = line;
         lastSpecialSpawnAt = now;
-        sinceSpecial = 0;
+        recordSpawnSignal(1, now);
         return true;
+    }
+
+    /** The server's personal title is available even when detailed chat is disabled. */
+    public static void onSpecialTitle(Component message, boolean subtitle) {
+        if (enabled && message != null && recordSpecialTitle(message.getString(), subtitle, System.currentTimeMillis())) touch();
+    }
+
+    static boolean recordSpecialTitle(String raw, boolean subtitle, long now) {
+        if (raw == null || !SPECIAL_POPUP.matcher(Zealots.strip(raw).trim()).matches()) return false;
+        recordSpawnSignal(subtitle ? 4 : 2, now);
+        return true;
+    }
+
+    private static void recordSpawnSignal(int source, long now) {
+        // One spawn can send a title, subtitle and debug roll. Their companion
+        // signals must not erase ordinary kills made after the first reset.
+        boolean companion = specialSignalSources != 0 && (specialSignalSources & source) == 0
+                && now >= lastSpecialSignalAt && now - lastSpecialSignalAt < 1_000;
+        if (companion) specialSignalSources |= source;
+        else {
+            specialSignalSources = source;
+            lastSpecialSignalAt = now;
+            sinceSpecial = 0;
+        }
     }
 
     record ExtraDrop(String item, int count) { }
@@ -573,10 +614,11 @@ public final class ZealotTracker {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) return;
         if (!Area.end()) return;
+        // Before the Voidgloom check, which reads the scoreboard: an idle tracker is hidden anyway.
+        if (lastActivity == 0 || System.currentTimeMillis() - lastActivity > HIDE_IDLE_MS) return;
         // Eman slayers are often run in the same End area. Location and recent zealot
         // activity alone cannot tell which tracker the player currently needs.
         if (hideDuringVoidgloom && com.endsight.slayers.Slayer.voidgloomQuestActive()) return;
-        if (lastActivity == 0 || System.currentTimeMillis() - lastActivity > HIDE_IDLE_MS) return;
         // You are killing zealots or you are mining, never both, and two trackers up at
         // once is one of them describing something you stopped doing.
         if (com.endsight.storage.MiningSession.lastActive() > lastActivity) return;
@@ -725,6 +767,6 @@ public final class ZealotTracker {
     }
 
     private static String plain(Component c) {
-        return c == null ? "" : c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim();
+        return c == null ? "" : com.endsight.zealots.Zealots.strip(c.getString()).trim();
     }
 }

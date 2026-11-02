@@ -64,10 +64,10 @@ import java.util.regex.Pattern;
  *
  * The recipes are not in any file the client gets - they exist only as the menu the
  * server draws: "Recipes (1/6)", pages of items, and clicking one opens "<Item>
- * Recipe", a 3x3 grid with the result beside it. A private scan pass reads each
- * category in the left column in turn, every page of it read for what belongs there,
- * each item whose grid is not yet known clicked, read, and backed out of. Everything
- * learned goes to config/endsight/recipes.txt, so a scan is a once-a-patch job.
+ * Recipe", a 3x3 grid with the result beside it. The mod ships with the list, and a
+ * recipe page you open yourself is read as it is drawn, so one added in a patch is
+ * learned the first time you look at it. What is learned goes to
+ * config/endsight/recipes.txt.
  *
  * Reading, not guessing, the screen's layout: the left column of a list page is the
  * categories (the star is "All Recipes"), the recipes sit in columns 1-8 of rows 1-4,
@@ -85,10 +85,6 @@ public final class Recipes {
     private static final int[] GRID = {10, 11, 12, 19, 20, 21, 28, 29, 30};
     private static final int RESULT = 25;
     private static final int CRAFTING_TABLE = 23;
-    private static final int BACK = 45;
-    private static final int NEXT = 53;
-    /** The category column: the star (All) and the five under it. */
-    private static final int[] CATEGORIES = {9, 18, 27, 36, 45, 0};
 
     /** One cell of a grid, or the result: what and how many. */
     record Ingredient(String name, int count) {
@@ -229,8 +225,6 @@ public final class Recipes {
             attachPanel(client, screen, container);
         });
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            // A scan that loses its screen - Escape, a teleport - is over, not waiting.
-            if (armed && mc.screen == null && System.currentTimeMillis() - busyUntil > 1_500) finish("stopped");
             // Icons need the level's registries to decode, so they wait for one.
             if (mc.level == null) return;
             if (!iconsLoaded) {
@@ -255,7 +249,6 @@ public final class Recipes {
             List<ItemStack> slots = containerSlots(screen);
             if (slots.size() < 54) return;
             for (ItemStack s : slots) remember(s);
-            if (armed) walkList(screen, slots, Integer.parseInt(list.group(1)), Integer.parseInt(list.group(2)));
             return;
         }
         // A recipe page is known by its layout, not its title. DragSim's 2026-10-08 rework
@@ -268,7 +261,6 @@ public final class Recipes {
             List<ItemStack> slots = page;
             if (slots.get(RESULT).isEmpty()) return;      // not arrived yet
             capture(slots);
-            if (armed) walkRecipe(screen);
             return;
         }
         if (CHEST.matcher(title).matches()) {
@@ -535,125 +527,6 @@ public final class Recipes {
             return List.of();
         }
         return out;
-    }
-
-    // ── the scan ──────────────────────────────────────────────────────────────
-
-    private static boolean armed;
-    private static long busyUntil;
-    private static String expecting;
-    private static final Set<String> skipped = new HashSet<>();
-    private static int scanned;
-    /** Which entry of CATEGORIES the scan is in, and that category's name. */
-    private static int categoryAt;
-    private static String category;
-
-    private static void arm() {
-        armed = true;
-        scanned = 0;
-        categoryAt = -1;
-        category = null;
-        CATEGORY.clear();
-        recipesChanged();
-        skipped.clear();
-        busyUntil = System.currentTimeMillis() + 60_000;     // a minute to open the menu
-        Toast.changed("Recipes", "Open the recipe menu");
-    }
-
-    private static void finish(String why) {
-        armed = false;
-        save();
-        Toast.changed("Recipes", why + " - " + RECIPES.size() + " known");
-    }
-
-    private static void click(AbstractContainerScreen<?> screen, int containerIndex, long wait) {
-        Minecraft mc = Minecraft.getInstance();
-        Container playerInv = mc.player.getInventory();
-        List<Slot> slots = screen.getMenu().slots;
-        for (int i = 0; i < slots.size(); i++) {
-            Slot s = slots.get(i);
-            if (s.container != playerInv && s.index == containerIndex) {
-                mc.gameMode.handleContainerInput(screen.getMenu().containerId, i, 0, ContainerInput.PICKUP, mc.player);
-                break;
-            }
-        }
-        busyUntil = System.currentTimeMillis() + wait;
-    }
-
-    private static void walkList(AbstractContainerScreen<?> screen, List<ItemStack> slots, int page, int pages) {
-        long now = System.currentTimeMillis();
-        if (now < busyUntil) {
-            // The list is still up after a click that should have opened a recipe: that
-            // item has none. Skipped, or the scan would click it forever.
-            if (expecting != null && now > busyUntil - 200) {
-                skipped.add(expecting);
-                expecting = null;
-            }
-            return;
-        }
-        expecting = null;
-
-        // Not in a category yet: open the first one. The catalogue view and a category's
-        // pages look alike, so the scan is always inside one it chose itself.
-        if (categoryAt < 0) {
-            nextCategory(screen, slots);
-            return;
-        }
-
-        // Everything on this page belongs to the category, known grid or not.
-        if (category != null) {
-            boolean changed = !CATEGORY.containsKey(category);
-            LinkedHashSet<String> in = CATEGORY.computeIfAbsent(category, k -> new LinkedHashSet<>());
-            for (int row = 1; row <= 4; row++) {
-                for (int col = 1; col <= 8; col++) {
-                    ItemStack s = slots.get(row * 9 + col);
-                    if (!s.isEmpty() && in.add(name(s))) changed = true;
-                }
-            }
-            if (changed) recipesChanged();
-        }
-        for (int row = 1; row <= 4; row++) {
-            for (int col = 1; col <= 8; col++) {
-                int i = row * 9 + col;
-                ItemStack s = slots.get(i);
-                if (s.isEmpty()) continue;
-                String n = name(s);
-                if (skipped.contains(n)) continue;
-                // Known, and every ingredient has a face: nothing to learn from it.
-                if (RECIPES.containsKey(n) && !missingIcons(RECIPES.get(n))) continue;
-                expecting = n;
-                click(screen, i, 1_500);
-                return;
-            }
-        }
-        if (page < pages) click(screen, NEXT, 800);
-        else nextCategory(screen, slots);
-    }
-
-    /** On to the next category in the left column; the star ("All") comes last, for strays. */
-    private static void nextCategory(AbstractContainerScreen<?> screen, List<ItemStack> slots) {
-        while (++categoryAt < CATEGORIES.length) {
-            ItemStack s = slots.get(CATEGORIES[categoryAt]);
-            if (s.isEmpty()) continue;
-            String n = name(s);
-            category = n.contains("All") ? null : n;
-            click(screen, CATEGORIES[categoryAt], 800);
-            return;
-        }
-        finish("Scanned " + scanned);
-    }
-
-    /** Whether any cell of the grid has no stack on record to draw it with. */
-    private static boolean missingIcons(Recipe r) {
-        for (Ingredient i : r.grid()) if (i != null && !ICONS.containsKey(i.name())) return true;
-        return false;
-    }
-
-    private static void walkRecipe(AbstractContainerScreen<?> screen) {
-        if (System.currentTimeMillis() < busyUntil) return;
-        scanned++;
-        expecting = null;
-        click(screen, BACK, 600);
     }
 
     // ── the file ──────────────────────────────────────────────────────────────
@@ -1464,6 +1337,9 @@ public final class Recipes {
         }
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
+        // This overlay is painted after the inventory. Starting its own stratum
+        // prevents every grid rim from searching the inventory's GUI layer tree.
+        g.nextStratum();
         String title = Zealots.strip(s.getTitle().getString()).trim();
         if (showMp && ACCESSORY_BAG.matcher(title).matches()
                 && CHESTS.keySet().stream().anyMatch(key -> key.startsWith("Accessory Bag #"))) {
@@ -1530,6 +1406,7 @@ public final class Recipes {
 
     private static void drawGrid(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, Font font, Map<String, Integer> have, int mx, int my) {
         Frame f = frame(s);
+        g.nextStratum();
         // Glass, and a pane round each thing rather than round the lot: one big pane
         // over the world is a dim window, three small ones are shelves you can see past.
         // There was a solid look once; nobody wanted it back once this existed.
@@ -1571,6 +1448,9 @@ public final class Recipes {
         for (int i = 0; i < perPage; i++) {
             int idx = page * perPage + i;
             if (idx >= list.size()) break;
+            // Rows are submitted in the same painter order. Bound overlap searches
+            // to one row rather than all earlier cells (the main live CPU hotspot).
+            if (i % f.cols == 0) g.nextStratum();
             int ix = gx + (i % f.cols) * CELL, iy = gy + (i / f.cols) * CELL;
             boolean hover = mx >= ix && mx < ix + CELL && my >= iy && my < iy + CELL;
             Recipe r = RECIPES.get(list.get(idx));
@@ -1588,6 +1468,7 @@ public final class Recipes {
 
         // The two keys, said once where the eye lands anyway; nobody reads a settings
         // description to learn a keybind.
+        g.nextStratum();
         Draw.textCentered(g, font, "R: recipe   U: uses  -  over any item", f.gridX() + f.gridW() / 2,
                 f.y + f.h - FOOT + 1, Theme.dim());
 
@@ -1659,10 +1540,7 @@ public final class Recipes {
      */
     private static void slab(GuiGraphicsExtractor g, int x, int y, int w, int h, int tint, float tintAlpha, boolean hover) {
         int rim = tint != 0 ? Draw.alpha(tint, hover ? 1f : 0.85f) : Draw.alpha(Theme.text(), hover ? 0.45f : 0.16f);
-        Draw.rect(g, x + 1, y, w - 2, 1, rim);
-        Draw.rect(g, x + 1, y + h - 1, w - 2, 1, rim);
-        Draw.rect(g, x, y + 1, 1, h - 2, rim);
-        Draw.rect(g, x + w - 1, y + 1, 1, h - 2, rim);
+        Draw.frame(g, x, y, w, h, rim);
         if (tint != 0 || hover) Draw.rect(g, x + 1, y + 1, w - 2, h - 2,
                 tint != 0 ? Draw.alpha(tint, hover ? 0.3f : 0.16f) : Draw.alpha(Theme.text(), 0.1f));
     }

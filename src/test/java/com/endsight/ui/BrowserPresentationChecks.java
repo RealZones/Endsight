@@ -13,7 +13,7 @@ public final class BrowserPresentationChecks {
         List<Module> originals = registry.all();
         FeatureCatalog.publicLayout(registry);
         yes(registry.all() == originals, "presentation replaced the backend snapshot");
-        yes(registry.count(null, "") == 31, "expected thirty-one complete browser entries");
+        yes(registry.count(null, "") == 32, "expected thirty-two complete browser entries");
         yes(registry.categories().equals(List.of("Slayers", "The End", "Dungeons", "Mining", "Inventory", "Chat", "General")), "activity order changed");
         yes(registry.favorites().values().stream().mapToInt(List::size).sum() == 4, "priority favorites missing");
         Module tracking = find(registry, "page.slayerTracking");
@@ -67,9 +67,9 @@ public final class BrowserPresentationChecks {
     }
 
     private static ModuleRegistry fixture() {
-        String ids = "slayer.timer slayer.profit slayer.boss slayer.spawnMarker slayer.revenantTiles zealot.tracker dragon.bossdrops dragon.timer qol.eyeguard dragon.protector visual.beacon visual.shinyNodes tracker.caches qol.math dungeon.map dungeon.keys dungeon.threeWeirdos dungeon.ticTacToe dungeon.quiz dungeon.higherOrLower dungeon.icePath dungeon.bloodRoom dungeon.terminals mining.session mining.powder storage.forge storage.preview hud.inventoryPreview storage.recipes visual.rarity visual.inventoryGlass qol.slotLock qol.armorguard qol.lootChat qol.abilityspam qol.globalchat qol.copychat hud.armor hud.activePet hud.stats visual.cooldowns visual.fullbright visual.explosionParticles qol.damage visual.etherwarp alerts dragon.loot qol.commands qol.hotdButton social.discord";
+        String ids = "slayer.timer slayer.profit slayer.boss slayer.spawnMarker slayer.revenantTiles zealot.tracker dragon.bossdrops dragon.timer qol.eyeguard dragon.protector goop.timer tracker.goop visual.beacon visual.shinyNodes tracker.caches qol.math dungeon.map dungeon.keys dungeon.threeWeirdos dungeon.ticTacToe dungeon.quiz dungeon.higherOrLower dungeon.icePath dungeon.bloodRoom dungeon.terminals mining.session mining.powder storage.forge storage.preview hud.inventoryPreview storage.recipes visual.rarity visual.inventoryGlass qol.slotLock qol.armorguard qol.lootChat qol.abilityspam qol.globalchat qol.copychat hud.armor hud.activePet hud.stats visual.cooldowns visual.fullbright visual.explosionParticles qol.damage visual.etherwarp alerts dragon.loot qol.commands qol.hotdButton social.discord";
         ModuleRegistry registry = new ModuleRegistry();
-        for (String id : ids.split(" ")) registry.add(stub(id));
+        for (String id : (ids + " dragon.hitboxes").split(" ")) registry.add(stub(id));
         return registry;
     }
 

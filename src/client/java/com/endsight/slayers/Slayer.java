@@ -97,9 +97,10 @@ public final class Slayer {
 
     /** A live Voidgloom quest, including one already underway when the client joined. */
     public static boolean voidgloomQuestActive() {
-        Minecraft mc = Minecraft.getInstance();
-        return voidgloomQuest(Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
-                questActive(), slayer);
+        // Asked every frame by the Zealot Tracker. Chat settles it without the sidebar.
+        if (questActive() && VOIDGLOOM.equals(slayer)) return true;
+        Area.Sidebar sidebar = Area.recentSidebar(Minecraft.getInstance());
+        return voidgloomQuest(sidebar.line("Slayer:"), sidebar.line("XP:"), false, slayer);
     }
 
     static boolean voidgloomQuest(String slayerLine, String xpLine,
@@ -165,7 +166,7 @@ public final class Slayer {
                                 () -> killTimeInChat, v -> killTimeInChat = v),
                         new Setting.Section("Alerts"),
                         new Setting.Toggle("Quest reminder",
-                                "When you enter a slayer area without a quest, print a clickable /slayer reminder.",
+                                "A /slayer link when you arrive without a quest.",
                                 () -> questReminder, v -> questReminder = v),
                         new Setting.Section("Session"),
                         new Setting.Action("Reset session",
@@ -418,10 +419,18 @@ public final class Slayer {
         // Slayer panel on screen while the player is doing something else. The sidebar
         // also covers a quest already active when the client joins mid-run.
         String area = reminderSlayer();
-        boolean sidebarQuest = questStatus(
-                Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
-                Area.sidebarShows(mc, REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE))
-                == QuestStatus.ACTIVE;
+        // Nothing below can show the panel outside a slayer area or the End, and a quest
+        // chat has confirmed needs no sidebar. Otherwise this read the whole scoreboard
+        // every frame, wherever you were; now it is at most a tick old.
+        if (area.isEmpty() && !Area.end()) return;
+        boolean sidebarQuest = false;
+        if (!questActive()) {
+            Area.Sidebar sidebar = Area.recentSidebar(mc);
+            sidebarQuest = questStatus(
+                    sidebar.line("Slayer:"), sidebar.line("XP:"),
+                    sidebar.shows(REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE))
+                    == QuestStatus.ACTIVE;
+        }
         // Voidgloom quests also run in Dragon's Den. Location alone must not hide
         // a quest confirmed by chat, but an old session must stay hidden in the hub.
         if (!trackerVisible(!area.isEmpty(), Area.end(), questActive(), sidebarQuest)) return;
@@ -570,10 +579,11 @@ public final class Slayer {
 
     private static void watchQuestTier(Minecraft mc) {
         if (mc.player == null || mc.level == null || ++tierTick % 20 != 0) return;
-        boolean changed = TIERS.observeSidebar(Area.sidebarLine(mc, "Slayer:"));
-        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Atoned Horror"));
-        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Revenant Horror"));
-        changed |= TIERS.observeSidebar(Area.sidebarLine(mc, "Voidgloom Seraph"));
+        Area.Sidebar sidebar = Area.readSidebar(mc);
+        boolean changed = TIERS.observeSidebar(sidebar.line("Slayer:"));
+        changed |= TIERS.observeSidebar(sidebar.line("Atoned Horror"));
+        changed |= TIERS.observeSidebar(sidebar.line("Revenant Horror"));
+        changed |= TIERS.observeSidebar(sidebar.line("Voidgloom Seraph"));
         if (changed) TIERS.save(tierFile());
     }
 
@@ -593,8 +603,8 @@ public final class Slayer {
         if (area.isEmpty() || !questReminder || mc.player == null) return;
         if (!reminderQueued || now - reminderEnteredAt < REMINDER_DELAY_MS) return;
         Area.Where place = REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE;
-        QuestStatus status = questStatus(Area.sidebarLine(mc, "Slayer:"), Area.sidebarLine(mc, "XP:"),
-                Area.sidebarShows(mc, place));
+        Area.Sidebar sidebar = Area.readSidebar(mc);
+        QuestStatus status = questStatus(sidebar.line("Slayer:"), sidebar.line("XP:"), sidebar.shows(place));
         if (status == QuestStatus.UNKNOWN) return; // The new sidebar has not arrived yet.
         reminderQueued = false;
         if (status != QuestStatus.NOT_STARTED) return;
@@ -610,7 +620,7 @@ public final class Slayer {
     static QuestStatus questStatus(String slayerLine, String xpLine, boolean areaConfirmed) {
         if (xpLine != null) return QuestStatus.ACTIVE;
         if (slayerLine != null) {
-            String status = slayerLine.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "")
+            String status = com.endsight.zealots.Zealots.strip(slayerLine)
                     .trim().toLowerCase(Locale.ROOT);
             return status.contains("not started")
                     ? areaConfirmed ? QuestStatus.NOT_STARTED : QuestStatus.UNKNOWN
@@ -664,6 +674,6 @@ public final class Slayer {
     }
 
     private static String plain(Component c) {
-        return c == null ? "" : c.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim();
+        return c == null ? "" : com.endsight.zealots.Zealots.strip(c.getString()).trim();
     }
 }

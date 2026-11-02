@@ -11,6 +11,17 @@ import java.util.function.Supplier;
 public final class FeatureCatalog {
     private FeatureCatalog() { }
 
+    /**
+     * The switches that head each feature on a grouped page. Drawn alike, "Slayer Profit"
+     * read as one more setting of the Slayer Tracker above it, so the page sets these apart.
+     * Weak, because a page rebuilds its rows whenever a feature's settings change.
+     */
+    private static final java.util.Set<Setting> HEADS = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    static boolean head(Setting setting) {
+        return HEADS.contains(setting);
+    }
+
     public static void publicLayout(ModuleRegistry registry) {
         Catalog c = new Catalog(registry);
         c.group("page.slayerTracking", "Slayer tracking", "Kills, session pace, drops and profit.", "Slayers", "slayer.timer", "slayer.profit");
@@ -18,10 +29,11 @@ public final class FeatureCatalog {
         c.group("page.spawnMarkers", "Spawn markers", "Slayer spawn marker and Revenant tiles.", "Slayers", "slayer.spawnMarker", "slayer.revenantTiles");
         c.single("zealot.tracker", "The End");
         c.single("dragon.bossdrops", "The End");
-        c.group("page.dragonTools", "Dragon tools", "Dragon timer and placed-eye protection.", "The End", "dragon.timer", "qol.eyeguard");
+        c.group("page.dragonTools", "Dragon tools", "Dragon timer, dragon-only hitboxes and placed-eye protection.", "The End", "dragon.timer", "dragon.hitboxes", "qol.eyeguard");
         c.group("page.bossIndicators", "Boss indicators", "Golem stage and Protector/Warden beacons.", "The End", "dragon.protector", "visual.beacon");
         c.single("visual.shinyNodes", "The End", "End nodes", "Highlights confirmed shiny End nodes.");
         c.single("tracker.caches", "The End");
+        c.group("page.goop", "Goop boss", "Countdowns to the Goop's next form, and your fights and loot.", "The End", "goop.timer", "tracker.goop");
         c.single("qol.math", "The End", "Golden Dragon math", "Answers the Golden Dragon's sum.");
         c.single("dungeon.map", "Dungeons");
         c.single("dungeon.keys", "Dungeons");
@@ -108,22 +120,19 @@ public final class FeatureCatalog {
 
         private void group(String id, String title, String description, String category, String... ids) {
             List<Module> children = java.util.Arrays.stream(ids).map(this::require).toList();
+            // Each feature's switch heads its own settings, open, with no sections of its own.
+            // The page used to be a Controls list of switches and then a collapsed
+            // "Slayer Tracker / Readout" section per heading, most holding one setting -
+            // three clicks to see three toggles, and a switch far from what it switches.
             List<Setting> settings = live(children, () -> {
                 List<Setting> result = new ArrayList<>();
-                result.add(new Setting.Section("Controls"));
-                for (Module child : children) if (child.togglable())
-                    result.add(new Setting.Toggle(child.title(), child.description(), child.enabled(), child.setEnabled()));
                 for (Module child : children) {
-                    boolean heading = false;
-                    for (Setting setting : child.settings()) {
-                        if (setting instanceof Setting.Section section) {
-                            result.add(new Setting.Section(child.title() + " / " + section.label()));
-                            heading = true;
-                        } else {
-                            if (!heading) { result.add(new Setting.Section(child.title())); heading = true; }
-                            result.add(setting);
-                        }
+                    if (child.togglable()) {
+                        Setting.Toggle head = new Setting.Toggle(child.title(), child.description(), child.enabled(), child.setEnabled());
+                        HEADS.add(head);
+                        result.add(head);
                     }
+                    for (Setting setting : child.settings()) if (!(setting instanceof Setting.Section)) result.add(setting);
                 }
                 result.add(new Setting.Section("Keybinds"));
                 for (Module child : children) key(result, child);

@@ -54,6 +54,8 @@ public final class ProfileViewChecks {
         return format.format(value/divisor)+suffix;
     }
     public static void main(String[] args) throws Exception {
+        bestiaryCompletion();
+        petSuggestions();
         ProfileData data=data();var prepared=new ProfileViewData(data,new JsonObject());
         yes(prepared.pages("storage").size()==2,"All storage pages remain available");
         yes(prepared.pages("storage")==prepared.pages("storage"),"Unchanged pages reuse their plan");
@@ -115,5 +117,35 @@ public final class ProfileViewChecks {
             System.out.println("PROFILE_PREPARATION_BENCHMARK old_ns="+oldNanos+" new_ns="+newNanos+" old_bytes="+oldBytes+" new_bytes="+newBytes+" iterations=200 rows=240");
         }
         System.out.println(checks+" profile presentation, search, ordering and formatting checks passed");
+    }
+
+    private static void bestiaryCompletion() {
+        for(String dragon:List.of("PROTECTOR_DRAGON","GOLDEN_DRAGON","ARCANE_DRAGON","CHAOTIC_DRAGON","BERSERK_DRAGON")) {
+            yes(!BestiaryProgress.maxed(dragon,199),"A dragon below 200 is incomplete: "+dragon);
+            yes(BestiaryProgress.maxed(dragon,200) && BestiaryProgress.maxed(dragon,1000),"A dragon at or above 200 is maxed: "+dragon);
+        }
+        yes(!BestiaryProgress.maxed("ENDSTONE_PROTECTOR",500) && !BestiaryProgress.maxed("ENDSTONE_PROTECTOR",2499)
+                && BestiaryProgress.maxed("ENDSTONE_PROTECTOR",2500),"Earlier Protector tiers do not imply its final tier is complete");
+        yes(!BestiaryProgress.maxed("VOIDLING_FANATIC",200) && BestiaryProgress.maxed("VOIDLING_FANATIC",250),"Fanatic and dragon caps remain distinct");
+        yes(BestiaryProgress.maxed("revenant_horror_mob",50),"API mob suffix and case normalize to the confirmed requirement");
+        yes(!BestiaryProgress.maxed("UNCONFIRMED_MOB",1_000_000) && BestiaryProgress.cap(null)==0,"Unknown mobs never acquire a guessed cap");
+        yes(!BestiaryProgress.maxed("GOLDEN_DRAGON",Double.NaN) && !BestiaryProgress.maxed("GOLDEN_DRAGON",Double.POSITIVE_INFINITY)
+                && !BestiaryProgress.maxed("GOLDEN_DRAGON",-1),"Malformed kill counts cannot become completed bestiary entries");
+        yes(BestiaryProgress.collectionCap("ender_stone")==50_000 && BestiaryProgress.collectionCap("rough_amethyst")==50_000
+                && BestiaryProgress.collectionCap("crying_obsidian")==5_000,"Collection keys map to their final tiers");
+        yes(BestiaryProgress.collectionCap("summoning_eye")==0 && BestiaryProgress.collectionCap(null)==0,"Unseen collection tiers stay unconfirmed");
+        yes(!BestiaryProgress.reached(50_000,49_999) && BestiaryProgress.reached(5_000,733_677),"A collection is maxed at its final tier");
+        JsonObject root=JsonParser.parseString("{\"player\":{\"player\":\"Tester\"},\"profile\":{\"collections\":"
+                +"{\"obsidian\":2747774,\"summoning_eye\":7698,\"null_ovoid\":583}}}").getAsJsonObject();
+        JsonObject shown=new ProfileViewData(new ProfileData(root),new JsonObject()).collections;
+        yes(shown.has("obsidian") && !shown.has("summoning_eye") && !shown.has("null_ovoid"),"Only real collections are shown: "+shown);
+    }
+
+    private static void petSuggestions() {
+        JsonObject catalog=JsonParser.parseString("{\"items\":{},\"pets\":{\"blaze\":{\"display\":\"Blaze\"},"
+                +"\"blue_whale\":{\"display\":\"Blue Whale\",\"rarities\":[\"LEGENDARY\"]},\"wolf\":{\"display\":\"Wolf\",\"rarities\":[\"LEGENDARY\"]}}}").getAsJsonObject();
+        List<String> missing=new ProfileCollection(data(),catalog).missingPets.stream().map(ProfileData.Item::name).toList();
+        yes(missing.contains("Phoenix") && missing.contains("Wolf"),"Phoenix is suggested beside catalog pets: "+missing);
+        yes(!missing.contains("Blue Whale") && !missing.contains("Blaze"),"Unreleased pets are never suggested: "+missing);
     }
 }

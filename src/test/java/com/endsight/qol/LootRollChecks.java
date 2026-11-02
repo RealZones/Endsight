@@ -1,5 +1,6 @@
 package com.endsight.qol;
 
+import com.endsight.ui.Setting;
 import com.endsight.zealots.Zealots;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
@@ -174,6 +175,7 @@ public final class LootRollChecks {
         streakBonusAndBoundaries();
         modernServerFormat();
         october18HoverFormat();
+        november1DefaultFormat();
         if (args.length > 0) replay(java.nio.file.Path.of(args[0]));
 
         // Decimals follow how close the roll is to an end.
@@ -205,7 +207,7 @@ public final class LootRollChecks {
 
         LootRoll.Block miss = block(mob, "Roll 89.63299499/100 → nothing",
                 "[Roll] Special Zealot 1.04826866 < 0.22093921% (1 in 453) miss");
-        boolean previousFilter = LootFilter.on();
+        boolean previousFilter = LootFilter.module().isEnabled();
         try {
             LootFilter.module().setEnabled().accept(true);
             equal(miss.dropped(), false);
@@ -272,7 +274,7 @@ public final class LootRollChecks {
         equal(Zealots.strip(LootRoll.kill(b)), "▍ Enderman 72.57");
         equal(b.startsNext(lines[0]), true);
         equal(LootRoll.rollAnchor("[DRAGON] Someone: " + lines[0]), false);
-        boolean filter = LootFilter.on();
+        boolean filter = LootFilter.module().isEnabled();
         try {
             LootFilter.module().setEnabled().accept(true);
             equal(b.worthShowing(), false);
@@ -328,6 +330,81 @@ public final class LootRollChecks {
         equal(Zealots.strip(LootRoll.kill(dragonTable)), "▍ Strong Dragon 24.71 → Dragon Scale");
         equal(dragonTable.startsNext("[Debug] Strong Dragon · Table 5/100 · Dragon Claw"), true);
         equal(custom.startsNext("[Debug] Zealot · Roll 5/100 · Luck 1x · miss"), true);
+    }
+
+    private static void november1DefaultFormat() {
+        // Exact lines from Fear's log, November 1 16:25:14, custom message off: no mob in
+        // front, five rolls a zealot, each wrapped onto a second [Debug] line. None of
+        // them were read, so the filter let every one through.
+        String[] kill = {
+                "[Debug] Roll 28.43676/100 · MF 317.93152 · PL 71.3 · miss · Miss Chance 99.67524% · Odds 1/1",
+                "[Debug] 5 item odds (hover)",
+                "[Debug] Roll 47.55797/100 · MF 315.43152 · PL 71.3 · Summoning Eye; MF not applied miss · Chance 17% · Odds 1/6",
+                "[Debug] 1 item odds (hover)",
+                "[Debug] Roll 96.24869/100 · MF 315.43152 · PL 71.3 · Special Zealot miss · Chance 0.2371% · Odds 1/422",
+                "[Debug] 1 item odds (hover)",
+                "[Debug] Roll 25.19307/100 · MF 315.43152 · PL 71.3 · Haunted Candy; MF not applied miss · Chance 0.3003%",
+                "[Debug] Odds 1/333 · 1 item odds (hover)",
+                "[Debug] Roll 59.7789/100 · MF 315.43152 · PL 71.3 · Trick-or-Treat Chest; MF not applied miss · Chance 0.02667%",
+                "[Debug] Odds 1/3,750 · 1 item odds (hover)"
+        };
+        LootDebug.Modern table = LootDebug.modern(kill[0]);
+        equal(table.mob(), null);
+        equal(table.roll(), 28.43676);
+        equal(table.main(), true);
+        equal(table.outcome(), "miss");
+        // The odds closing the line used to make this read as the table's roll.
+        LootDebug.Modern eye = LootDebug.modern(kill[2]);
+        equal(eye.main(), false);
+        equal(eye.outcome(), "Summoning Eye; MF not applied miss");
+        equal(LootDebug.tail(kill[1]), "");
+        equal(LootDebug.tail(kill[7]), "");
+        equal(LootDebug.tail(kill[0]), null);
+        equal(LootDebug.modern("[VIP+] Someone: " + kill[0]), null);
+
+        Setting.Slider under = (Setting.Slider) LootFilter.module().settings().get(0);
+        Setting.Toggle ends = (Setting.Toggle) LootFilter.module().settings().get(1);
+        double cutoff = under.get().getAsDouble();
+        boolean both = ends.get().getAsBoolean(), filter = LootFilter.module().isEnabled(), compact = LootRoll.on();
+        try {
+            LootFilter.module().setEnabled().accept(true);
+            under.set().accept(5);
+            ends.set().accept(true);
+            // Compact folds the kill; a far seasonal miss stays in the hover.
+            LootRoll.Block b = block(kill);
+            equal(b.rares.size(), 4);
+            equal(b.rares.get(1).needs(), 0.2371);
+            equal(Zealots.strip(LootRoll.kill(b)), "▍ Loot roll 28.44 · Special Zealot 96.25");
+            equal(b.startsNext(kill[0]), true);
+
+            // Without it each roll is judged alone and its wrapped line goes with it.
+            // Under 5 with both ends: only the 96.25 shows.
+            LootRoll.module().setEnabled().accept(false);
+            boolean[] shown = {false, false, false, false, true, true, false, false, false, false};
+            for (int i = 0; i < kill.length; i++) equal(LootFilter.judge(kill[i]), shown[i]);
+            equal(LootFilter.judge("[DRAGON] Someone: [Debug] 1 item odds (hover)"), true);
+            // A drop or a hit shows at any roll. Lines players pasted in chat, October 26 and 28.
+            equal(LootFilter.judge("[Debug] Young Dragon · Table 52.03238/100 · MF 331.585 · PL 76.7 · Aspect of the Dragons · 10 item odds (hover)"), true);
+            equal(LootFilter.judge("[Debug] Roll 0.011218/100 · Necron's Handle HIT · Chance 0.026242% · Odds 1/3,811 · 1 item odds (hover)"), true);
+
+            // Compact is close calls, folded: picking it keeps the filter on, and a config
+            // saved with either old Compact view reads as the new one.
+            LootChat.view("Compact");
+            equal(LootFilter.module().isEnabled(), false);
+            equal(LootFilter.on(), true);
+            LootFilter.module().setEnabled().accept(true);
+            equal(LootChat.view(), "Compact");
+            LootChat.view("Close calls");
+            equal(LootRoll.on(), false);
+            equal(LootChat.view(), "Close calls");
+            LootChat.view("Original");
+            equal(LootFilter.on(), false);
+        } finally {
+            LootFilter.module().setEnabled().accept(filter);
+            LootRoll.module().setEnabled().accept(compact);
+            under.set().accept(cutoff);
+            ends.set().accept(both);
+        }
     }
 
     /** Optional replay of a real Minecraft log; unrelated chat remains untouched. */
@@ -392,7 +469,7 @@ public final class LootRollChecks {
         equal(bonusBeforeMain.rares.size(), 1);
         equal(Zealots.strip(LootRoll.kill(bonusBeforeMain)), "▍ Loot roll → Transmission Tuner · ✔ bonus Null Atom");
         LootRoll.Block emptyMain = block("mob: ? magic find: 354.59", "loot number: 50", "result: nothing");
-        boolean previousFilter = LootFilter.on();
+        boolean previousFilter = LootFilter.module().isEnabled();
         try {
             LootFilter.module().setEnabled().accept(true);
             equal(emptyMain.worthShowing(), false);

@@ -25,6 +25,8 @@ public final class TooltipPrices {
     private record Cached(ProfileClient.Prices prices, JsonObject value) { }
     private record Seen(CustomData component, Object profile, String name, JsonObject item) { }
     private static final Map<ItemStack,Seen> seen=new WeakHashMap<>();
+    private static JsonObject keyedItem;
+    private static String keyedText="";
     private static final Map<String,Cached> cache=new LinkedHashMap<>(128,.75f,true) {
         @Override protected boolean removeEldestEntry(Map.Entry<String,Cached> entry) { return size()>512; }
     };
@@ -48,7 +50,10 @@ public final class TooltipPrices {
             if(!enabled || mc.level==null || stack.isEmpty() || mc.screen==null) return;
             JsonObject raw=read(stack);
             if(raw==null) { pending=null; hovered=""; return; }
-            String key=raw.toString();
+            // read() hands back the same object while the item is unchanged. This used to
+            // serialise the whole item to text every frame it was hovered, to look it up.
+            if(raw!=keyedItem) { keyedItem=raw; keyedText=raw.toString(); }
+            String key=keyedText;
             if(!hovered.equals(key)) { hovered=key; changedAt=System.currentTimeMillis(); pending=null; }
             Cached found=cache.get(key);
             if(found!=null && found.prices().fresh()) {
@@ -92,7 +97,7 @@ public final class TooltipPrices {
                 JsonObject a=applied.getAsJsonObject(); double v=number(a,"value",Double.NaN);
                 out.add(Component.literal("Includes "+text(a,"name","applied skin")+(Double.isFinite(v) ? " · "+ProfileFormat.compact(v) : " · no price")).withColor(0x9699A7));
             }
-            if(bool(value,"cosmetic")) out.add(Component.literal("Skin or dye · not in networth").withColor(0x9699A7));
+            if(bool(value,"cosmetic")) out.add(Component.literal("Skin or dye · cosmetic value").withColor(0x9699A7));
             if(count>1) out.add(Component.literal("Stack: "+ProfileFormat.compact(unit*count)+" coins").withColor(0x9699A7));
             return out;
         }

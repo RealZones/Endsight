@@ -567,20 +567,7 @@ public final class EquipmentHud {
     }
 
     private static String legacy(Component component) {
-        StringBuilder out = new StringBuilder();
-        component.visit((style, text) -> {
-            if (style.getColor() != null && !text.contains("§")) {
-                for (ChatFormatting format : ChatFormatting.values())
-                    if (format.isColor() && format.getColor() != null
-                            && format.getColor() == style.getColor().getValue()) {
-                        out.append('§').append(format.getChar());
-                        break;
-                    }
-            }
-            out.append(text);
-            return Optional.empty();
-        }, Style.EMPTY);
-        return out.toString();
+        return Area.legacy(component);
     }
 
     private static ItemStack armorStack(Minecraft mc, int index, boolean sample) {

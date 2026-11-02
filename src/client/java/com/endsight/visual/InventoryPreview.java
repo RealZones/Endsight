@@ -87,8 +87,10 @@ public final class InventoryPreview {
         int h = height(hotbar);
         if (g == null) return new int[]{WIDTH, h};
         Minecraft mc = Minecraft.getInstance();
+        g.nextStratum();
         frame(g, x, y, WIDTH, h);
         for (int row = 0; row < (hotbar ? 4 : 3); row++) {
+            g.nextStratum();
             int sy = y + PAD + row * CELL + (row == 3 ? GAP : 0);
             for (int column = 0; column < 9; column++) {
                 int sx = x + PAD + column * CELL;

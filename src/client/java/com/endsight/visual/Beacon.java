@@ -197,8 +197,9 @@ public final class Beacon {
         double bestTyped = range * range;
         for (Entity e : mc.level.entitiesForRendering()) {
             if (e == player || e instanceof net.minecraft.world.entity.player.Player) continue;
-            String name = plainName(e);
             double d = e.position().distanceToSqr(player.position());
+            if (d >= bestDist && d >= bestTyped) continue;
+            String name = plainName(e);
             // The name wins wherever there is one to read, so nothing changes in the End.
             if (name != null && name.contains(match) && !petName(name)) {
                 if (d < bestDist) {

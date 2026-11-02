@@ -84,7 +84,8 @@ public final class LootRoll {
     private static final Pattern COMPACT_CHANCE = Pattern.compile("^Chance\\s+[\\d.]+%\\s+\\[([\\d.]+),\\s*([\\d.]+)\\)\\s+Base\\s+[\\d.]+%$");
     private static final Pattern COMPACT_ARMOR = Pattern.compile("^Armor\\s+([\\d.]+)/100\\s+<\\s+([\\d.]+)\\s+and\\s+(?:≤|<=)\\s+([\\d.]+)$");
     private static final Pattern FRAGMENTS = Pattern.compile("^(.+?)\\s+\\+\\s+([\\d,]+) frags$");
-    private static final Pattern MODERN_DETAIL = Pattern.compile("^\\[Debug\\] (?:Chance|Base|Range)\\b.*");
+    // The default line wraps between fields, so its second line can open on the odds.
+    private static final Pattern MODERN_DETAIL = Pattern.compile("^\\[Debug\\] (?:Chance|Base|Range|Odds|[\\d,]+ items? odds)\\b.*");
     private static final Pattern MODERN_CHANCE = Pattern.compile("\\bChance\\s+([\\d.]+)%");
     private static final Pattern MODERN_RANGE = Pattern.compile("\\bRange\\s+\\[([\\d.]+),\\s*([\\d.]+)\\)");
     private static final Pattern MODERN_RARE_END = Pattern.compile("(?i)\\s+(?:hit|miss)$");
@@ -110,12 +111,18 @@ public final class LootRoll {
         return open != null || sending;
     }
 
+    static boolean on() {
+        return enabled;
+    }
+
     public static void init() {
         LootRollDetails.init();
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
             if (overlay || sending || !(enabled || LootFilter.on())) return true;
             String line = Zealots.strip(message.getString()).trim();
             long now = System.currentTimeMillis();
+            // With nothing to fold, a [Debug] roll is the filter's, judged by itself.
+            if (!enabled && open == null && LootDebug.modern(line) != null) return true;
 
             if (debugHeader(line)) {
                 flush();
@@ -190,9 +197,11 @@ public final class LootRoll {
      */
     static String kill(Block b) {
         List<String> parts = new ArrayList<>();
-        if (b.mob != null) parts.add("§f" + (b.mob.equals("?")
+        // A [Debug] roll with the server's source field off names no mob at all.
+        String mob = b.mob == null && b.modernFormat ? "?" : b.mob;
+        if (mob != null) parts.add("§f" + (mob.equals("?")
                 ? b.slayerLoot ? "Slayer loot" : "Loot roll"
-                : name(b.mob)));
+                : name(mob)));
         if (b.loot >= 0) parts.add(lootColour(b) + fmt(b.loot));
         if (b.dropped()) parts.add("§8→ §a" + b.result);
         for (Rare r : b.rares) {

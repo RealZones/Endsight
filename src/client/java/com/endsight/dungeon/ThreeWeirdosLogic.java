@@ -130,5 +130,5 @@ final class ThreeWeirdosLogic {
                 .replaceAll("[.!]+$", "").toLowerCase(Locale.ROOT);
     }
 
-    static String plain(String raw) { return raw == null ? "" : raw.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").trim(); }
+    static String plain(String raw) { return raw == null ? "" : com.endsight.zealots.Zealots.strip(raw).trim(); }
 }

@@ -212,6 +212,12 @@ tasks.register('lootRollChecks', JavaExec) {
 	mainClass = 'com.endsight.qol.LootRollChecks'
 }
 
+tasks.register('debugMessageChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.DebugMessageChecks'
+}
+
 tasks.register('zealotTrackerChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -224,8 +230,14 @@ tasks.register('storageOverviewChecks', JavaExec) {
 	mainClass = 'com.endsight.storage.StorageOverviewChecks'
 }
 
+tasks.register('goopFightChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.goop.GoopFightChecks'
+}
+
 tasks.named('check') {
-	dependsOn 'storageOverviewChecks', 'lootRollChecks', 'zealotTrackerChecks'
+	dependsOn 'storageOverviewChecks', 'lootRollChecks', 'zealotTrackerChecks', 'debugMessageChecks', 'goopFightChecks'
 }
 
 tasks.register('protectorChecks', JavaExec) {
@@ -463,9 +475,26 @@ tasks.register('cacheTrackerChecks', JavaExec) {
     mainClass = 'com.endsight.storage.CacheTrackerChecks'
 }
 tasks.named('check') { dependsOn 'cacheTrackerChecks' }
+
+tasks.register('performanceChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.ui.PerformanceChecks'
+    systemProperty 'endsight.performanceBenchmark', providers.gradleProperty('performanceBenchmark').isPresent()
+}
+tasks.named('check') { dependsOn 'performanceChecks' }
+tasks.register('goopBaitReminderChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.qol.GoopBaitReminderChecks'
+}
+tasks.named('check') { dependsOn 'goopBaitReminderChecks' }
 // Native screenshots and interaction checks live in a separate test mod.
 if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradleProperty('cacheVisualTest').isPresent()
-        || providers.gradleProperty('mapVisualTest').isPresent() || providers.gradleProperty('keyVisualTest').isPresent()) {
+        || providers.gradleProperty('mapVisualTest').isPresent() || providers.gradleProperty('keyVisualTest').isPresent()
+        || providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
+        || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
+        || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()) {
     fabricApi.configureTests {
         createSourceSet = true
         modId = 'endsight-profile-tests'
@@ -476,14 +505,41 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     sourceSets.gametest.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
     sourceSets.gametest.runtimeClasspath += sourceSets.client.runtimeClasspath
     // One suite per run: each opens its own world and screenshots, and the others are slow.
-    def only = providers.gradleProperty('cacheVisualTest').isPresent() ? '"com.endsight.storage.CacheVisualTest"'
+    def only = providers.gradleProperty('goopVisualTest').isPresent() ? '"com.endsight.goop.GoopVisualTest"'
+            : providers.gradleProperty('menuVisualTest').isPresent() ? '"com.endsight.ui.MenuVisualTest"'
+            : providers.gradleProperty('rarityVisualTest').isPresent() ? '"com.endsight.visual.RarityOutlineVisualTest"'
+            : providers.gradleProperty('dragonHitboxesVisualTest').isPresent() ? '"com.endsight.dragons.DragonHitboxesVisualTest"'
+            : providers.gradleProperty('performanceVisualTest').isPresent() ? '"com.endsight.ui.PerformanceVisualTest"'
+            : providers.gradleProperty('commandVisualTest').isPresent() ? '"com.endsight.ui.CommandBindsVisualTest"'
+            : providers.gradleProperty('cacheVisualTest').isPresent() ? '"com.endsight.storage.CacheVisualTest"'
             : providers.gradleProperty('mapVisualTest').isPresent() ? '"com.endsight.dungeon.DungeonMapVisualTest"'
             : providers.gradleProperty('keyVisualTest').isPresent() ? '"com.endsight.dungeon.KeyAlertVisualTest"'
             : '"com.endsight.profile.ProfileVisualTest"'
     tasks.named('processGametestResources') {
         inputs.property('only', only)
         filesMatching('fabric.mod.json') {
-            filter { line -> line.replace('"com.endsight.profile.ProfileVisualTest", "com.endsight.storage.CacheVisualTest", "com.endsight.dungeon.DungeonMapVisualTest", "com.endsight.dungeon.KeyAlertVisualTest"', only) }
+            filter { line -> line.replace('"com.endsight.profile.ProfileVisualTest", "com.endsight.storage.CacheVisualTest", "com.endsight.dungeon.DungeonMapVisualTest", "com.endsight.dungeon.KeyAlertVisualTest", "com.endsight.ui.CommandBindsVisualTest"', only) }
+        }
+    }
+    if (providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
+            || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
+            || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()) {
+        def testDirectory = providers.gradleProperty('goopVisualTest').isPresent() ? 'run/goop-test'
+                : providers.gradleProperty('menuVisualTest').isPresent() ? 'run/menu-test'
+                : providers.gradleProperty('rarityVisualTest').isPresent() ? 'run/rarity-outline-test'
+                : providers.gradleProperty('dragonHitboxesVisualTest').isPresent() ? 'run/dragon-hitboxes-test'
+                : providers.gradleProperty('performanceVisualTest').isPresent() ? 'run/performance-audit' : 'run/command-bind-test'
+        loom.runs.named('clientGameTest') { runDir testDirectory }
+        tasks.named('runClientGameTest') {
+            maxHeapSize = '1G'
+            jvmArgs '-XX:ActiveProcessorCount=2'
+            doFirst {
+                def directory = project.file(testDirectory).canonicalFile
+                workingDir directory
+                directory.mkdirs()
+                def options = new File(directory, 'options.txt')
+                if (!options.exists()) options.text = 'maxFps:30\nrenderDistance:2\nsimulationDistance:5\nfullscreen:false\n'
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.endsight;
 
 import com.endsight.dragons.BossDrops;
+import com.endsight.dragons.DragonHitboxes;
 import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.dungeon.DungeonContext;
@@ -23,6 +24,7 @@ import com.endsight.hud.ServerStats;
 import com.endsight.qol.AbilitySpam;
 import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
+import com.endsight.qol.DebugMessage;
 import com.endsight.qol.Drops;
 import com.endsight.qol.GlobalChat;
 import com.endsight.qol.CopyChat;
@@ -49,6 +51,7 @@ import com.endsight.storage.SnapshotStore;
 import com.endsight.storage.ForgeRecipes;
 import com.endsight.storage.MiningSession;
 import com.endsight.storage.CacheTracker;
+import com.endsight.goop.GoopTracker;
 import com.endsight.storage.VoidFragments;
 import com.endsight.storage.Pets;
 import com.endsight.storage.PowderTracker;
@@ -121,6 +124,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(StoragePreview.module());
             registry.replace(VoidgloomHelper.module());
             registry.replace(DragonTimer.module());
+            registry.replace(DragonHitboxes.module());
             registry.replace(Protector.module());
             registry.replace(BossDrops.module());
             registry.replace(BossDrops.slayerProfitModule());
@@ -130,6 +134,8 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(RevenantSpawnTiles.module());
             registry.replace(ZealotTracker.module());
             registry.insertBefore("dragon.timer", CacheTracker.module());
+            registry.insertBefore("dragon.timer", GoopTracker.timerModule());
+            registry.insertBefore("dragon.timer", GoopTracker.module());
             registry.replace(DungeonMap.module());
             registry.replace(ThreeWeirdos.module());
             registry.replace(TicTacToe.module());
@@ -196,6 +202,7 @@ public class EndsightClient implements ClientModInitializer {
         StorageSearch.init();
         VoidgloomHelper.init();
         DragonTimer.init();
+        DragonHitboxes.init();
         MenuButton.init();
         Protector.init();
         BossDrops.init();
@@ -204,12 +211,14 @@ public class EndsightClient implements ClientModInitializer {
         ArmorGuard.init();
         DamageNumbers.init();
         GlobalChat.init();
+        DebugMessage.init();
         LootFilter.init();
         LootRoll.init();
         AbilitySpam.init();
         CopyChat.init();
         MiningSession.init();
         CacheTracker.init();
+        GoopTracker.init();
         PowderTracker.init();
         VoidFragments.init();
         Pets.init();

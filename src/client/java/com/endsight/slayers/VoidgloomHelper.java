@@ -330,9 +330,8 @@ public final class VoidgloomHelper {
         Entity best = null;
         double bestD = range * range;
         for (Entity e : mc.level.entitiesForRendering()) {
-            if (tag(e) == null) continue;
             double d = e.position().distanceToSqr(near);
-            if (d < bestD) {
+            if (d < bestD && tag(e) != null) {
                 bestD = d;
                 best = e;
             }
@@ -365,7 +364,7 @@ public final class VoidgloomHelper {
     }
 
     private static String stripName(Component name) {
-        return name == null ? null : name.getString().replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        return name == null ? null : com.endsight.zealots.Zealots.strip(name.getString());
     }
 
     // ── in the world ──────────────────────────────────────────────────────────
@@ -405,7 +404,7 @@ public final class VoidgloomHelper {
     }
 
     private static String Zealots_strip(String s) {
-        return s.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "");
+        return com.endsight.zealots.Zealots.strip(s);
     }
 
     private static void gizmos() {
@@ -427,8 +426,9 @@ public final class VoidgloomHelper {
         if (heads && Slayer.bossUp() && bossEntity != null && !bossEntity.isRemoved()
                 && bossEntity.level() == mc.level && System.currentTimeMillis() - bossSeen < 2000) {
             for (Entity e : mc.level.entitiesForRendering()) {
-                if (e == mc.player || !isHead(e)) continue;
+                if (e == mc.player) continue;
                 if (e.position().distanceTo(mc.player.position()) > HEAD_RANGE) continue;
+                if (!isHead(e)) continue;
                 // The head, not the whole stand: its box is mostly empty pole.
                 AABB bb = e.getBoundingBox();
                 double cx = (bb.minX + bb.maxX) / 2, cz = (bb.minZ + bb.maxZ) / 2;

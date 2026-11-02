@@ -254,6 +254,6 @@ public final class TerminalLogic {
     }
     private static Plan empty(Type type, String status) { return new Plan(type, List.of(), status, false); }
     private static String plain(String raw) {
-        return raw == null ? "" : raw.replaceAll("§[0-9A-Fa-fK-Ok-orRxX]", "").replace('\u2018', '\'').replace('\u2019', '\'').trim();
+        return raw == null ? "" : com.endsight.zealots.Zealots.strip(raw).replace('\u2018', '\'').replace('\u2019', '\'').trim();
     }
 }

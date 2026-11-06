@@ -27,9 +27,13 @@ public final class ChatHudDrag {
 
     /** Pixels the mouse must travel with the button down before a press becomes a drag. */
     private static final int START = 3;
+    private static boolean enabled = true;
     private static String pressed, dragging;
     private static double pressX, pressY;
     private static int grabX, grabY, guideX = Integer.MIN_VALUE, guideY = Integer.MIN_VALUE;
+
+    public static boolean enabled() { return enabled; }
+    public static void enabled(boolean on) { enabled = on; }
 
     public static void init() {
         ScreenEvents.AFTER_INIT.register((mc, screen, width, height) -> {
@@ -37,7 +41,7 @@ public final class ChatHudDrag {
             if (!(screen instanceof ChatScreen) || !HudLayout.interactiveScreen(screen)) return;
             reset();
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
-                pressed = click.button() == 0 && !mc.options.hideGui ? at(click.x(), click.y()) : null;
+                pressed = enabled && click.button() == 0 && !mc.options.hideGui ? at(click.x(), click.y()) : null;
                 if (pressed != null) {
                     int[] b = HudLayout.bounds(pressed);
                     pressX = click.x(); pressY = click.y();
@@ -66,7 +70,7 @@ public final class ChatHudDrag {
                 return !moved;
             });
             ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> {
-                if (mc.options.hideGui) return;
+                if (mc.options.hideGui || !enabled) return;
                 String hot = dragging != null ? dragging : at(mx, my);
                 int[] b = hot == null ? null : HudLayout.bounds(hot);
                 if (b == null) return;

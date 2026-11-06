@@ -1,224 +1,235 @@
-# Endsight
+<h1 align="center">Endsight</h1>
 
-A Fabric client mod for **DragSim**
+<p align="center">
+  <b>Trackers, storage, loadouts and dungeon tools for Dragsim, all in one clean menu.</b>
+</p>
 
-Mining readouts - session, powder, forge, drill - plus trackers for dragons, zealots
-and slayers, drop alerts, a recipe browser, storage previews and a Voidgloom helper. Press **Right Shift** in game to open the module
-browser (rebind it under Controls → Endsight), or type `/endsight` or `/es`; any
-module can be bound to a key.
+<p align="center">
+  <a href="https://github.com/RealZones/Endsight/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RealZones/Endsight?style=for-the-badge&color=8b5cf6&label=release"></a>
+  <a href="https://modrinth.com/mod/endsight"><img alt="Modrinth" src="https://img.shields.io/badge/modrinth-endsight-1bd96a?style=for-the-badge&logo=modrinth&logoColor=white"></a>
+  <a href="https://discord.gg/jSQDjqfZfV"><img alt="Discord" src="https://img.shields.io/badge/discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <img alt="Minecraft 26.1.2" src="https://img.shields.io/badge/minecraft-26.1.2-3a3a45?style=for-the-badge">
+</p>
 
-![Slayer tracker, boss drops, zealot tracker, the Voidgloom hit counter, alerts and the ping pill in the Voidgloom fight](docs/overview.png)
+<p align="center">
+  <img src="docs/menu.png" width="860" alt="The Endsight menu open on the Inventory page">
+</p>
 
----
-
-## Requirements
-
-| | |
-|---|---|
-| Minecraft | 26.1.2 |
-| Fabric Loader | 0.19.1+ |
-| Fabric API | required |
-| Java | 25 |
+<br>
 
 ## Install
 
-1. Download ONE jar from the latest [release](../../releases/latest):
-   - `endsight-autoupdate-<version>.jar` - updates itself, or
-   - `endsight-<version>.jar` - never updates; you download each new version yourself.
-2. Drop it in your `mods` folder alongside Fabric API.
-3. Launch, join DragSim, press **Right Shift**.
+You need **Minecraft 26.1.2**, **Fabric Loader 0.19.1+**, **Fabric API** and **Java 25**.
 
-**Auto-update.** The autoupdate jar checks this page when you launch. When there is a
-new release, a small window says it is downloaded and the game closes; launch again and
-you are on it. It only ever installs Endsight's own releases from this page, and every
-release names the commit GitHub built it from. If something goes wrong it says so in
-chat with a code (E1-E7) - pass the code on in the Discord.
+1. Download one jar from the [latest release](https://github.com/RealZones/Endsight/releases/latest).
+2. Put it in your `mods` folder next to Fabric API.
+3. Join Dragsim and press **Right Shift** to open the menu.
 
-## Discord bot
+| Jar | What it does |
+|---|---|
+| `endsight-autoupdate-<version>.jar` | Updates itself when you launch the game. |
+| `endsight-<version>.jar` | Never updates itself. You download each new version. |
 
-The Endsight bot does the forge maths in Discord: `/forge <item>` gives the whole
-build - refined, gems, crafts, and the time on your Quick Forge level.
-**Join: https://discord.gg/jSQDjqfZfV**
+Endsight is on [Modrinth](https://modrinth.com/mod/endsight) too.
 
-![The /forge command showing a Perfectly-Cut Fuel Tank full build](docs/bot-forge.png)
+<br>
 
----
+## A look inside
 
-## Features
+<h3 align="center">Every storage page on one screen</h3>
+<p align="center">
+  Click an item on any page and it opens and picks that item up, shift click included.
+</p>
+<p align="center">
+  <img src="docs/storage.png" width="860" alt="All storage pages at once, with your inventory underneath">
+</p>
 
-### Mining
+<br>
 
-![Mining Session, Powder Tracker, the Forge timer and the drill lines](docs/mining.png)
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/loadouts.png" width="100%" alt="The Loadouts page with a picture and key for each pet">
+      <h3>Loadouts</h3>
+      A key for each pet and outfit, and one key that flips between two. Duplicate pets work, skins included.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/profile.png" width="100%" alt="A player's profile: net worth, gear, skills and slayers">
+      <h3>Profile viewer</h3>
+      <code>/pv &lt;player&gt;</code> shows anyone's net worth, gear, pets, storage, progress and bestiary.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/boss-drops.png" width="100%" alt="The Boss Drops readout during a Superior Dragon fight">
+      <h3>Boss Drops</h3>
+      Every dragon, Warden and Protector drop you got, rarest first, for the session or all time.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/mining.png" width="100%" alt="Mining Session, powder, Forge timers and the drill line">
+      <h3>Mining</h3>
+      Profit an hour, live powder, Forge timers, and your drill's fuel and cooldown.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/voidgloom.png" width="100%" alt="The Voidgloom boss and its Yang Glyph boxed, with hits left on screen">
+      <h3>Voidgloom Helper</h3>
+      Shield hits left, big on screen, with a box and tracer on your boss and the Yang Glyph.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/dungeon-map.png" width="100%" alt="The dungeon map with named rooms">
+      <h3>Dungeons</h3>
+      A live room map, key alerts, room puzzle solvers and terminal hints.
+    </td>
+  </tr>
+</table>
 
-**Mining Session** — what you're farming and how much it's worth: the block you're on,
-its rate per hour, profit per hour and time on that block. All four follow the block
-you switch to. Pauses when you stop mining.
+<br>
 
-**Powder Tracker** — Ender and Void powder, live. Powder is only ever shown in the Heart
-of the Dragon, so the readout counts every block broken around you and estimates the
-gain between visits, then snaps to the exact figure each time you open the menu. Powder
-per hour of mining, your session gain, and *Perks: N Upgrades available* when the
-estimate covers an upgrade — with a toast the moment it happens. Amethyst, Crying,
-Obsidian and End Stone each have their own learned rate; Void Infusion is counted while
-it runs.
+## Everything it does
 
-**Drill CD / Fuel** — `Drill CD: Ready` or the countdown, and `Fuel: 1,720/10K (17%)`,
-both read off the drill in your hand. The cooldown is whichever ability the drill is
-set to; the fuel line goes green → yellow → red. Toggles on the Mining Session page.
+Click a section to open it.
 
-**Forge Utils** — a Forge timer on screen (crafts finishing together share a line),
-ready-slot outlines, a *Forge Recent* panel to reopen your last crafts, and inside the
-Forge's own tooltips: the full build time for what you're hovering and the materials
-you're still missing, counting your inventory and storage, with Enchanted and Refined
-tiers pooled. Hover a part you already own and it just says so.
+<details>
+<summary><b>Slayers</b></summary>
+<br>
 
-**HOTD Button** — a Heart of the Dragon item in the Dragon Sim Menu, under Skills, that
-opens `/hotd`.
+- **Slayer Tracker:** kills, average kill time, kills an hour, drops and profit.
+- **Voidgloom Helper:** shield hits, boss health and phase cues.
+- **Spawn markers:** where your boss will spawn, and the Revenant tiles in the Crypts.
+- **Quest alert:** a popup and a link when you fight in a slayer area with no quest.
 
-**Ability Cooldowns** — fading cooldown icons for the Giant's Sword and the tuba, and
-the drill line above.
+</details>
 
-### Trackers
+<details>
+<summary><b>The End</b></summary>
+<br>
 
-**Boss Drops** — one readout for whichever boss you killed last — dragons, Warden,
-Protector, zombie and enderman slayers — its kills and the drops it gave you, rarest
-first in the item's own rarity colour, filtered by your tier list. Only your bosses
-count: a dragon you placed an eye for, a Protector or Warden you placed top three on
-(or whose catalyst you placed), your own slayer bosses. Click the chip on its title
-with chat open to flip session / all-time; the chip beside it switches the dragon
-readout between every kind added up and one kind, since a Golden Dragon Chestplate is
-one in so many Golden dragons, not one in every dragon. `/drops` or `/drops dragon`
-(`golden`, `protector`, `superior`…, `warden`, `golem`, `zombie`, `enderman`) print
-any of them into chat.
+- **Zealot Tracker:** kills and drops, with session profit and profit an hour.
+- **Boss Drops:** your dragon, Warden and Protector loot. `/drops` prints it in chat.
+- **Dragon tools:** dragon timer, dragon hitboxes and protection for placed eyes.
+- **Boss indicators:** Golem stage, kills to its spawn, and beams over the Protector and Warden.
+- **Goop boss:** countdowns to its next form, plus your fights, loot and profit an hour.
+- **Cache Tracker:** Crypt Caches opened, every reward, and what each one made you.
+- **End nodes:** an outline on confirmed shiny End nodes.
+- **Golden Dragon math:** answers its sum for you.
 
-**Zealot Tracker** — your zealot kills, Summoning Eyes and Golden Eyes this session,
-each with a per-hour rate. Only your own kills count. Pauses when you stop moving.
+</details>
 
-![Zealot Tracker](docs/zealots.png)
+<details>
+<summary><b>Dungeons</b></summary>
+<br>
 
-**Slayer Tracker** — kills, average kill time, time spent and kills per hour. Pauses
-when you stop moving. Each boss's kill time is printed in chat.
+- **Dungeon Map:** a live map of the rooms.
+- **Key alerts:** tells you when a key drops.
+- **Room puzzles:** Three Weirdos, Tic Tac Toe, Quiz, Higher or Lower and Ice Path.
+- **Blood Room:** a timer on screen.
+- **Terminal Solvers:** compact menu hints and Simon Says guidance.
 
-![Slayer Tracker](docs/slayer.png)
+</details>
 
-### Alerts
+<details>
+<summary><b>Mining</b></summary>
+<br>
 
-**Alerts** — mid-screen alerts for a miniboss, a slayer boss spawning, the Endstone
-Protector spawning, the dragon's fireball and a full inventory. Size, opacity and
-duration are adjustable.
+- **Mining Session:** what you are mining, rate, profit and active time. Pauses when you stop.
+- **Powder Tracker:** Ender and Void powder live, with session gain and perks you can afford.
+- **Mining Spread:** reads your stat and learns the extra blocks you mine.
+- **Forge Utils:** timers, ready slot outlines, recent crafts and missing materials.
+- **Drill line:** ability cooldown and fuel, read off the drill in your hand.
+- **Menu Buttons:** a Heart of the Dragon button in the Dragon Sim Menu.
 
-**Loot Alerts** — mid-screen alert and a ping when a drop you care about lands, the
-name in the item's own rarity colour. Which drops count is set by tier — see *Drops*.
+</details>
 
-### Visual
+<details>
+<summary><b>Inventory</b></summary>
+<br>
 
-**Voidgloom Helper** — your Seraph's hits left on its shield, big on screen, and its
-health once the shield is down. A box and tracer on the boss and on the Yang Glyph
-beacon, drawn in the world. Your own boss only.
+- **Storage:** every page on one screen, with search and live item moving.
+- **Storage Preview:** hover a page to see inside it.
+- **Recipes:** every recipe and Forge craft beside your inventory. **R** shows a recipe, **U** shows its uses.
+- **Rarity Outlines:** rarity colour around every item, in menus and on the hotbar.
+- **Glass Inventory:** see-through menus with an opacity control.
+- **Item protection:** slot locking, and no armor swaps by accident.
 
-![Voidgloom Helper: the boss and the Yang Glyph boxed, hits big on screen](docs/voidgloom.png)
+</details>
 
-**Boss Beacon** — a beam over the Endstone Protector and one over the Warden, each its
-own toggle, so they can be found at a glance.
+<details>
+<summary><b>Loadouts</b></summary>
+<br>
 
-**Damage Numbers** — shortens damage popups to `8.49M`, or hides them. *Crits only*
-hides the plain numbers — non-crits and ability damage — and keeps the crits.
+- **Pets:** a key for each pet, and one that flips between two.
+- **Wardrobe:** a key for each outfit, and one that flips between two.
 
-**Storage Preview** — hover a storage page to see what is in it. Its item search puts a
-box in the Storage window that marks which pages hold the item.
+</details>
 
-**Ping / TPS** — FPS, your ping and the server's tick rate in one pill. Ping is a real
-round trip measured once a second; TPS is worked out from the server's clock, good to
-about half a tick.
+<details>
+<summary><b>Chat</b></summary>
+<br>
 
-**Visual Tweaks** — Fullbright, Glass Inventory (with its opacity control),
-explosion-cloud hiding, and Shiny End nodes share one page. Each switch works
-independently. Shiny End nodes is off by default; it outlines End Stone and Obsidian
-only after their server particles confirm a node. It has a stronger dark-backed
-outline, a colour picker (including Chroma), and an edge-width setting. The outline
-stays visible while chat is open and uses normal depth testing, so it does not
-reveal blocks behind walls.
+- **Loot rolls:** your `/debug` rolls, compact, with close calls and real drops kept.
+- **Ability Spam:** one cooldown line with a count, or none.
+- **Goop cleanup:** hides Goop boss chat.
+- **Copy Chat:** right click a line to copy it.
+- **Global chat on join:** a lobby switch no longer leaves you in instance chat.
 
-### Chat
+</details>
 
-**Loot & Debug** — how the server's `/debug` loot rolls appear in chat: Original,
-Close calls, Compact, or Compact + close calls. Turn debug on in Dragsim's own settings.
-The close-call cutoff and *Both ends* switch remain adjustable. Real drops always show.
-Individual keybinds remain available on this page.
+<details>
+<summary><b>General</b></summary>
+<br>
 
-**Ability Spam** — "This ability is on cooldown" once, with a count, instead of forty
-times; or hidden altogether.
+- **Alerts:** bosses, fireballs, full inventory, stash, Goop Bait and drops you care about.
+- **Player HUD:** armor, pet, ability cooldowns, and FPS, ping and TPS.
+- **Perspective Mode:** third person where the mouse moves the camera, not you.
+- **World:** Fullbright and an explosion cloud hider.
+- **Damage Numbers:** shorten them, keep crits only, or hide them.
+- **Auto Clicker:** hold left click to repeat attacks at a varying rate.
+- **Etherwarp Outline:** boxes the block you will land on.
+- **Command Binds:** a key that sends a command, like `/warp end` on F6.
+- **Discord Presence:** shows Dragsim, your name, area and purse on Discord.
 
-**Copy Chat** — right-click any chat line to copy it. Optionally each drop's name goes
-to the clipboard on its own as it lands.
+</details>
 
-**Math Solver** — answers the Golden Dragon's math question under the question, or
-copies the answer.
+<br>
 
-### Quality of Life
+## Make it yours
 
-**Protect Placed Eyes** — stops a spam-click from pulling out the eye you just placed.
+- **Keys:** bind any key or mouse button from the Keybinds page. Right click a key to clear it.
+- **Prices:** set what any drop is worth, and every profit readout follows.
+- **HUD:** click Edit HUD to drag any readout, or drag it straight from chat. Scroll over one to resize it.
+- **Themes:** seven palettes, and everything follows the one you pick.
+- **Search:** the search box finds any feature or setting.
 
-**Recipes** — an item panel beside any inventory window: every server recipe as a
-grid of icons in the server's own categories, paged and searchable. Hover for what
-you hold of each ingredient (your inventory, every storage page you have opened, and
-your ender chest),
-click for the recipe's grid — craftable ingredients are underlined and click through
-to their own recipe — right-click for everything that uses an item. **R** over any
-item in any window opens its recipe, **U** what it goes into. At a crafting
-table, *Fill grid* places the recipe from your inventory; anywhere else the button
-sends `/craft`. Every recipe ships with the mod; *Scan all recipes* re-reads the
-server's menu if they change, into `config/endsight/recipes.txt`.
+| Command | What it does |
+|---|---|
+| `/endsight` or `/es` | Opens the menu |
+| `/pv <player>` | Opens a profile |
+| `/drops` | Prints your Boss Drops in chat |
+| `/cache` | Prints your Crypt Caches in chat |
 
-![Recipes: the panel beside the Storage window, a recipe open at full cost](docs/recipes.png)
+<br>
 
-**Command Binds** — a key that sends a command you typed, like `/warp end` on F6.
+## Discord
 
-A toast and a chat line with the link appear when a newer release is out, checked
-shortly after launch and every half hour while you play.
+<table>
+  <tr>
+    <td width="60%" valign="top">
+      <b><a href="https://discord.gg/jSQDjqfZfV">Join the Discord</a></b> for help, updates and the Endsight bot.
+      <br><br>
+      The bot does your forge maths: <code>/forge &lt;item&gt;</code> gives the whole build, from refined parts and gems to crafts and the time on your Quick Forge level.
+      <br><br>
+      If the autoupdate jar fails, it shows a code from E1 to E7 in chat. Send that code in the Discord.
+    </td>
+    <td width="40%" valign="top">
+      <img src="docs/bot-forge.png" width="100%" alt="The /forge command showing a full build">
+    </td>
+  </tr>
+</table>
 
-### Drops
+<br>
 
-Loot Alerts and Copy Chat share one list, `config/endsight/drops.txt`,
-created on first run. Each line is a tier and an item name — `legendary`, `epic`,
-`rare` or `common` — set by rarity and value rather than the game's colour. Add or move
-items by editing the file; Loot Alerts has a *Reload tiers* button. Anything not
-listed uses the server's own tier. Drops other people paste into chat are ignored.
-
----
-
-## Settings
-
-Features have their own switches; related controls such as Loot & Debug and Visual
-Tweaks share a settings page. The browser groups them by category in the sidebar.
-Seven palettes; the whole UI follows whichever is picked.
-
-Any module can be bound to a key or a mouse button: click the chip on its card, press
-the key. Right-click the chip to clear it. A toast in the bottom-right says what the key
-just did. Every on-screen readout can be dragged to where you want it.
-
-Readouts about the End - dragon, protector, zealots, the beacon - stay off the screen
-anywhere else, read off the server's own sidebar. In the placement screen the scroll
-wheel over a readout resizes it, half to double.
-
-The menu reopens where you left it - same category, same settings page, same scroll.
-Your choices are saved to `config/endsight.properties` when you close the menu and again
-on exit. Storage snapshots are saved separately to `config/endsight-storage.nbt`.
-
----
-
-## Building
-
-```bash
-./gradlew build
-```
-
-The jar lands in `build/libs/`.
-
----
-
-Built by Fear.
-
-## Licence
-
-All rights reserved - see [LICENSE](LICENSE). Read it, play with it, do not redistribute or reuse it.
+<p align="center">
+  Built by Fear · All rights reserved, see <a href="LICENSE">LICENSE</a>
+</p>

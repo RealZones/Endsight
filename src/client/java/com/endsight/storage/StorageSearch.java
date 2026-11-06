@@ -102,6 +102,7 @@ public final class StorageSearch {
             box.setResponder(v -> query = v);
             owner = screen;
             Screens.getWidgets(screen).add(box);
+            if (StorageOverview.active(screen)) suspend();
 
             // AbstractContainerScreen closes on the inventory key, and whether it looks
             // at that before or after its focused child is a vanilla detail that has
@@ -128,7 +129,7 @@ public final class StorageSearch {
 
     /** Our own chrome, drawn before the widget so the vanilla text lands on top of it. */
     private static void drawBox(GuiGraphicsExtractor g, int bx, int by) {
-        if (!enabled) return;
+        if (!enabled || StorageOverview.active(owner)) return;
         boolean active = !query.isEmpty();
         Draw.roundedOutline(g, bx - 4, by - 3, 90, 17, 5,
                 active ? Theme.accent() : Draw.alpha(Theme.line(), 0.8f), Theme.input());
@@ -196,12 +197,22 @@ public final class StorageSearch {
         return query;
     }
 
+    static boolean includesInventory() { return searchInventory; }
+
     static void setQuery(String value) {
         query = value;
         if (box != null && !box.getValue().equals(value)) box.setValue(value);
     }
 
     static void suspend() {
-        if (box != null) box.setFocused(false);
+        if (box != null) {
+            box.setFocused(false);
+            box.visible = false;
+            box.active = false;
+        }
+    }
+
+    static void resume() {
+        if (box != null) { box.visible = true; box.active = true; }
     }
 }

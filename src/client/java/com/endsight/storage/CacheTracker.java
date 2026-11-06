@@ -5,6 +5,7 @@ import com.endsight.hud.HudLayout;
 import com.endsight.hud.TrackerDropOrder;
 import com.endsight.hud.TrackerHud;
 import com.endsight.qol.Drops;
+import com.endsight.qol.NpcPrices;
 import com.endsight.qol.Rarity;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
@@ -43,6 +44,8 @@ import java.util.Optional;
 /** Own completed Cache openings, with all rewards retained regardless of mob family. */
 public final class CacheTracker {
     private static final String ID = "tracker.caches";
+    /** Opening one spends it, and selling it was the other choice, so that is what profit is measured against. */
+    public static final String COST_ITEM = "Crypt Cache";
     private static final CacheLedger ledger = new CacheLedger();
     private static final CacheVisibility visibility = new CacheVisibility();
     private static Object level;
@@ -63,6 +66,7 @@ public final class CacheTracker {
                 "The End", () -> enabled, value -> { enabled = value; if (!value) resetSource(); }, List.of(
                 new Setting.Choice("Period", "Show this session or saved totals.", List.of("Session", "All Time"), () -> period, value -> period = value),
                 new Setting.Toggle("Compact list", "Show five drops; /drops cache lists every item.", () -> compact, value -> compact = value),
+                new Setting.Action("Drop prices", "Set what each reward is worth.", "Edit", com.endsight.dragons.DropPricesScreen::openCache),
                 new Setting.Action("Reset session", "Clear this session without changing saved totals.", "Reset", ledger::resetSession),
                 new Setting.Note("Counting", () -> "Shows from your placement until 3 seconds after despawn. Only your Cache rewards count; /drops cache shows saved totals anytime.")));
     }
@@ -114,6 +118,16 @@ public final class CacheTracker {
             cache.then(ClientCommands.literal("reset").executes(c -> { ledger.resetSession(); return say(false); }));
             dispatcher.register(ClientCommands.literal("drops").then(cache));
         });
+    }
+
+    /** Everything the price list shows for this tracker: what you opened, then what came out. */
+    public static Map<String, Integer> dropCounts() {
+        var counts = ledger.counts(true);
+        counts.drops.keySet().forEach(NpcPrices::track);
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        out.put(COST_ITEM, (int) Math.min(Integer.MAX_VALUE, counts.opened));
+        counts.drops.forEach((item, count) -> { if (count > 0) out.merge(item, count, Integer::sum); });
+        return out;
     }
 
     private static void message(String raw) {
@@ -171,6 +185,7 @@ public final class CacheTracker {
                     || counts.drops.entrySet().stream().anyMatch(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0))
                 throw new IllegalArgumentException("Invalid Cache totals");
             ledger.restore(counts);
+            counts.drops.keySet().forEach(NpcPrices::track);
         } catch (Exception e) {
             historySafe = false;
             System.err.println("[Endsight] Cache history could not be read; preserving the file and counting this session only: " + e);
@@ -215,6 +230,14 @@ public final class CacheTracker {
     static List<HudCard.Row> rows(CacheLedger.Counts counts, boolean compact) {
         List<HudCard.Row> rows = new ArrayList<>();
         rows.add(new HudCard.Row("Opened", String.format(Locale.ROOT, "%,d", counts.opened)));
+        if (counts.opened > 0) {
+            counts.drops.keySet().forEach(NpcPrices::track);
+            var takings = NpcPrices.takings(counts.drops, COST_ITEM, counts.opened);
+            String unknown = takings.unpriced() ? " §7+ ?" : "";
+            int colour = takings.profit() < 0 ? Theme.neg() : Theme.pos();
+            rows.add(new HudCard.Row("Profit", NpcPrices.coins(takings.profit()) + unknown, colour));
+            rows.add(new HudCard.Row("Per cache", NpcPrices.coins(takings.profit() / counts.opened) + unknown, colour));
+        }
         var drops = ordered(counts); int limit = compact ? 5 : 10;
         for (var drop : drops.stream().limit(limit).toList())
             rows.add(new HudCard.Row("§" + code(colour(drop.getKey(), counts)) + plain(drop.getKey()), String.format(Locale.ROOT, "%,d", drop.getValue())));
@@ -251,6 +274,12 @@ public final class CacheTracker {
         Minecraft mc = Minecraft.getInstance(); if (mc.player == null) return 0;
         var counts = ledger.counts(allTime);
         mc.player.sendSystemMessage(Component.literal("§6Crypt Caches §8(" + (allTime ? "all time" : "session") + ") §7— §f" + counts.opened + " opened"));
+        if (counts.opened > 0) {
+            mc.player.sendSystemMessage(Component.literal(NpcPrices.spentLine(COST_ITEM, counts.opened)));
+            // The same two rows as the readout, so chat and the screen cannot disagree.
+            for (HudCard.Row row : rows(counts, true).subList(1, 3))
+                mc.player.sendSystemMessage(Component.literal("  §7" + row.label() + " §f" + row.value()));
+        }
         var list = ordered(counts);
         if (list.isEmpty()) mc.player.sendSystemMessage(Component.literal("§8  No drops recorded yet."));
         for (var drop : list) mc.player.sendSystemMessage(Component.literal("  " + drop.getKey()).withColor(colour(drop.getKey(), counts))

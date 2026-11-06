@@ -21,28 +21,30 @@ import java.util.WeakHashMap;
  * are set in game with /gradient, and this follows them.
  */
 public final class NameGradient {
-    private static final String NAME = "ImFear";
+    /** Who gets it, as hashes of the lower-case name, so the list does not spell anyone out. */
+    private static final long[] NAMES = {0x6F8122120A9CD2E5L, 0xED5AF48CF0DF0517L};
+    private static final long HASH_START = 0xcbf29ce484222325L, HASH_STEP = 0x100000001b3L;
     /**
-     * The gradient the server gives ImFear right now, or -1 until one has been seen.
+     * The gradient the server gives each of them right now, or -1 until one has been seen.
      *
      * Every line used to animate between the colours it arrived in, and a nametag with
      * none of its own fell back to a purple written into this file - so after a /gradient
      * the chat already on screen kept the old gradient, and anyone who had not yet seen a
      * coloured line got one the server never gave. The tab list holds the name as it is
      * now and the server re-sends that entry when the gradient changes, so it is the
-     * source; a line arriving in chat is the next best, for when ImFear is not in your tab.
+     * source; a line arriving in chat is the next best, for when they are not in your tab.
      * Every name on screen is drawn in these, the old lines included.
      */
-    private static int liveFirst = -1, liveSecond = -1;
-    private static Component lastTab;
+    private static final int[] liveFirst = {-1, -1}, liveSecond = {-1, -1};
+    private static final Component[] lastTab = new Component[NAMES.length];
     private static long tabCheckedAt;
     private static final WeakHashMap<FormattedCharSequence, Plan> CACHE = new WeakHashMap<>();
     private static final WeakHashMap<FormattedCharSequence, Plan> COMPONENT_CACHE = new WeakHashMap<>();
     private static final WeakHashMap<FormattedCharSequence, Plan> NAMETAG_CACHE = new WeakHashMap<>();
-    private static final Plan NONE = new Plan(List.of(), -1, 0, 0);
+    private static final Plan NONE = new Plan(List.of(), -1, 0, 0, 0, -1);
 
     private record Glyph(int index, Style style, int codepoint) {}
-    private record Plan(List<Glyph> glyphs, int start, int a, int b) {}
+    private record Plan(List<Glyph> glyphs, int start, int a, int b, int length, int who) {}
 
     private NameGradient() {}
 
@@ -53,27 +55,45 @@ public final class NameGradient {
         });
     }
 
-    /** Read ImFear's tab entry again if it has been replaced - at most twice a second. */
+    /** Read their tab entries again if one has been replaced - at most twice a second. */
     private static void refreshLive() {
         long now = System.currentTimeMillis();
         if (now - tabCheckedAt < 500) return;
         tabCheckedAt = now;
         Minecraft mc = Minecraft.getInstance();
         var connection = mc == null ? null : mc.getConnection();
-        var info = connection == null ? null : connection.getPlayerInfoIgnoreCase(NAME);
-        Component tab = info == null ? null : info.getTabListDisplayName();
-        if (tab == null || tab == lastTab) return;
-        lastTab = tab;
-        observe(tab);
+        if (connection == null) return;
+        for (var info : connection.getOnlinePlayers()) {
+            int who = who(info.getProfile().name());
+            Component tab = info.getTabListDisplayName();
+            if (who < 0 || tab == null || tab == lastTab[who]) continue;
+            lastTab[who] = tab;
+            observe(tab);
+        }
     }
 
-    /** Take the gradient off a server line that colours ImFear as one; anything else is ignored. */
+    private static long hash(long hash, int cp) {
+        return (hash ^ Character.toLowerCase(cp)) * HASH_STEP;
+    }
+
+    private static int who(long hash) {
+        for (int i = 0; i < NAMES.length; i++) if (NAMES[i] == hash) return i;
+        return -1;
+    }
+
+    private static int who(String name) {
+        long hash = HASH_START;
+        for (int i = 0; i < name.length(); i++) hash = hash(hash, name.charAt(i));
+        return who(hash);
+    }
+
+    /** Take the gradient off a server line that colours one of them as one; anything else is ignored. */
     static void observe(Component line) {
         if (line == null) return;
         Plan plan = plan(glyphs(line));
-        if (plan.start < 0 || plan.a < 0 || (plan.a == liveFirst && plan.b == liveSecond)) return;
-        liveFirst = plan.a;
-        liveSecond = plan.b;
+        if (plan.start < 0 || plan.a < 0) return;
+        liveFirst[plan.who] = plan.a;
+        liveSecond[plan.who] = plan.b;
     }
 
     public static FormattedCharSequence animate(FormattedCharSequence original) {
@@ -121,7 +141,7 @@ public final class NameGradient {
     }
 
     public static Component nametag(Component original, net.minecraft.world.entity.player.Player player) {
-        if (original == null || !player.getGameProfile().name().equalsIgnoreCase(NAME)) return original;
+        if (original == null || who(player.getGameProfile().name()) < 0) return original;
         refreshLive();
         return nametagText(original);
     }
@@ -135,7 +155,7 @@ public final class NameGradient {
             NAMETAG_CACHE.put(key, plan);
         }
         // A plain tag has no colours of its own; until the server's are known it stays as sent.
-        if (plan.start < 0 || (plan.a < 0 && liveFirst < 0)) return original;
+        if (plan.start < 0 || (plan.a < 0 && liveFirst[plan.who] < 0)) return original;
         return render(plan);
     }
 
@@ -161,8 +181,8 @@ public final class NameGradient {
 
     /** The server's current gradient when it is known; the line's own until then. */
     private static Style recolour(Plan plan, Style original, int index, long time) {
-        if (index < plan.start || index >= plan.start + NAME.length()) return original;
-        int a = liveFirst >= 0 ? liveFirst : plan.a, b = liveFirst >= 0 ? liveSecond : plan.b;
+        if (index < plan.start || index >= plan.start + plan.length) return original;
+        int first = liveFirst[plan.who], a = first >= 0 ? first : plan.a, b = first >= 0 ? liveSecond[plan.who] : plan.b;
         if (a < 0) return original;
         return original.withColor(colour(a, b, index - plan.start, time));
     }
@@ -172,22 +192,22 @@ public final class NameGradient {
     }
 
     private static Plan plan(List<Glyph> glyphs, boolean nametag) {
-        for (int start = 0; start + NAME.length() <= glyphs.size(); start++) {
+        for (int start = 0; start < glyphs.size(); start++) {
+            if (!usernameChar(glyphs.get(start).codepoint)) continue;
             if (start > 0 && usernameChar(glyphs.get(start - 1).codepoint)) continue;
-            int end = start + NAME.length();
-            if (end < glyphs.size() && usernameChar(glyphs.get(end).codepoint)) continue;
-            boolean matches = true;
-            for (int i = 0; i < NAME.length(); i++)
-                if (Character.toLowerCase(glyphs.get(start + i).codepoint) != Character.toLowerCase(NAME.charAt(i))) matches = false;
-            if (!matches) continue;
+            int end = start;
+            long hash = HASH_START;
+            while (end < glyphs.size() && usernameChar(glyphs.get(end).codepoint)) hash = hash(hash, glyphs.get(end++).codepoint);
+            int who = who(hash);
+            if (who < 0) continue;
             var a = glyphs.get(start).style.getColor();
             var b = glyphs.get(end - 1).style.getColor();
             // Plain mentions and rank text are untouched. The server is the source of both endpoints.
             if (a != null && b != null && a.getValue() != b.getValue())
-                return new Plan(List.copyOf(glyphs), start, a.getValue(), b.getValue());
+                return new Plan(List.copyOf(glyphs), start, a.getValue(), b.getValue(), end - start, who);
             // The entity's actual profile has already been checked by nametag(). Chat mentions
             // still require a server gradient; a plain player nametag can use the server's colours.
-            if (nametag) return new Plan(List.copyOf(glyphs), start, -1, -1);
+            if (nametag) return new Plan(List.copyOf(glyphs), start, -1, -1, end - start, who);
         }
         return NONE;
     }

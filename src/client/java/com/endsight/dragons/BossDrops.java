@@ -1569,6 +1569,15 @@ public final class BossDrops {
         return List.copyOf(names);
     }
 
+    /** Every drop your Slayer quests have paid out, all time. */
+    public static Map<String, Integer> slayerDropCounts() {
+        Map<String, Integer> drops = new LinkedHashMap<>();
+        for (Map<String, Count> counts : List.of(loaded, unsaved))
+            for (String boss : List.of(REVENANT, VOIDGLOOM, RIFTBORN, LEGACY_ENDERMAN, UNKNOWN_ENDERMAN))
+                of(counts, boss).drops.forEach((item, count) -> drops.merge(item, count, Integer::sum));
+        return drops;
+    }
+
     public static boolean isSlayerDropName(String item) {
         if (item == null) return false;
         String name = plain(Zealots.strip(item)).trim().replace('\u2019', '\'');

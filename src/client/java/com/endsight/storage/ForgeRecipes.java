@@ -565,10 +565,17 @@ public final class ForgeRecipes {
         }
     }
 
+    private static AbstractContainerScreen<?> titledScreen;
+    private static boolean onForge;
+
     public static void overSlot(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, Slot slot) {
         if (!enabled || !readyOutline) return;
-        String title = Zealots.strip(screen.getTitle().getString()).trim();
-        if (!FORGE.equals(title)) return;
+        // Once per screen: this runs for every slot of every open menu, every frame.
+        if (screen != titledScreen) {
+            titledScreen = screen;
+            onForge = FORGE.equals(Zealots.strip(screen.getTitle().getString()).trim());
+        }
+        if (!onForge) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         Container playerInv = mc.player.getInventory();

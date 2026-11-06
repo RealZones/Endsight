@@ -15,10 +15,17 @@ public final class ProfileCollection {
     private static final Set<String> UNRELEASED_PETS=Set.of("blaze","blue_whale");
     // Players own Phoenixes (Secrets__, Legendary) but the public catalog does not list the
     // pet or its head texture yet, so it is added here with a vanilla icon standing in.
-    // A catalog entry of the same name wins once Dragsim publishes one.
+    // A catalog entry of the same name wins once Dragsim publishes one. The catalog's
+    // ability list does carry pet_immortal_phoenix, so its tooltip can show that.
     private static final Map<String,JsonElement> EXTRA_PETS=Map.of("phoenix",JsonParser.parseString(
-            "{\"display\":\"Phoenix\",\"rarities\":[\"LEGENDARY\"],\"material\":\"minecraft:fire_charge\"}"));
+            "{\"display\":\"Phoenix\",\"rarities\":[\"LEGENDARY\"],\"material\":\"minecraft:fire_charge\",\"abilities\":[\"pet_immortal_phoenix\"]}"));
     public static int rank(String rarity) { return TIERS.indexOf(rarity.toUpperCase(Locale.ROOT)); }
+    /** A pet's catalog entry, or the stand-in above for one the catalog does not list yet. */
+    public static JsonObject petDefinition(JsonObject catalog,String type) {
+        JsonObject listed=object(object(catalog,"pets"),type);
+        JsonElement extra=EXTRA_PETS.get(type);
+        return listed.isEmpty() && extra!=null ? extra.getAsJsonObject() : listed;
+    }
     public ProfileCollection(ProfileData data,JsonObject catalog) {
         this.data=data; this.catalog=catalog;
         JsonObject definitions=object(catalog,"items");

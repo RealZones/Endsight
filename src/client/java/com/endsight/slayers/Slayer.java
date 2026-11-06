@@ -10,12 +10,16 @@ import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
 import com.endsight.zealots.Zealots;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.ChatFormatting;
+import net.minecraft.world.InteractionResult;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -117,6 +121,10 @@ public final class Slayer {
     private static long reminderEnteredAt;
     private static boolean reminderQueued;
     private static final long REMINDER_DELAY_MS = 2_000;
+    private static final long REMINDER_POPUP_MS = 60_000, REMINDER_GRACE_MS = 10_000;
+    /** A mob only leaves the client this close by dying; walking off takes it past tracking range. */
+    private static final double KILL_RANGE = 16.0;
+    private static long reminderPopupAt, questEndedAt;
     enum QuestStatus { UNKNOWN, ACTIVE, NOT_STARTED }
 
     /**
@@ -193,6 +201,17 @@ public final class Slayer {
             if (overlay) return;
             onLine(plain(message));
         });
+        AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+            if (level.isClientSide()) fightingWithoutQuest();
+            return InteractionResult.PASS;
+        });
+        // Bonemerangs and scythes never land a melee hit, so a mob dying has to count as well.
+        // Right clicks do not: on their own they only prove someone used a teleport item.
+        ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
+            Minecraft mc = Minecraft.getInstance();
+            if (entity instanceof Monster && mc.player != null
+                    && entity.position().distanceTo(mc.player.position()) <= KILL_RANGE) fightingWithoutQuest();
+        });
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "slayer"),
                 (g, delta) -> draw(g));
         HudLayout.register("slayer.timer", "Slayer Tracker", 0f, 0.009f,
@@ -212,6 +231,7 @@ public final class Slayer {
             return;
         }
         if (line.contains(BOSS_SLAIN)) {
+            questEndedAt = System.currentTimeMillis();
             if (bossUp) {
                 Run r = cur();
                 r.lastKillMs = System.currentTimeMillis() - bossSpawnedAt;
@@ -227,6 +247,7 @@ public final class Slayer {
         if (line.contains(QUEST_START) || line.contains(QUEST_DONE) || line.contains(QUEST_FAILED)) {
             questActive = line.contains(QUEST_START);
             if (questActive) questXp = 0;
+            else questEndedAt = System.currentTimeMillis();
             bossUp = false;
             if (questActive) {
                 reminderQueued = false;
@@ -602,12 +623,43 @@ public final class Slayer {
         }
         if (area.isEmpty() || !questReminder || mc.player == null) return;
         if (!reminderQueued || now - reminderEnteredAt < REMINDER_DELAY_MS) return;
-        Area.Where place = REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE;
-        Area.Sidebar sidebar = Area.readSidebar(mc);
-        QuestStatus status = questStatus(sidebar.line("Slayer:"), sidebar.line("XP:"), sidebar.shows(place));
+        QuestStatus status = questStatus(mc, area);
         if (status == QuestStatus.UNKNOWN) return; // The new sidebar has not arrived yet.
         reminderQueued = false;
-        if (status != QuestStatus.NOT_STARTED) return;
+        if (status == QuestStatus.NOT_STARTED) questLink(mc, area);
+    }
+
+    private static QuestStatus questStatus(Minecraft mc, String area) {
+        Area.Where place = REVENANT.equals(area) ? Area.Where.CRYPTS : Area.Where.VOID_SEPULTURE;
+        Area.Sidebar sidebar = Area.readSidebar(mc);
+        return questStatus(sidebar.line("Slayer:"), sidebar.line("XP:"), sidebar.shows(place));
+    }
+
+    /**
+     * The arrival link scrolls away and then nothing says so again: Fear's clip has him killing
+     * Crypt Ghouls and a Revenant Champion with the link long gone from chat. So fighting
+     * brings it back as a popup, with a fresh link to click.
+     */
+    private static void fightingWithoutQuest() {
+        Minecraft mc = Minecraft.getInstance();
+        long now = System.currentTimeMillis();
+        if (mc.player == null || !popupDue(now, reminderPopupAt, questEndedAt)) return;
+        String area = reminderSlayer();
+        if (area.isEmpty() || questStatus(mc, area) != QuestStatus.NOT_STARTED) return;
+        reminderPopupAt = now;
+        Alerts.slayerQuest();
+        if (questReminder) questLink(mc, area);
+    }
+
+    /**
+     * Once a minute, because a fight is dozens of hits. Not straight after a quest ends either:
+     * nobody needs telling while they reach for /slayer with the sword still swinging.
+     */
+    static boolean popupDue(long now, long lastPopup, long questEnded) {
+        return now - lastPopup >= REMINDER_POPUP_MS && now - questEnded >= REMINDER_GRACE_MS;
+    }
+
+    private static void questLink(Minecraft mc, String area) {
         String command = reminderCommand(area);
         mc.player.sendSystemMessage(Component.literal("")
                 .append(Component.literal("[Endsight] ").withStyle(ChatFormatting.DARK_PURPLE))

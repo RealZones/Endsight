@@ -245,6 +245,18 @@ tasks.register('storageOverviewChecks', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = 'com.endsight.storage.StorageOverviewChecks'
 }
+tasks.register('liveStorageChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.storage.LiveStorageChecks'
+}
+tasks.named('check') { dependsOn 'liveStorageChecks' }
+tasks.register('manualEquipmentBindsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.qol.ManualEquipmentBindsChecks'
+}
+tasks.named('check') { dependsOn 'manualEquipmentBindsChecks' }
 
 tasks.register('goopFightChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
@@ -510,7 +522,8 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
         || providers.gradleProperty('mapVisualTest').isPresent() || providers.gradleProperty('keyVisualTest').isPresent()
         || providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
         || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
-        || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()) {
+        || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
+        || providers.gradleProperty('storageVisualTest').isPresent()) {
     fabricApi.configureTests {
         createSourceSet = true
         modId = 'endsight-profile-tests'
@@ -521,7 +534,8 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     sourceSets.gametest.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
     sourceSets.gametest.runtimeClasspath += sourceSets.client.runtimeClasspath
     // One suite per run: each opens its own world and screenshots, and the others are slow.
-    def only = providers.gradleProperty('goopVisualTest').isPresent() ? '"com.endsight.goop.GoopVisualTest"'
+    def only = providers.gradleProperty('storageVisualTest').isPresent() ? '"com.endsight.storage.LiveStorageVisualTest", "com.endsight.qol.ManualEquipmentBindsVisualTest"'
+            : providers.gradleProperty('goopVisualTest').isPresent() ? '"com.endsight.goop.GoopVisualTest"'
             : providers.gradleProperty('menuVisualTest').isPresent() ? '"com.endsight.ui.MenuVisualTest"'
             : providers.gradleProperty('rarityVisualTest').isPresent() ? '"com.endsight.visual.RarityOutlineVisualTest"'
             : providers.gradleProperty('dragonHitboxesVisualTest').isPresent() ? '"com.endsight.dragons.DragonHitboxesVisualTest"'
@@ -539,8 +553,10 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     }
     if (providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
             || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
-            || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()) {
-        def testDirectory = providers.gradleProperty('goopVisualTest').isPresent() ? 'run/goop-test'
+            || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
+            || providers.gradleProperty('storageVisualTest').isPresent()) {
+        def testDirectory = providers.gradleProperty('storageVisualTest').isPresent() ? 'run/storage-live-test'
+                : providers.gradleProperty('goopVisualTest').isPresent() ? 'run/goop-test'
                 : providers.gradleProperty('menuVisualTest').isPresent() ? 'run/menu-test'
                 : providers.gradleProperty('rarityVisualTest').isPresent() ? 'run/rarity-outline-test'
                 : providers.gradleProperty('dragonHitboxesVisualTest').isPresent() ? 'run/dragon-hitboxes-test'

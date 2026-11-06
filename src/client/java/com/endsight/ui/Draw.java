@@ -3,7 +3,13 @@ package com.endsight.ui;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.locale.Language;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.FormattedCharSequence;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Surfaces are built from fill and text to avoid a custom rendering pipeline.
@@ -200,19 +206,47 @@ public final class Draw {
         return (na << 24) | (color & 0x00FFFFFF);
     }
 
+    private static final int ORDERED_MAX = 4096;
+    private static final Map<String, FormattedCharSequence> ordered = new HashMap<>();
+    private static Language orderedIn;
+
+    /**
+     * A string in display order, worked out once.
+     *
+     * g.text with a String runs ICU's bidirectional pass on every call, for English text,
+     * every frame. A profile of the menu had that as a quarter of everything allocated while
+     * drawing, and every HUD line was paying it too. The result only depends on the string
+     * and the language, so it is kept; a full map is emptied, since HUD numbers never repeat
+     * and an eviction order is not worth keeping for them.
+     */
+    private static FormattedCharSequence ordered(String s) {
+        Language language = Language.getInstance();
+        if (language != orderedIn) {
+            ordered.clear();
+            orderedIn = language;
+        }
+        FormattedCharSequence line = ordered.get(s);
+        if (line == null) {
+            if (ordered.size() >= ORDERED_MAX) ordered.clear();
+            line = language.getVisualOrder(FormattedText.of(s));
+            ordered.put(s, line);
+        }
+        return line;
+    }
+
     public static void text(GuiGraphicsExtractor g, Font font, String s,
                             int x, int y, int color) {
-        g.text(font, s, x, y, color);
+        g.text(font, ordered(s), x, y, color);
     }
 
     public static void textRight(GuiGraphicsExtractor g, Font font, String s,
                                  int right, int y, int color) {
-        g.text(font, s, right - font.width(s), y, color);
+        g.text(font, ordered(s), right - font.width(s), y, color);
     }
 
     public static void textCentered(GuiGraphicsExtractor g, Font font, String s,
                                     int cx, int y, int color) {
-        g.text(font, s, cx - font.width(s) / 2, y, color);
+        g.text(font, ordered(s), cx - font.width(s) / 2, y, color);
     }
 
     /**
@@ -226,14 +260,9 @@ public final class Draw {
 
         if (room <= 0) return ellipsis;
 
-        StringBuilder out = new StringBuilder();
-
-        for (int i = 0; i < s.length(); i++) {
-            if (font.width(out.toString() + s.charAt(i)) > room) break;
-            out.append(s.charAt(i));
-        }
-
-        return out.append(ellipsis).toString();
+        // One pass. Measuring a growing copy per character was quadratic, on every cut
+        // label, every frame.
+        return font.plainSubstrByWidth(s, room) + ellipsis;
     }
 
     /**

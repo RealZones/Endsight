@@ -1124,6 +1124,10 @@ public final class Recipes {
         });
         owner = screen;
         Screens.getWidgets(screen).add(box);
+        if (LiveStorageView.active(screen)) {
+            box.visible = false;
+            box.active = false;
+        }
 
         // As Item Search does: the box first, and the inventory key hidden from the
         // screen while it is focused, so typing "e" types an "e". Escape still closes.
@@ -1330,7 +1334,10 @@ public final class Recipes {
 
     private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
         if (com.endsight.dungeon.TerminalSolver.compactActive(s)) return;
-        if (StorageOverview.active(s)) return;
+        if (StorageOverview.active(s)) {
+            if (box != null) { box.visible = false; box.active = false; box.setFocused(false); }
+            return;
+        }
         if (!enabled || RECIPES.isEmpty()) {
             if (box != null) box.visible = false;
             return;
@@ -1352,7 +1359,7 @@ public final class Recipes {
         // grid, and it is still worth having with the grid tucked away.
         if (closeList) drawClose(s, g, font, holdings(), mx, my);
         if (panel) {
-            if (box != null) box.visible = shown;
+            if (box != null) { box.visible = shown; box.active = true; }
             drawTab(s, g, font, mx, my);
             Map<String, Integer> have = holdings();
             if (shown) drawGrid(s, g, font, have, mx, my);

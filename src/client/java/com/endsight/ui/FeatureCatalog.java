@@ -11,6 +11,9 @@ import java.util.function.Supplier;
 public final class FeatureCatalog {
     private FeatureCatalog() { }
 
+    /** A sidebar entry that opens on its first page, because a row to click first only hides the pictures. */
+    static final String LOADOUTS = "Loadouts";
+
     /**
      * The switches that head each feature on a grouped page. Drawn alike, "Slayer Profit"
      * read as one more setting of the Slayer Tracker above it, so the page sets these apart.
@@ -43,15 +46,17 @@ public final class FeatureCatalog {
         c.single("dungeon.terminals", "Dungeons");
         c.group("page.miningTracking", "Mining tracking", "Mining session, powder gains and rates.", "Mining", "mining.session", "mining.powder");
         c.single("storage.forge", "Mining");
-        c.group("page.previews", "Inventory previews", "Storage hover previews, item search and inventory HUD.", "Inventory", "storage.preview", "hud.inventoryPreview");
+        c.group("page.previews", "Inventory previews", "Live PV editing, remembered storage pages, item search and inventory HUD.", "Inventory", "storage.preview", "hud.inventoryPreview");
         c.single("storage.recipes", "Inventory");
         c.group("page.itemAppearance", "Item appearance", "Rarity outlines and glass inventory backgrounds.", "Inventory", "visual.rarity", "visual.inventoryGlass");
         c.group("page.itemProtection", "Item protection", "Slot locking and armor-swap protection.", "Inventory", "qol.slotLock", "qol.armorguard");
+        c.single("qol.pets", LOADOUTS, "Pets", "A key for each pet, and one that flips between two.");
+        c.single("qol.wardrobe", LOADOUTS, "Wardrobe", "A key for each outfit, and one that flips between two.");
         c.single("qol.lootChat", "Chat");
         c.group("page.chatBehavior", "Chat behavior", "Ability and Goop boss cleanup, plus global chat on join.", "Chat", "qol.abilityspam", "qol.globalchat");
         c.single("qol.copychat", "Chat");
         c.group("page.playerHud", "Player HUD", "Armor, pet, server stats and ability cooldowns.", "General", "hud.armor", "hud.activePet", "hud.stats", "visual.cooldowns");
-        c.group("page.worldAppearance", "World appearance", "Lighting and explosion clouds.", "General", "visual.fullbright", "visual.explosionParticles");
+        c.group("page.worldAppearance", "World appearance", "Lighting, explosion clouds and the camera.", "General", "visual.fullbright", "visual.explosionParticles", "visual.perspective");
         c.single("qol.damage", "General");
         c.single("qol.autoclicker", "General");
         c.single("visual.etherwarp", "General");
@@ -68,21 +73,39 @@ public final class FeatureCatalog {
             private List<List<Setting>> membership;
             private List<Setting> cached;
             private List<Setting> snapshot() {
-                if (membership == null || java.util.stream.IntStream.range(0, children.size())
-                        .anyMatch(i -> !membership.get(i).equals(children.get(i).settings()))) {
+                if (membership == null || stale()) {
                     membership = children.stream().map(m -> List.copyOf(m.settings())).toList();
                     cached = List.copyOf(build.get());
                 }
                 return cached;
+            }
+            /**
+             * By reference, and without a stream. This runs on every get() and size(), so with
+             * List.equals a page of thirty rows compared thousands of records a frame.
+             */
+            private boolean stale() {
+                for (int i = 0; i < membership.size(); i++) {
+                    List<Setting> was = membership.get(i), now = children.get(i).settings();
+                    if (was.size() != now.size()) return true;
+                    for (int j = 0; j < was.size(); j++) if (was.get(j) != now.get(j)) return true;
+                }
+                return false;
             }
             @Override public Setting get(int index) { return snapshot().get(index); }
             @Override public int size() { return snapshot().size(); }
         };
     }
 
-    private static void key(List<Setting> settings, Module module) {
-        if (module.togglable()) settings.add(new Setting.KeyAction(Keybinds.moduleId(module), module.title() + " key",
-                "Assign a shortcut for " + module.title() + ".", "Toggle", module::toggle));
+    /** Under a heading only if there is anything for it to head. */
+    private static void keys(List<Setting> settings, List<Module> modules) {
+        List<Setting> keys = new ArrayList<>();
+        for (Module module : modules)
+            if (module.togglable() && Keybinds.worthAKey(Keybinds.moduleId(module)))
+                keys.add(new Setting.KeyAction(Keybinds.moduleId(module), module.title() + " key",
+                        "Assign a shortcut for " + module.title() + ".", "Toggle", module::toggle));
+        if (keys.isEmpty()) return;
+        settings.add(new Setting.Section("Keybinds"));
+        settings.addAll(keys);
     }
 
     private static final class Catalog {
@@ -110,8 +133,7 @@ public final class FeatureCatalog {
             Module old = require(id);
             List<Setting> settings = old.group() ? old.settings() : live(List.of(old), () -> {
                 List<Setting> result = new ArrayList<>(old.settings());
-                result.add(new Setting.Section("Keybinds"));
-                key(result, old);
+                keys(result, List.of(old));
                 return result;
             });
             entries.add(new Module(id, title == null ? old.title() : title, description == null ? old.description() : description,
@@ -135,8 +157,7 @@ public final class FeatureCatalog {
                     }
                     for (Setting setting : child.settings()) if (!(setting instanceof Setting.Section)) result.add(setting);
                 }
-                result.add(new Setting.Section("Keybinds"));
-                for (Module child : children) key(result, child);
+                keys(result, children);
                 return result;
             });
             entries.add(Module.group(id, title, description, category, settings));

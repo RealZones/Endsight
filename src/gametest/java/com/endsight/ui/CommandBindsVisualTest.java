@@ -30,7 +30,7 @@ public final class CommandBindsVisualTest implements FabricClientGameTest {
                 mc.resizeGui();
                 mc.setScreen(new EndsightScreen("Endsight", EndsightClient.registry()));
             });
-            context.getInput().typeChars("bind");
+            context.getInput().typeChars("new bind");
             context.waitTicks(2);
             context.runOnClient(mc -> {
                 EndsightScreen screen = (EndsightScreen) mc.screen;
@@ -39,7 +39,7 @@ public final class CommandBindsVisualTest implements FabricClientGameTest {
                         && action.label().equals("New bind")).findFirst().orElseThrow();
                 int before = CommandBinds.all().size();
                 click(screen, row, false);
-                require(field(screen, "query").equals("bind"), "New cleared the active search");
+                require(field(screen, "query").equals("new bind"), "New cleared the active search");
                 require(CommandBinds.all().size() == before + 1, "New did not create one command");
                 Setting.Command command = CommandBinds.all().getLast();
                 require(field(editor, "editing") == command, "new command did not receive keyboard focus");
@@ -61,7 +61,7 @@ public final class CommandBindsVisualTest implements FabricClientGameTest {
                     screen.charTyped(new CharacterEvent(0x1F63A));
                     key(screen, 259, 0);
                     require(command.command().equals("/warp hub"), "backspace broke a Unicode codepoint");
-                    require(field(screen, "query").equals("bind"), "command editing changed the browser search");
+                    require(field(screen, "query").equals("new bind"), "command editing changed the browser search");
                     invoke(screen, "layout");
                     Object commandRow = rows(editor).stream().filter(candidate -> invoke(candidate, "setting") == command)
                             .findFirst().orElseThrow();

@@ -199,7 +199,14 @@ public final class CompactModuleChecks {
     private static void moduleSearch() {
         List<Setting> settings = settings();
         Module module = Module.placeholder("overlay", "INVENTORY Overlay", "Frame timing", "Dungeons", settings);
-        equal(settings.stream().map(Object::getClass).collect(java.util.stream.Collectors.toSet()),
+        // A loadout is kept out of settings(): its outline checks count that list's sections.
+        Setting.Loadout pets = new Setting.Loadout("Your pets", "pet", () -> List.of(new Setting.Tile("id", "Golden Dragon", 0, "", List.of(), false, () -> { })),
+                () -> List.of(new Setting.Swap("swap", () -> List.of("", ""), (side, id) -> { }, () -> { }, null)), () -> { }, () -> { });
+        yes(SettingsSearch.matches(pets, "dragon") && SettingsSearch.matches(pets, "swap"), "a loadout's pets and swap are not searchable");
+        List<Setting> everyKind = new ArrayList<>(settings);
+        everyKind.add(pets);
+        everyKind.add(new Setting.Binds("Keybinds", () -> List.of(new Setting.Bind("id", "Zealot Tracker", "", "The End"))));
+        equal(everyKind.stream().map(Object::getClass).collect(java.util.stream.Collectors.toSet()),
                 Set.of(Setting.class.getPermittedSubclasses()));
         yes(module.matches(null), "null query hid module");
         yes(module.matches(" \t\n "), "blank query hid module");

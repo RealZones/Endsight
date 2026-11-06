@@ -41,6 +41,14 @@ public final class ProfileItems {
     /** What to call an item: its own name, unless the catalog gives that name to several
      *  items, where the id says which one (unstable_shimmer reads "Unstable Shimmer Skin"). */
     public String displayName(ProfileData.Item item) {
+        JsonObject pet = object(object(item.raw(), "extra"), "pet_data");
+        // An owned pet's name carries its level, as on dragsim.co. A missing-pet suggestion
+        // keeps its plain name: a level on a pet nobody owns would read as a real one.
+        if (item.location().equals("pets") && !pet.isEmpty()) {
+            String type = text(pet, "type", "").toLowerCase(Locale.ROOT);
+            JsonObject def = ProfileCollection.petDefinition(catalog, type);
+            return "[Lvl "+petLevel(pet, def, item.rarity()).level()+"] "+text(def, "display", title(type));
+        }
         String name = item.name();
         if (!sharedNames().contains(name)) return name;
         String byId = title(item.entry());
@@ -87,9 +95,17 @@ public final class ProfileItems {
         if (texture.isEmpty()) texture = texture(definition.get("skin"));
         if (item.location().equals("pets")) {
             String type = text(object(extra, "pet_data"), "type", "").toLowerCase(Locale.ROOT);
-            JsonObject pet = object(object(catalog, "pets"), type);
+            JsonObject pet = ProfileCollection.petDefinition(catalog, type);
             texture = texture(object(object(catalog, "items"), text(object(extra, "pet_data"), "skinOverride", "")).get("skin"));
             if (texture.isEmpty()) texture = texture(pet.get("skin"));
+            // No head texture anywhere (an unskinned Phoenix): the stand-in's vanilla icon
+            // beats the blank player head an owned pet starts as.
+            if (texture.isEmpty() && pet.has("material")) {
+                try {
+                    var icon = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath("minecraft", text(pet, "material", "paper").replace("minecraft:", "")));
+                    if (icon != null && icon != Items.AIR) stack = new ItemStack(icon);
+                } catch (RuntimeException ignored) { }
+            }
         }
         if (!texture.isEmpty()) {
             stack = new ItemStack(Items.PLAYER_HEAD, Math.min(item.count(), 99));
@@ -127,6 +143,8 @@ public final class ProfileItems {
     }
 
     private List<Component> buildLore(ProfileData.Item item) {
+        JsonObject petData = object(object(item.raw(), "extra"), "pet_data");
+        if (!petData.isEmpty()) return petLore(item, petData);
         JsonObject raw = item.raw(), def = definition(item), data = object(raw, "item_data"), mods = object(raw, "item_modifiers"), extra = object(raw, "extra");
         List<Component> lines = new ArrayList<>();
         Map<String, Double> stats = new LinkedHashMap<>();
@@ -171,12 +189,6 @@ public final class ProfileItems {
             String id = text(object(extra, field), field.equals("item_dye") ? "dyeId" : "skinId", "");
             if (!id.isEmpty()) lines.add(Component.literal(text(object(object(catalog, "items"), id), "name", title(id))).withColor(0x66DDDD));
         }
-        JsonObject pet = object(extra, "pet_data");
-        if (!pet.isEmpty()) {
-            String held = text(pet, "equippedItem", "");
-            if (!held.isEmpty()) lines.add(Component.literal("Held: "+text(object(object(catalog, "items"), held.toLowerCase(Locale.ROOT)), "name", title(held))).withColor(0xE8BD77));
-            if (integer(pet, "candiesUsed", 0) > 0) lines.add(Component.literal("Candies: "+integer(pet, "candiesUsed", 0)).withColor(0xAAB4BE));
-        }
         for (JsonElement description : array(def, "description")) if (description.isJsonPrimitive()) lines.add(legacy(description.getAsString()));
         JsonObject lore = object(object(catalog, "itemLore"), item.entry());
         for (JsonElement element : array(lore, "abilities")) {
@@ -193,6 +205,94 @@ public final class ProfileItems {
         lines.add(Component.empty());
         lines.add(Component.literal(item.rarity().replace('_', ' ')+" "+text(data, "item_type", "ITEM")).withColor(color(item.rarity()) & 0xFFFFFF));
         return List.copyOf(lines);
+    }
+
+    /** A pet's tooltip in the order dragsim.co lays it out: class, stats, abilities at its
+     *  level, then level and held item. The ability text is the site's own, per level, from
+     *  the catalog's petAbilities. Unlike the site, an ability the pet's rarity has not
+     *  unlocked is still listed, greyed out with the rarity it needs: every Phoenix players
+     *  own is Legendary and its only ability is Mythic, so the site shows it with no lore. */
+    private List<Component> petLore(ProfileData.Item item, JsonObject pet) {
+        String type = text(pet, "type", "").toLowerCase(Locale.ROOT), rarity = item.rarity();
+        JsonObject def = ProfileCollection.petDefinition(catalog, type);
+        PetLevel level = petLevel(pet, def, rarity);
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.literal(title(text(def, "category", "combat"))+" Pet").withColor(0x555555));
+        JsonObject byRarity = object(def, "rarity_perks");
+        JsonArray perks = array(byRarity, rarity.toLowerCase(Locale.ROOT));
+        if (perks.isEmpty()) perks = array(byRarity, rarity);
+        if (perks.isEmpty()) perks = array(def, "perks");
+        for (JsonElement element : perks) {
+            if (!element.isJsonObject()) continue;
+            JsonObject perk = element.getAsJsonObject();
+            String stat = text(perk, "stat", "");
+            JsonObject known = new JsonObject();
+            for (JsonElement s : array(catalog, "stats"))
+                if (s.isJsonObject() && text(s.getAsJsonObject(), "id", "").equals(stat)) known = s.getAsJsonObject();
+            long value = Math.round(number(perk, "per_level", 0)*(bool(perk, "flat") ? 1 : level.level()));
+            String colour = text(known, "color", "");
+            var code = colour.isEmpty() ? null : net.minecraft.ChatFormatting.getByCode(colour.charAt(0));
+            lines.add(Component.literal(text(known, "name", title(stat))+": ").withColor(0xAAAAAA)
+                    .append(Component.literal("+"+ProfileFormat.number(value)).withStyle(code == null ? net.minecraft.ChatFormatting.GREEN : code)));
+        }
+        for (JsonElement id : array(def, "abilities")) {
+            if (!id.isJsonPrimitive()) continue;
+            JsonObject ability = object(object(catalog, "petAbilities"), id.getAsString());
+            String needs = text(ability, "minRarity", "COMMON").toUpperCase(Locale.ROOT);
+            boolean unlocked = ProfileCollection.rank(rarity) >= ProfileCollection.rank(needs);
+            JsonArray lore = array(object(ability, "levels"), Integer.toString(level.level()));
+            lines.add(Component.empty());
+            if (lore.isEmpty()) {
+                lines.add(Component.literal(title(id.getAsString().replaceFirst("^pet_", ""))).withColor(unlocked ? 0xFFAA00 : 0x555555));
+                continue;
+            }
+            for (int i = 0; i < lore.size(); i++) {
+                String line = lore.get(i).getAsString();
+                if (unlocked) { lines.add(legacy(line)); continue; }
+                var locked = Component.literal(plain(line)).withColor(0x555555);
+                if (i == 0) locked.append(Component.literal("  "+title(needs)).withColor(color(needs) & 0xFFFFFF));
+                lines.add(locked);
+            }
+        }
+        lines.add(Component.empty());
+        lines.add(level.level() >= level.max() ? Component.literal("MAX LEVEL").withColor(0xFFAA00)
+                : Component.literal("Level "+level.level()+" → "+(level.level()+1)+": ").withColor(0xFFAA00)
+                    .append(Component.literal(ProfileFormat.number(level.remaining())+" / "+ProfileFormat.number(level.next())+" XP").withColor(0xAAAAAA)));
+        String held = text(pet, "equippedItem", "");
+        if (!held.isEmpty()) lines.add(Component.literal("Held: "+text(object(object(catalog, "items"), held.toLowerCase(Locale.ROOT)), "name", title(held))).withColor(0xE8BD77));
+        if (integer(pet, "candiesUsed", 0) > 0) lines.add(Component.literal("Candies: "+integer(pet, "candiesUsed", 0)).withColor(0xAAB4BE));
+        if (bool(pet, "active")) lines.add(Component.literal("Currently summoned").withColor(0x55FF55));
+        lines.add(Component.empty());
+        lines.add(Component.literal(rarity.replace('_', ' ')+" PET").withColor(color(rarity) & 0xFFFFFF));
+        return List.copyOf(lines);
+    }
+
+    record PetLevel(int level, int max, double remaining, double next) { }
+    /** A pet's level as dragsim.co works it out, ported from its script so the two agree.
+     *  Every pet shows its max level, 100, unless its catalog entry says it levels; only the
+     *  Golden Dragon does, from 101 to 200 on a flat table. A Golden Dragon saved before
+     *  xpCurve 2 has its old-curve XP converted first, the way the site does. */
+    static PetLevel petLevel(JsonObject pet, JsonObject def, String rarity) {
+        boolean golden = text(pet, "type", "").equalsIgnoreCase("golden_dragon");
+        int max = golden ? integer(def, "max_level", 200) : 100;
+        if (!golden && !bool(def, "levels")) return new PetLevel(max, max, 0, 0);
+        String tier = rarity.toUpperCase(Locale.ROOT);
+        int base = switch (tier) { case "UNCOMMON" -> 175; case "RARE" -> 275; case "EPIC" -> 400; case "LEGENDARY" -> 600; case "MYTHIC" -> 800; default -> 100; };
+        int step = switch (tier) { case "UNCOMMON" -> 125; case "RARE" -> 175; case "EPIC" -> 250; case "LEGENDARY" -> 350; case "MYTHIC" -> 500; default -> 75; };
+        java.util.function.IntToDoubleFunction curve = f -> Math.floor((base+step*f)*(1+Math.pow(f/100.0, 2)*3));
+        double xp = Math.max(0, number(pet, "totalXp", 0));
+        if (golden && number(pet, "xpCurve", 0) < 2) {
+            int f = 1; double left = xp;
+            while (f < max && left >= curve.applyAsDouble(f)) left -= curve.applyAsDouble(f++);
+            double converted = 0; int end = Math.max(101, f);
+            for (int p = 101; p < end; p++) converted += p == 101 ? 650 : 204075;
+            if (end < max && f >= 101) converted += Math.floor(left/curve.applyAsDouble(f)*(end == 101 ? 650 : 204075));
+            xp = converted;
+        }
+        java.util.function.IntToDoubleFunction cost = f -> golden ? (f == 101 ? 650 : 204075) : curve.applyAsDouble(f);
+        int level = golden ? 101 : 1; double left = xp;
+        while (level < max && left >= cost.applyAsDouble(level)) left -= cost.applyAsDouble(level++);
+        return new PetLevel(level, max, left, cost.applyAsDouble(level));
     }
 
     private static Component legacy(String value) {

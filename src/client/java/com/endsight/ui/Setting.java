@@ -1,14 +1,17 @@
 package com.endsight.ui;
 
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -138,6 +141,82 @@ public sealed interface Setting {
      * the browser worse. The id is the stable keybind id saved under bind.<id>.
      */
     record KeyAction(String id, String label, String description, String button, Runnable run) implements Setting {
+    }
+
+    /**
+     * Things the player owns, as pictures with a key each, plus keys that flip between
+     * two of them.
+     *
+     * Pets and outfits were Choice and KeyAction rows: a row to cycle a name, another for
+     * its key, nine "Slot N" rows after that. You could not see what you were choosing,
+     * and choosing and binding were two jobs. On a tile the picture is the choice and the
+     * key sits on it, so there is one thing to do.
+     *
+     * @param noun    what one tile is, for the words around the grid
+     * @param swaps   never empty: the first is always offered
+     * @param addSwap adds an empty swap, up to {@link #MAX_SWAPS}
+     * @param load    fetches the list from the server's own menu. Nothing else knows it.
+     */
+    record Loadout(String label, String noun, Supplier<List<Tile>> tiles, Supplier<List<Swap>> swaps,
+                   Runnable addSwap, Runnable load) implements Setting {
+        /** A few setups. Past this the swaps would push the pets themselves off the page. */
+        public static final int MAX_SWAPS = 4;
+
+        public Swap swap() {
+            return swaps.get().getFirst();
+        }
+
+        @Override
+        public String description() {
+            return "";
+        }
+
+        /** Run whatever was just pressed. */
+        public void fire(Predicate<String> pressed) {
+            for (Swap swap : swaps.get()) if (pressed.test(swap.key())) swap.run().run();
+            for (Tile tile : tiles.get()) if (pressed.test(tile.id())) tile.run().run();
+        }
+    }
+
+    /**
+     * One pet or outfit.
+     *
+     * @param id    its keybind id, and how the swap names it
+     * @param color the name's colour, or 0 for the theme's text
+     * @param icons one head or four armour pieces, exactly what the server showed, so a
+     *              skinned pet is simply its skin. Empty stacks draw as empty slots.
+     */
+    record Tile(String id, String name, int color, String detail, List<ItemStack> icons,
+                boolean current, Runnable run) {
+    }
+
+    /**
+     * The two a single key flips between.
+     *
+     * @param chosen the two tile ids, "" for an empty side
+     * @param choose side (0 or 1), then the tile id
+     */
+    record Swap(String key, Supplier<List<String>> chosen, BiConsumer<Integer, String> choose, Runnable run, Runnable remove) {
+    }
+
+    /**
+     * Every key in the mod on one page. A listing of keys that belong to other settings, so
+     * it holds no values of its own and fires nothing; each key still works from where it lives.
+     */
+    record Binds(String label, Supplier<List<Bind>> binds) implements Setting {
+        @Override
+        public String description() {
+            return "";
+        }
+    }
+
+    /**
+     * One key on that page.
+     *
+     * @param where the page it belongs to, or "" when that would only repeat the name
+     * @param group the sidebar category it is listed under
+     */
+    record Bind(String id, String name, String where, String group) {
     }
 
     /** Not a control - a heading that breaks a long page into groups. */

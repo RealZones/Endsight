@@ -9,9 +9,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -23,40 +21,39 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.List;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 
-/** A full-page index over the server's Storage menu, backed by visited page snapshots. */
+/**
+ * What the server's Storage menu offers, and how to get from one page to another.
+ *
+ * Drawing is all in {@link LiveStorageView}: the Storage menu is that same view with no page
+ * open. It used to be a screen of its own, built to look alike, which gave every page to the
+ * grid and then lost one to the inventory the moment a page opened, so clicking moved things.
+ */
 public final class StorageOverview {
 
     private StorageOverview() {
     }
 
-    static final int CARD_W = 166;
-    static final int CARD_H = 112;
-    static final int GAP = 10;
-    private static final int CELL = 18;
-    private static final int GRID_LEFT = 2, GRID_TOP = 17;
-    private static final int TOP = 52;
-    private static final int BOTTOM = 28;
-
     private static Screen rootScreen;
     private static boolean vanilla;
-    private static EditBox search;
-    private static int scrollRow;
     private static double backgroundOpacity = 90;
     private static AbstractContainerScreen<?> pagesScreen;
     private static List<Integer> pageCache = List.of();
     private static Map<Integer, MenuPage> menuPages = Map.of();
     private static PageRequest pendingPage;
+    /** A click on a stack in a page that was not open, waiting for that page. */
+    private static SlotClick pendingClick;
+    private record SlotClick(int page, int slot, ItemStack expected, boolean shift, long until) {}
+    /** Where a click is headed while the Storage menu is in between, and how long to believe it. */
+    private static int transitPage = -1;
+    private static long transitUntil;
 
     public static Setting opacitySetting() {
         return new Setting.Slider("Overview opacity", "Darkness behind the all-page storage view; zero is clear.",
@@ -64,7 +61,20 @@ public final class StorageOverview {
     }
 
     public static boolean active(Screen screen) {
-        return screen == rootScreen && !vanilla && StoragePreview.overviewEnabled();
+        return LiveStorageView.active(screen);
+    }
+
+    static boolean vanillaView() { return vanilla; }
+    static boolean inTransit() { return transitPage >= 0 && System.currentTimeMillis() < transitUntil; }
+    /** The page on its way, or -1. */
+    static int transitPage() { return inTransit() ? transitPage : -1; }
+    static double opacity() { return backgroundOpacity; }
+    static void showVanilla(AbstractContainerScreen<?> screen) {
+        vanilla = true;
+        pendingPage = null;
+        transitPage = -1;
+        LiveStorageView.restore(screen);
+        StorageSearch.resume();
     }
 
     static boolean backButton(AbstractContainerScreen<?> screen, double mx, double my) {
@@ -74,6 +84,10 @@ public final class StorageOverview {
 
     public static void init() {
         ClientTickEvents.END_CLIENT_TICK.register(StorageOverview::tickPageRequest);
+        ClientTickEvents.END_CLIENT_TICK.register(StorageOverview::tickSlotClick);
+        ScreenEvents.BEFORE_INIT.register((client, screen, w, h) -> {
+            if (screen instanceof AbstractContainerScreen<?> container) LiveStorageView.restore(container);
+        });
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof AbstractContainerScreen<?> container)) return;
             boolean root = isRoot(container);
@@ -83,58 +97,31 @@ public final class StorageOverview {
                 pagesScreen = null;
                 rootScreen = screen;
                 vanilla = false;
-                scrollRow = 0;
                 StorageSearch.suspend();
-                search = new EditBox(client.font, w - 174, 25, 158, 13,
-                        Component.literal("Search storage"));
-                search.setBordered(false);
-                search.setMaxLength(48);
-                search.setTextColor(Theme.text());
-                search.setHint(Component.literal("Search items..."));
-                search.setValue(StorageSearch.query());
-                search.setResponder(StorageSearch::setQuery);
                 // Server menu updates arrive on ticks. Page discovery parses every
                 // slot name and sorts it; rendering and hit testing share that work.
                 ScreenEvents.afterTick(screen).register(s -> pagesScreen = null);
             }
+            LiveStorageView.init(container);
 
             ScreenEvents.afterExtract(screen).register((s, g, mx, my, delta) -> {
-                if (isRoot(container)) drawRoot(container, g, mx, my);
+                if (LiveStorageView.active(s)) return;
+                if (isRoot(container)) drawRoot(container, g);
                 else drawBack(container, g, mx, my);
             });
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) ->
-                    !click(container, click.x(), click.y(), click.button()));
+                    !click(container, click.x(), click.y(), click.button(), click.hasShiftDown()));
             ScreenMouseEvents.allowMouseScroll(screen).register((s, mx, my, hx, vy) ->
                     !scroll(container, vy));
-            ScreenKeyboardEvents.allowKeyPress(screen).register((s, event) -> {
-                if (!active(s)) return true;
-                if (event.key() == GLFW.GLFW_KEY_ESCAPE) return true;
-                if (event.key() == GLFW.GLFW_KEY_PAGE_DOWN) {
-                    moveRows(container, 1);
-                    return false;
-                }
-                if (event.key() == GLFW.GLFW_KEY_PAGE_UP) {
-                    moveRows(container, -1);
-                    return false;
-                }
-                if (search != null && search.isFocused()) {
-                    search.keyPressed(event);
-                    return false;
-                }
-                if (client.options.keyInventory.matches(event)) screen.onClose();
-                // The hidden server grid can retain its last hovered slot after a
-                // view switch. Number/drop hotkeys must never act on that stale slot.
-                return false;
-            });
-            ScreenKeyboardEvents.allowCharType(screen).register((s, event) -> {
-                if (!active(s) || search == null || !search.isFocused()) return true;
-                search.charTyped(event);
-                return false;
-            });
+            ScreenKeyboardEvents.allowKeyPress(screen).register((s, event) ->
+                    !LiveStorageView.active(s) || !LiveStorageView.key(container, event));
+            ScreenKeyboardEvents.allowCharType(screen).register((s, event) ->
+                    !LiveStorageView.active(s) || !LiveStorageView.character(event));
             ScreenEvents.remove(screen).register(s -> {
+                LiveStorageView.restore(container);
                 if (rootScreen == s) {
                     rootScreen = null;
-                    search = null;
+                    transitPage = -1;
                     pagesScreen = null;
                     pageCache = List.of();
                     menuPages = Map.of();
@@ -144,7 +131,7 @@ public final class StorageOverview {
     }
 
     private static boolean isRoot(AbstractContainerScreen<?> screen) {
-        return StoragePreview.plainText(screen.getTitle()).equals("Storage");
+        return StoragePreview.isRoot(screen);
     }
 
     /** A storage page, or the ender chest - both get the way back to the overview. */
@@ -153,7 +140,7 @@ public final class StorageOverview {
     }
 
     /** Every page, the ender chest first: it is the one storage everybody has. */
-    private static List<Integer> pages(AbstractContainerScreen<?> screen) {
+    static List<Integer> pages(AbstractContainerScreen<?> screen) {
         if (pagesScreen == screen) return pageCache;
         Set<Integer> found = new TreeSet<>();
         found.add(StoragePreview.ENDER_CHEST);
@@ -177,6 +164,21 @@ public final class StorageOverview {
         pagesScreen = screen;
         menuPages = Map.copyOf(targets);
         return pageCache = List.copyOf(found);
+    }
+
+    /**
+     * What a card should say about a page it cannot open, or nothing.
+     *
+     * Nothing until the menu lists some pages, because no pages listed means its items are
+     * still on the way, not that none are open. That gap marked every card Unavailable for a
+     * moment each time Storage opened. Nothing while a page is on its way either: the menu
+     * is only being passed through, and what it has loaded so far is nobody's business.
+     */
+    static String accessLabel(int page) {
+        if (page == StoragePreview.ENDER_CHEST || menuPages.isEmpty() || inTransit()) return "";
+        MenuPage target = menuPages.get(page);
+        if (target == null || target.access() == PageAccess.UNKNOWN) return "Unavailable";
+        return target.access() == PageAccess.LOCKED ? "Locked" : "";
     }
 
     enum PageAccess { OPEN, LOCKED, UNKNOWN }
@@ -261,8 +263,17 @@ public final class StorageOverview {
         Minecraft mc = Minecraft.getInstance();
         if (page <= 0 || page > 54 || mc.screen != source || mc.player == null || mc.level == null
                 || mc.getConnection() == null || mc.gameMode == null) return;
-        pendingPage = new PageRequest(page, mc.level, source, System.currentTimeMillis());
-        if (isRoot(source)) tickPageRequest(mc);
+        boolean root = isRoot(source);
+        // Said now: waiting on a page a loaded menu does not have would freeze the view for five seconds.
+        if (root && !menuPages.isEmpty() && !menuPages.containsKey(page)) {
+            Toast.warn("Storage", "Page " + page + " is not available in the Storage menu");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        pendingPage = new PageRequest(page, mc.level, source, now);
+        transitPage = page;
+        transitUntil = now + 5_000;
+        if (root) tickPageRequest(mc);
         else mc.getConnection().sendCommand("storage");
     }
 
@@ -277,9 +288,16 @@ public final class StorageOverview {
         if (action == OpenAction.WAIT) return;
         // Consume before sending the click: local prediction can replace the screen.
         pendingPage = null;
+        // Only a sent click has anywhere left to go, and not forever if the server ignores it.
+        if (action == OpenAction.CLICK) transitUntil = System.currentTimeMillis() + 2_000;
+        else transitPage = -1;
         if (action == OpenAction.CLICK && mc.player != null && mc.gameMode != null) {
             mc.gameMode.handleContainerInput(screen.getMenu().containerId, target.menuSlot(), 0,
                     ContainerInput.PICKUP, mc.player);
+            // The game guesses the click picked the button up, and on a real server the answer
+            // is half a second away: Fear's clip shows the page's glass pane riding the cursor
+            // from 3.27 s until the page arrived. The click has gone, so drop the guess.
+            screen.getMenu().setCarried(ItemStack.EMPTY);
         } else if (action == OpenAction.LOCKED) {
             Toast.warn("Storage", "Page " + request.page + " is locked");
         } else if (action == OpenAction.EXPIRED) {
@@ -287,178 +305,34 @@ public final class StorageOverview {
         }
     }
 
-    static Layout layout(int width, int height, int pages) {
-        int cols = Math.max(1, Math.min(3, (width - 20 + GAP) / (CARD_W + GAP)));
-        int gridW = cols * CARD_W + (cols - 1) * GAP;
-        int visibleRows = Math.max(1, (height - TOP - BOTTOM + GAP) / (CARD_H + GAP));
-        int totalRows = (pages + cols - 1) / cols;
-        return new Layout(cols, visibleRows, totalRows, (width - gridW) / 2);
+    /** Remembers the stack a click landed on, or forgets the last one when given nothing. */
+    static void clickOnArrival(int page, int slot, ItemStack expected, boolean shift) {
+        pendingClick = expected.isEmpty() ? null
+                : new SlotClick(page, slot, expected.copy(), shift, System.currentTimeMillis() + 7_000);
     }
 
-    record Layout(int cols, int visibleRows, int totalRows, int left) {
-        int maxScroll() {
-            return Math.max(0, totalRows - visibleRows);
-        }
-
-        int x(int col) {
-            return left + col * (CARD_W + GAP);
-        }
-
-        int y(int row, int firstRow) {
-            return TOP + (row - firstRow) * (CARD_H + GAP);
-        }
+    private static void tickSlotClick(Minecraft mc) {
+        SlotClick click = pendingClick;
+        if (click == null) return;
+        if (mc.player == null || mc.gameMode == null || System.currentTimeMillis() > click.until) { pendingClick = null; return; }
+        if (!(mc.screen instanceof AbstractContainerScreen<?> screen) || StoragePreview.currentPage(screen) != click.page) return;
+        var menu = screen.getMenu();
+        if (click.slot >= menu.slots.size()) { pendingClick = null; return; }
+        ItemStack live = menu.slots.get(click.slot).getItem();
+        // The window opens before its contents arrive, and an empty slot may only mean that yet.
+        if (live.isEmpty()) return;
+        pendingClick = null;
+        // Saved pages can be out of date, and a click meant for one thing must not move another.
+        if (!ItemStack.isSameItem(live, click.expected) || !menu.getCarried().isEmpty()) return;
+        mc.gameMode.handleContainerInput(menu.containerId, click.slot, 0,
+                click.shift ? ContainerInput.QUICK_MOVE : ContainerInput.PICKUP, mc.player);
     }
 
-    private static void drawRoot(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
+    /** The server's own Storage menu, after Vanilla view: the way back to ours. */
+    private static void drawRoot(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g) {
         if (!StoragePreview.overviewEnabled()) return;
         g.nextStratum();
-        if (!active(screen)) {
-            button(g, screen.width - 91, 8, 79, 18, "Overview", false);
-            return;
-        }
-
-        Font font = Minecraft.getInstance().font;
-        List<Integer> pages = pages(screen);
-        Layout l = layout(screen.width, screen.height, pages.size());
-        scrollRow = StoragePreview.clamp(scrollRow, 0, l.maxScroll());
-        // One backdrop controls the whole view. Card and slot fills used to pile
-        // different surfaces on top of it, so the opacity was impossible to predict.
-        if (backgroundOpacity > 0)
-            Draw.rect(g, 0, 0, screen.width, screen.height,
-                    Draw.alpha(Theme.bg(), (float) (backgroundOpacity / 100)));
-        Draw.rect(g, 12, TOP - 8, screen.width - 24, 1, Draw.alpha(Theme.text(), .13f));
-        Draw.text(g, font, "Storage", 12, 10, Theme.text());
-        button(g, screen.width - 91, 6, 79, 15, "Vanilla view",
-                within(mx, my, screen.width - 91, 6, 79, 15));
-
-        int searchX = screen.width - 174;
-        boolean searching = !StorageSearch.query().isBlank();
-        Draw.roundedOutline(g, searchX - 5, 22, 168, 20, 4,
-                searching ? Theme.obs() : search != null && search.isFocused() ? Theme.accent() : Theme.line(),
-                Theme.input());
-        if (search != null) {
-            search.setTextColor(Theme.text());
-            search.extractWidgetRenderState(g, mx, my, 0f);
-        }
-
-        if (pages.isEmpty()) {
-            Draw.textCentered(g, font, "No storage pages found", screen.width / 2,
-                    screen.height / 2 - 5, Theme.muted());
-            return;
-        }
-
-        String query = StorageSearch.query().trim();
-        for (int i = scrollRow * l.cols(); i < pages.size(); i++) {
-            int row = i / l.cols();
-            if (row >= scrollRow + l.visibleRows()) break;
-            int x = l.x(i % l.cols());
-            int y = l.y(row, scrollRow);
-            int page = pages.get(i);
-            drawPage(g, font, page, StoragePreview.snapshots().get(page), query,
-                    x, y, within(mx, my, x, y, CARD_W, CARD_H), mx, my);
-        }
-
-        int first = scrollRow * l.cols() + 1;
-        int last = Math.min(pages.size(), (scrollRow + l.visibleRows()) * l.cols());
-        String range = first + "-" + last + " of " + pages.size();
-        int fy = screen.height - 20;
-        Draw.textCentered(g, font, range, screen.width / 2, fy + 4, Theme.muted());
-        int center = screen.width / 2;
-        iconButton(g, center - 75, fy, "<", scrollRow > 0);
-        iconButton(g, center + 55, fy, ">", scrollRow < l.maxScroll());
-        if (within(mx, my, center - 75, fy, 20, 18))
-            g.setTooltipForNextFrame(font, Component.literal("Previous pages"), mx, my);
-        if (within(mx, my, center + 55, fy, 20, 18))
-            g.setTooltipForNextFrame(font, Component.literal("Next pages"), mx, my);
-
-        // Fabric's afterExtract runs after vanilla has flushed deferred tooltips.
-        // Flush ours here so item details sit above the replacement view.
-        g.extractDeferredElements(mx, my, 0f);
-    }
-
-    private static void drawPage(GuiGraphicsExtractor g, Font font, int page, PageSnapshot snap,
-                                 String query, int x, int y, boolean hovered, int mx, int my) {
-        boolean ec = page == StoragePreview.ENDER_CHEST;
-        MenuPage target = menuPages.get(page);
-        PageAccess access = ec ? PageAccess.OPEN : target == null ? PageAccess.UNKNOWN : target.access();
-        BitSet matchingSlots = StoragePreview.searchMatches(snap, query);
-        int matches = matchingSlots.cardinality();
-        Draw.text(g, font, ec ? "Ender Chest" : "PV " + page, x + GRID_LEFT, y + 3,
-                matches > 0 ? Theme.obs() : hovered ? Theme.accent() : Theme.text());
-        String status = matches > 0 ? matches + " found" + (access == PageAccess.OPEN ? ""
-                : access == PageAccess.LOCKED ? " · locked" : " · unavailable")
-                : access == PageAccess.LOCKED ? "Locked" : access == PageAccess.UNKNOWN ? "Unavailable"
-                : snap == null ? "Not visited" : query.isEmpty() ? "" : "0 found";
-        if (matches > 0) {
-            int badgeW = font.width(status) + 8;
-            Draw.roundedRect(g, x + CARD_W - GRID_LEFT - badgeW, y, badgeW, 13, 3, Theme.obs());
-            Draw.textRight(g, font, status, x + CARD_W - GRID_LEFT - 4, y + 3, Theme.bg());
-        } else {
-            Draw.textRight(g, font, status, x + CARD_W - GRID_LEFT, y + 3,
-                    Draw.lerp(Theme.muted(), Theme.text(), .4f));
-        }
-
-        // The ender chest is shorter than a page; it gets the rows it has, top-aligned
-        // with the pages beside it, rather than empty cells that would read as free space.
-        int rows = snap == null ? 5 : Math.min(5, Math.max(1, snap.rows() - 1));
-        int gx = x + GRID_LEFT, gy = y + GRID_TOP;
-        int gridColour = Draw.alpha(Theme.text(), .17f);
-        for (int col = 0; col <= PageSnapshot.COLS; col++)
-            Draw.rect(g, gx + col * CELL, gy, 1, rows * CELL + 1, gridColour);
-        for (int row = 0; row <= rows; row++)
-            Draw.rect(g, gx, gy + row * CELL, PageSnapshot.COLS * CELL + 1, 1, gridColour);
-        boolean itemTooltip = false;
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < 9; col++) {
-                int cx = gx + col * CELL + 1;
-                int cy = gy + row * CELL + 1;
-                if (snap == null) continue;
-                ItemStack stack = snap.at((row + 1) * 9 + col);
-                if (stack.isEmpty()) continue;
-                boolean match = matchingSlots.get((row + 1) * 9 + col);
-                if (match) Draw.rect(g, cx - 1, cy - 1, CELL, CELL, Draw.alpha(Theme.obs(), .3f));
-                g.item(stack, cx, cy);
-                g.itemDecorations(font, stack, cx, cy);
-                if (match) {
-                    matchOutline(g, cx - 1, cy - 1);
-                } else if (!query.isEmpty()) {
-                    // Keep the page's spatial layout while making its hits the first
-                    // thing the eye finds, even over bright enchanted item icons.
-                    Draw.rect(g, cx, cy, 16, 16, Draw.alpha(Theme.bg(), .72f));
-                }
-                if (within(mx, my, cx, cy, 16, 16)) {
-                    if (!match) slotOutline(g, cx - 1, cy - 1, Draw.alpha(Theme.text(), .7f));
-                    g.setTooltipForNextFrame(font, stack, mx, my);
-                    itemTooltip = true;
-                }
-            }
-        }
-        if (hovered && !itemTooltip) {
-            List<Component> tip = new ArrayList<>();
-            tip.add(Component.literal(ec ? "Open Ender Chest" : access == PageAccess.OPEN ? "Open PV " + page
-                    : access == PageAccess.LOCKED ? "Locked storage page" : "Page unavailable in the current Storage menu"));
-            tip.add(Component.literal(snap == null ? "Visit this page to remember its items"
-                    : "Last seen " + snap.age(System.currentTimeMillis())).withColor(Theme.muted() & 0xFFFFFF));
-            g.setTooltipForNextFrame(font, tip, Optional.empty(), mx, my);
-        }
-    }
-
-    private static void slotOutline(GuiGraphicsExtractor g, int x, int y, int colour) {
-        Draw.rect(g, x, y, CELL + 1, 1, colour);
-        Draw.rect(g, x, y + CELL, CELL + 1, 1, colour);
-        Draw.rect(g, x, y, 1, CELL + 1, colour);
-        Draw.rect(g, x + CELL, y, 1, CELL + 1, colour);
-    }
-
-    private static void matchOutline(GuiGraphicsExtractor g, int x, int y) {
-        // Two contrasting edges survive both dark and bright icons. A one-pixel
-        // accent outline disappeared against the red glass and enchanted glint.
-        slotOutline(g, x, y, Theme.obs());
-        int edge = Draw.lerp(Theme.obs(), Theme.text(), .75f);
-        Draw.rect(g, x + 1, y + 1, CELL - 1, 1, edge);
-        Draw.rect(g, x + 1, y + CELL - 1, CELL - 1, 1, edge);
-        Draw.rect(g, x + 1, y + 1, 1, CELL - 1, edge);
-        Draw.rect(g, x + CELL - 1, y + 1, 1, CELL - 1, edge);
+        button(g, screen.width - 91, 8, 79, 18, "Overview", false);
     }
 
     private static void drawBack(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
@@ -475,13 +349,11 @@ public final class StorageOverview {
                 y + (h - 8) / 2, hovered ? Theme.accent() : Theme.text());
     }
 
-    private static void iconButton(GuiGraphicsExtractor g, int x, int y, String icon, boolean enabled) {
-        Draw.textCentered(g, Minecraft.getInstance().font, icon, x + 10, y + 4,
-                enabled ? Theme.text() : Theme.dim());
-    }
-
-    private static boolean click(AbstractContainerScreen<?> screen, double mx, double my, int button) {
+    private static boolean click(AbstractContainerScreen<?> screen, double mx, double my, int button, boolean shift) {
         if (!StoragePreview.overviewEnabled()) return false;
+        // Only passing through: a click here would land on a menu about to be replaced.
+        if (inTransit() && isRoot(screen)) return true;
+        if (LiveStorageView.active(screen)) return LiveStorageView.click(screen, mx, my, button, shift);
         Minecraft mc = Minecraft.getInstance();
         if (backButton(screen, mx, my) && button == 0) {
             pendingPage = null;
@@ -494,65 +366,18 @@ public final class StorageOverview {
             return true;
         }
         if (!isRoot(screen)) return false;
-        if (!active(screen)) {
-            if (button == 0 && within(mx, my, screen.width - 91, 8, 79, 18)) {
-                vanilla = false;
-                StorageSearch.suspend();
-                return true;
-            }
-            return false;
-        }
-        if (button != 0) return true;
-
-        if (within(mx, my, screen.width - 91, 6, 79, 15)) {
-            pendingPage = null;
-            vanilla = true;
-            if (search != null) search.setFocused(false);
+        if (button == 0 && within(mx, my, screen.width - 91, 8, 79, 18)) {
+            vanilla = false;
+            StorageSearch.suspend();
             return true;
         }
-        if (within(mx, my, screen.width - 177, 23, 164, 18)) {
-            if (search != null) search.setFocused(true);
-            return true;
-        }
-        if (search != null) search.setFocused(false);
-
-        List<Integer> pages = pages(screen);
-        Layout l = layout(screen.width, screen.height, pages.size());
-        int fy = screen.height - 20;
-        int center = screen.width / 2;
-        if (within(mx, my, center - 75, fy, 20, 18)) {
-            moveRows(screen, -1);
-            return true;
-        }
-        if (within(mx, my, center + 55, fy, 20, 18)) {
-            moveRows(screen, 1);
-            return true;
-        }
-        for (int i = scrollRow * l.cols(); i < pages.size(); i++) {
-            int row = i / l.cols();
-            if (row >= scrollRow + l.visibleRows()) break;
-            if (!within(mx, my, l.x(i % l.cols()), l.y(row, scrollRow), CARD_W, CARD_H)) continue;
-            int page = pages.get(i);
-            if (page == StoragePreview.ENDER_CHEST) {
-                pendingPage = null;
-                if (mc.getConnection() != null) mc.getConnection().sendCommand("ec");
-            } else {
-                openPage(screen, page);
-            }
-            return true;
-        }
-        return true; // The server's slots remain underneath the replacement view.
+        return false;
     }
 
     private static boolean scroll(AbstractContainerScreen<?> screen, double dy) {
-        if (!active(screen)) return false;
-        if (dy != 0) moveRows(screen, dy > 0 ? -1 : 1);
+        if (!LiveStorageView.active(screen)) return false;
+        if (dy != 0) LiveStorageView.move(screen, dy > 0 ? -1 : 1);
         return true;
-    }
-
-    private static void moveRows(AbstractContainerScreen<?> screen, int delta) {
-        Layout l = layout(screen.width, screen.height, pages(screen).size());
-        scrollRow = StoragePreview.clamp(scrollRow + delta, 0, l.maxScroll());
     }
 
     private static boolean within(double mx, double my, int x, int y, int w, int h) {

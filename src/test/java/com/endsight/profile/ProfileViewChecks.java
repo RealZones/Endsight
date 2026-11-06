@@ -56,6 +56,7 @@ public final class ProfileViewChecks {
     public static void main(String[] args) throws Exception {
         bestiaryCompletion();
         petSuggestions();
+        petLore();
         ProfileData data=data();var prepared=new ProfileViewData(data,new JsonObject());
         yes(prepared.pages("storage").size()==2,"All storage pages remain available");
         yes(prepared.pages("storage")==prepared.pages("storage"),"Unchanged pages reuse their plan");
@@ -147,5 +148,24 @@ public final class ProfileViewChecks {
         List<String> missing=new ProfileCollection(data(),catalog).missingPets.stream().map(ProfileData.Item::name).toList();
         yes(missing.contains("Phoenix") && missing.contains("Wolf"),"Phoenix is suggested beside catalog pets: "+missing);
         yes(!missing.contains("Blue Whale") && !missing.contains("Blaze"),"Unreleased pets are never suggested: "+missing);
+    }
+
+    /** Pet tooltips follow dragsim.co: level 100 lore, its stat perks, and the Golden Dragon's own XP table. */
+    private static void petLore() {
+        JsonObject catalog=JsonParser.parseString("{\"items\":{},\"stats\":[{\"id\":\"health\",\"color\":\"c\",\"name\":\"Health\"}],"
+                +"\"pets\":{\"goop\":{\"display\":\"Goop\",\"category\":\"combat\",\"perks\":[{\"stat\":\"health\",\"per_level\":2.0}],\"abilities\":[\"pet_slime_trail\"]},"
+                +"\"golden_dragon\":{\"display\":\"Golden Dragon\",\"max_level\":200}},"
+                +"\"petAbilities\":{\"pet_slime_trail\":{\"minRarity\":\"COMMON\",\"levels\":{\"1\":[\"§6Slime Trail\",\"§7Gain §b+0\"],\"100\":[\"§6Slime Trail\",\"§7Gain §b+20 ✯ Magic Find\"]}},"
+                +"\"pet_immortal_phoenix\":{\"minRarity\":\"MYTHIC\",\"levels\":{\"100\":[\"§6Immortal Phoenix\",\"§7On death, reincarnate\"]}}}}").getAsJsonObject();
+        JsonObject root=JsonParser.parseString("{\"player\":{\"player\":\"Tester\"},\"profile\":{\"pets\":["
+                +"{\"type\":\"GOOP\",\"rarity\":\"LEGENDARY\",\"totalXp\":0,\"xpCurve\":2,\"active\":true},"
+                +"{\"type\":\"PHOENIX\",\"rarity\":\"LEGENDARY\",\"totalXp\":0,\"xpCurve\":2},"
+                +"{\"type\":\"GOLDEN_DRAGON\",\"rarity\":\"LEGENDARY\",\"totalXp\":"+(650+2*204075+100)+",\"xpCurve\":2}]}}").getAsJsonObject();
+        var pets=new ProfileData(root).pets;var items=new ProfileItems(catalog);
+        java.util.function.Function<Integer,List<String>> lore=i -> items.lore(pets.get(i)).stream().map(net.minecraft.network.chat.Component::getString).toList();
+        yes(items.displayName(pets.get(0)).equals("[Lvl 100] Goop"),"Owned pets carry their level: "+items.displayName(pets.get(0)));
+        yes(lore.apply(0).containsAll(List.of("Combat Pet","Health: +200","Slime Trail","Gain +20 ✯ Magic Find","MAX LEVEL","Currently summoned","LEGENDARY PET")),"Goop shows level 100 lore: "+lore.apply(0));
+        yes(lore.apply(1).contains("Immortal Phoenix  Mythic") && lore.apply(1).contains("On death, reincarnate"),"A Legendary Phoenix still lists its Mythic ability: "+lore.apply(1));
+        yes(items.displayName(pets.get(2)).equals("[Lvl 104] Golden Dragon") && lore.apply(2).contains("Level 104 → 105: 100 / 204,075 XP"),"Golden Dragon levels on its own table: "+lore.apply(2));
     }
 }

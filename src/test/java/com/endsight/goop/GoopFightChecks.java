@@ -161,6 +161,37 @@ public final class GoopFightChecks {
         equal(GoopTracker.turn(1), "1 goop since yours");
         equal(GoopTracker.turn(3), "3 goops since yours");
 
+        // The placement clock keeps the first end signal, survives
+        // payout collection, and is cancelled as soon as another fight starts.
+        GoopFight test = new GoopFight();
+        test.line("[DRAGON] Bob: ✦ THE RIFT SLEEPS", 100, me);
+        equal(test.finishedAt(), -1L);
+        equal(GoopTracker.placementCount(test, 100), null);
+        test.line("The rift falls silent.", 1_000, me);
+        test.line("✦ THE RIFT SLEEPS", 1_500, me);
+        test.line("The rift falls silent.", 2_000, me);
+        equal(test.finishedAt(), 1_000L);
+        equal(GoopTracker.placementCount(test, 1_000), "6.0s");
+        equal(GoopTracker.placementCount(test, 3_500), "3.5s");
+        equal(GoopTracker.placementCount(test, 6_900), "0.1s");
+        equal(GoopTracker.placementCount(test, 7_000), "Place Goop");
+        test.poll(8_000);
+        equal(GoopTracker.placementCount(test, 8_000), "Place Goop");
+        equal(GoopTracker.placementCount(test, 12_000), null);
+        test.line("ImFear squeezes the goop into the altar.", 12_000, me);
+        equal(test.finishedAt(), -1L);
+        equal(GoopTracker.placementCount(test, 12_000), null);
+        test.line("✦ THE RIFT SLEEPS", 13_000, me);
+        equal(test.finishedAt(), -1L); // A late old result cannot restart it during the new spawn wait.
+        test.line("It stops moving.", 49_000, me);
+        test.line("The rift throws you skyward!", 50_000, me);
+        test.line("✦ THE RIFT SLEEPS", 60_000, me);
+        equal(test.finishedAt(), 60_000L); // Final-stage result works without the death narration.
+        test.line("✦ THE RIFT SLEEPS", 61_000, me);
+        equal(test.finishedAt(), 60_000L);
+        test.reset();
+        equal(test.finishedAt(), -1L);
+
         System.out.println(checks + " goop checks passed");
     }
 

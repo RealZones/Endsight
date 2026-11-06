@@ -93,9 +93,9 @@ public final class ProfileVisualTest implements FabricClientGameTest {
                 if(!raw.getAsJsonObject("item_modifiers").getAsJsonPrimitive("recombobulated").isBoolean()) throw new AssertionError("NBT flag type did not normalize");
                 System.out.println("PROFILE_TOOLTIP_ID "+raw.get("entry"));
             });
-            int[] nav=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px")+8,(int)field(mc.screen,"py")-29,Math.min(118,((int)field(mc.screen,"pw")-16)/5)});
+            int[] nav=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px"),(int)field(mc.screen,"py")+56,25});
             for(int i=1;i<=4;i++) {
-                context.getInput().setCursorPos((nav[0]+i*nav[2]+20)*2,(nav[1]+12)*2);
+                context.getInput().setCursorPos((nav[0]+30)*2,(nav[1]+i*nav[2]+12)*2);
                 context.getInput().pressMouse(0); context.waitTicks(10);
                 final int selected=i;
                 context.runOnClient(mc -> { if(((Enum<?>)field(mc.screen,"view")).ordinal()!=selected) throw new AssertionError("Native tab did not navigate"); });
@@ -103,7 +103,7 @@ public final class ProfileVisualTest implements FabricClientGameTest {
             }
             context.getInput().setCursorPos(1200,750); context.getInput().scroll(-80); context.waitTicks(5);
             context.takeScreenshot("profile-rng-groups");
-            click(context,nav[0]+nav[2]+20,nav[1]+12);
+            click(context,nav[0]+30,nav[1]+nav[2]+12);
             int[] content=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"cx"),(int)field(mc.screen,"top"),(int)field(mc.screen,"cw")});
             click(context,content[0]+35,content[1]+85);
             context.getInput().typeChars("Frozen Scythe"); context.waitTicks(5);
@@ -133,15 +133,15 @@ public final class ProfileVisualTest implements FabricClientGameTest {
             context.takeScreenshot("profile-accessories");
             click(context,content[0]+content[2]*4/5+15,content[1]+52);
             context.takeScreenshot("profile-wardrobe");
-            int[] profileButton=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px")+(int)field(mc.screen,"pw")-250,(int)field(mc.screen,"py")+40});
+            int[] profileButton=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px")+30,(int)field(mc.screen,"py")+(int)field(mc.screen,"ph")-37});
             click(context,profileButton[0],profileButton[1]);
             context.runOnClient(mc -> { if(!(boolean)field(mc.screen,"profileMenu")) throw new AssertionError("Profile picker did not open"); });
             context.takeScreenshot("profile-picker");
-            int[] picker=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px")+(int)field(mc.screen,"pw")-100,(int)field(mc.screen,"py")+53+4+2*25+10});
+            int[] picker=context.computeOnClient(mc -> new int[]{(int)field(mc.screen,"px")+30,(int)field(mc.screen,"choicesY")+4+2*25+10});
             click(context,picker[0],picker[1]);
             context.waitFor(mc -> !(boolean)field(mc.screen,"loading"),1200);
             context.runOnClient(mc -> { if(!ProfileData.text(((ProfileData)field(mc.screen,"data")).profile,"profile_mode","").equalsIgnoreCase("IRONMAN")) throw new AssertionError("Ironman profile did not load"); });
-            click(context,nav[0]+20,nav[1]+12);
+            click(context,nav[0]+30,nav[1]+12);
             context.takeScreenshot("profile-ironman");
             ProfileData realRank=context.computeOnClient(mc -> (ProfileData)field(mc.screen,"data"));
             context.runOnClient(mc -> {
@@ -150,7 +150,7 @@ public final class ProfileVisualTest implements FabricClientGameTest {
             });
             context.waitTicks(5);context.takeScreenshot("profile-rank-badge-fixture");
             context.runOnClient(mc -> set(mc.screen,"data",realRank));
-            click(context,nav[0]+nav[2]*4+20,nav[1]+12);
+            click(context,nav[0]+30,nav[1]+nav[2]*4+12);
             context.getInput().resizeWindow(854,480); context.waitTicks(10);
             context.takeScreenshot("profile-compact");
             context.getInput().setCursorPos(650,310);
@@ -158,7 +158,7 @@ public final class ProfileVisualTest implements FabricClientGameTest {
             context.takeScreenshot("profile-compact-scrolled");
             context.runOnClient(mc -> { if((int)field(mc.screen,"scroll")<=0) throw new AssertionError("Compact content did not scroll"); });
             context.getInput().resizeWindow(1440,960); context.waitTicks(5);
-            click(context,nav[0]+nav[2]+20,nav[1]+12);
+            click(context,nav[0]+30,nav[1]+nav[2]+12);
             context.runOnClient(mc -> {
                 var root=((ProfileData)field(mc.screen,"data")).root.deepCopy();
                 root.getAsJsonObject("profile").addProperty("inventory_hidden",true);

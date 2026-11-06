@@ -31,7 +31,7 @@ public final class Rarity {
             "\\b(VERY SPECIAL|SPECIAL|DIVINE|MYTHIC|LEGENDARY|EPIC|RARE|UNCOMMON|COMMON)\\b"
                     + "(?:\\s+(?:DUNGEON\\s+)?([A-Z]+))?");
     private static final Map<String, Integer> cache = new HashMap<>();
-    private record Seen(CustomData data, ItemLore lore, Info info) { }
+    private record Seen(CustomData data, ItemLore lore, Info info, int colour) { }
     private static final Map<ItemStack, Seen> stacks = new WeakHashMap<>();
 
     /** The rarity colour, or {@code fallback} if the item has never been seen. */
@@ -46,26 +46,30 @@ public final class Rarity {
 
     /** This stack's rarity colour; same-name items can have different upgraded rarities. */
     public static int of(ItemStack stack) {
-        Info info = read(stack);
-        if (info == null) return 0;
-        int found = colourOf(info.rarity());
-        cache.put(Zealots.strip(stack.getHoverName().getString()).trim(), found);
-        return found;
+        return stack.isEmpty() ? 0 : seen(stack).colour();
     }
 
     /** Read components directly: no world, generated tooltip, or tooltip callback is needed. */
     public static Info read(ItemStack stack) {
-        if (stack.isEmpty()) return null;
+        return stack.isEmpty() ? null : seen(stack).info();
+    }
+
+    private static Seen seen(ItemStack stack) {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         ItemLore lore = stack.get(DataComponents.LORE);
         Seen seen = stacks.get(stack);
-        if (seen != null && seen.data() == data && seen.lore() == lore) return seen.info();
+        if (seen != null && seen.data() == data && seen.lore() == lore) return seen;
         // copyTag copies all server NBT. Do it only when components change, not for
         // every slot every frame. Weak keys let discarded inventory snapshots go.
         Info info = read(data == null ? new CompoundTag() : data.copyTag(),
                 lore == null ? List.of() : lore.lines());
-        stacks.put(stack, new Seen(data, lore, info));
-        return info;
+        int colour = info == null ? 0 : colourOf(info.rarity());
+        // Once here, not on each lookup: outlines ask for every stack on every frame, and a
+        // full wall of storage pages is hundreds of names to build and strip for nothing.
+        if (info != null) cache.put(Zealots.strip(stack.getHoverName().getString()).trim(), colour);
+        seen = new Seen(data, lore, info, colour);
+        stacks.put(stack, seen);
+        return seen;
     }
 
     static Info read(CompoundTag data, List<Component> lore) {

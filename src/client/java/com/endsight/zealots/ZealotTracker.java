@@ -755,10 +755,7 @@ public final class ZealotTracker {
     private static String number(int count) { return String.format(Locale.ROOT, "%,d", count); }
 
     private static String coins(long amount) {
-        if (amount >= 1_000_000_000L) return String.format(Locale.ROOT, "%.1fb", amount / 1_000_000_000.0);
-        if (amount >= 1_000_000L) return String.format(Locale.ROOT, "%.1fm", amount / 1_000_000.0);
-        if (amount >= 1_000L) return String.format(Locale.ROOT, "%.1fk", amount / 1_000.0);
-        return String.valueOf(amount);
+        return NpcPrices.coins(amount);
     }
 
     private static String secs(long ms) {

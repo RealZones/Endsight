@@ -4,6 +4,7 @@ import com.endsight.hud.HudCard;
 import com.endsight.hud.HudLayout;
 import com.endsight.hud.TrackerHud;
 import com.endsight.qol.Drops;
+import com.endsight.qol.NpcPrices;
 import com.endsight.qol.Rarity;
 import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
@@ -52,19 +53,25 @@ public final class GoopTracker {
     }
 
     private static final String ID = "tracker.goop", TIMER = "goop.timer";
+    /** Each fight you place costs one. */
+    public static final String COST_ITEM = "Goop";
     /** Fights at the altar come every minute or so; this long without one and you have left. */
     private static final long SHOWN_MS = 90_000;
+    private static final long PLACEMENT_COOLDOWN_MS = 6_000;
+    private static final long PLACEMENT_READY_MS = 5_000;
 
     private static final GoopFight fight = new GoopFight();
     private static boolean enabled = true, timer = true, dirty, historySafe = true;
     private static String period = "Session";
     private static Counts session = new Counts(), total = new Counts();
-    private static long savedAt;
+    private static long savedAt, bookedAt;
     private static Object level;
 
     /** Saved as goop-tracker.json; a session is the same shape, never saved. */
     static final class Counts {
         long fights, paid, placed;
+        /** Time between fights at the altar, so a profit per hour leaves out the time you were elsewhere. */
+        long activeMs;
         final Map<String, Integer> drops = new LinkedHashMap<>();
 
         void add(GoopFight.Result r) {
@@ -76,7 +83,7 @@ public final class GoopTracker {
     }
 
     public static Module timerModule() {
-        return new Module(TIMER, "Goop Timer", "Counts down to the Goop's next form.", "The End",
+        return new Module(TIMER, "Goop Timer", "Counts down to the next Goop form and placement.", "The End",
                 () -> timer, v -> timer = v, List.of());
     }
 
@@ -85,6 +92,8 @@ public final class GoopTracker {
                 "The End", () -> enabled, v -> enabled = v, List.of(
                 new Setting.Choice("Period", "Show this session or saved totals.", List.of("Session", "All Time"),
                         () -> period, v -> period = v),
+                new Setting.Action("Drop prices", "Set what each drop and a Goop are worth.", "Edit",
+                        com.endsight.dragons.DropPricesScreen::openGoop),
                 new Setting.Action("Reset session", "Clear this session without changing saved totals.", "Reset",
                         GoopTracker::resetSession)));
     }
@@ -118,7 +127,8 @@ public final class GoopTracker {
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("endsight", "goop"), (g, delta) -> {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.options.hideGui) return;
-            if (timer && fight.phase().waiting()) HudLayout.draw(TIMER, g, mc.font, false);
+            if (timer && (fight.phase().waiting() || placementCount(fight, System.currentTimeMillis()) != null))
+                HudLayout.draw(TIMER, g, mc.font, false);
             if (enabled && shown(System.currentTimeMillis())) HudLayout.draw(ID, g, mc.font, false);
         });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, context) -> {
@@ -157,11 +167,28 @@ public final class GoopTracker {
         if (r == null || !enabled) return;
         session.add(r);
         total.add(r);
+        r.drops().keySet().forEach(NpcPrices::track);
+        long now = System.currentTimeMillis();
+        if (bookedAt > 0 && now - bookedAt <= SHOWN_MS) {
+            session.activeMs += now - bookedAt;
+            total.activeMs += now - bookedAt;
+        }
+        bookedAt = now;
         dirty = true;
+    }
+
+    /** Everything the price list shows for this tracker: what you spend, then what you earned. */
+    public static Map<String, Integer> dropCounts() {
+        total.drops.keySet().forEach(NpcPrices::track);
+        Map<String, Integer> out = new LinkedHashMap<>();
+        out.put(COST_ITEM, (int) Math.min(Integer.MAX_VALUE, total.placed));
+        total.drops.forEach((item, count) -> { if (count > 0 && !item.equals(COST_ITEM)) out.put(item, count); });
+        return out;
     }
 
     private static void resetSession() {
         session = new Counts();
+        bookedAt = 0;
     }
 
     private static boolean shown(long now) {
@@ -182,6 +209,7 @@ public final class GoopTracker {
      * now; which form comes next does not change when to be ready.
      */
     private static final String SPAWNS = "Goop spawns in";
+    private static final String PLACEMENT = "Goop cooldown", PLACE_GOOP = "Place Goop";
     private static final float BIG = 3f;
     /** Sized for the widest count, so the element does not shift as the digits change. */
     private static final String WIDEST = "00.0s";
@@ -193,15 +221,27 @@ public final class GoopTracker {
         return left > 0 ? GoopFight.seconds(left) : "now";
     }
 
+    static String placementCount(GoopFight f, long now) {
+        if (f.finishedAt() < 0) return null;
+        long elapsed = now - f.finishedAt();
+        if (elapsed < 0 || elapsed >= PLACEMENT_COOLDOWN_MS + PLACEMENT_READY_MS) return null;
+        return elapsed < PLACEMENT_COOLDOWN_MS ? GoopFight.seconds(PLACEMENT_COOLDOWN_MS - elapsed) : PLACE_GOOP;
+    }
+
     private static int[] drawTimer(GuiGraphicsExtractor g, Font font, int x, int y, boolean sample) {
-        int w = Math.max(font.width(SPAWNS), Math.round(font.width(WIDEST) * BIG));
+        int w = Math.max(Math.max(font.width(SPAWNS), font.width(PLACEMENT)),
+                Math.round(Math.max(font.width(WIDEST), font.width(PLACE_GOOP)) * BIG));
         int h = font.lineHeight + 2 + Math.round(font.lineHeight * BIG);
         if (g == null) return new int[]{w, h};
         long now = System.currentTimeMillis();
-        String count = sample ? "9.2s" : count(fight, now);
+        String placement = !sample ? placementCount(fight, now) : null;
+        String count = sample ? "9.2s" : placement != null ? placement : count(fight, now);
         if (count == null) return new int[]{w, h};
-        boolean soon = sample || fight.remaining(now) < 3_000;
-        Draw.textCentered(g, font, SPAWNS, x + w / 2, y, Draw.lerp(Theme.muted(), Theme.text(), 0.8f));
+        boolean soon = sample || (placement != null
+                ? now - fight.finishedAt() >= PLACEMENT_COOLDOWN_MS - 3_000
+                : fight.remaining(now) < 3_000);
+        Draw.textCentered(g, font, placement != null ? PLACEMENT : SPAWNS, x + w / 2, y,
+                Draw.lerp(Theme.muted(), Theme.text(), 0.8f));
         var pose = g.pose();
         pose.pushMatrix();
         pose.translate(x + w / 2f, y + font.lineHeight + 2f);
@@ -225,6 +265,15 @@ public final class GoopTracker {
         rows.add(new HudCard.Row(stats(c, "§f", "§r"), ""));
         String turn = turn(since);
         if (turn != null) rows.add(new HudCard.Row(turn, ""));
+        if (c.fights > 0) {
+            var takings = NpcPrices.takings(c.drops, COST_ITEM, c.placed);
+            String unknown = takings.unpriced() ? " §7+ ?" : "";
+            int colour = takings.profit() < 0 ? Theme.neg() : Theme.pos();
+            rows.add(new HudCard.Row("Profit", NpcPrices.coins(takings.profit()) + unknown, colour));
+            // Under a minute of fights is one lucky drop scaled up to an hour.
+            if (c.activeMs >= 60_000) rows.add(new HudCard.Row("Profit/h",
+                    NpcPrices.coins(Math.round(takings.profit() * (3_600_000.0 / c.activeMs))) + unknown, colour));
+        }
         List<Map.Entry<String, Integer>> drops = ordered(c);
         for (var drop : drops.stream().limit(limit).toList())
             rows.add(new HudCard.Row("§" + code(Rarity.colour(drop.getKey(), 0xFFFFFF)) + drop.getKey(),
@@ -280,6 +329,7 @@ public final class GoopTracker {
         Counts c = allTime ? total : session;
         mc.player.sendSystemMessage(Component.literal("§5Goop §8(" + (allTime ? "all time" : "session") + ") §7— "
                 + stats(c, "§f", "§7")));
+        if (c.placed > 0) mc.player.sendSystemMessage(Component.literal(NpcPrices.spentLine(COST_ITEM, c.placed)));
         List<HudCard.Row> rows = rows(c, fight.sinceMine(), Integer.MAX_VALUE);
         for (HudCard.Row row : rows.subList(1, rows.size()))
             mc.player.sendSystemMessage(Component.literal("  §7" + row.label() + (row.value().isEmpty() ? "" : " §f" + row.value())));
@@ -307,6 +357,7 @@ public final class GoopTracker {
                     || saved.drops.entrySet().stream().anyMatch(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0))
                 throw new IllegalArgumentException("Invalid Goop totals");
             total = saved;
+            saved.drops.keySet().forEach(NpcPrices::track);
         } catch (Exception e) {
             // Counting on into a file that could not be read would overwrite it with this session alone.
             historySafe = false;

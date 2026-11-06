@@ -21,7 +21,7 @@ public class EndsightScreen extends Screen {
     private static String category, expandedId;
     private static String query = "";
     private static int scroll;
-    private static final String APPEARANCE = "@appearance";
+    private static final String APPEARANCE = "@appearance", KEYBINDS = "@keybinds";
     private record ViewState(String category, String query, int scroll, String expanded) { }
     private static final Map<ModuleRegistry, ViewState> views = new WeakHashMap<>();
     private static ModuleRegistry activeRegistry;
@@ -29,17 +29,23 @@ public class EndsightScreen extends Screen {
     private String binding;
     private boolean suppressCharacter;
     private boolean searchFocused = true;
-    private int contentHeight, navScroll, refreshTicks, resultCount;
+    private int contentHeight, navScroll, refreshTicks, bindTicks, resultCount;
     private SettingsScreen editor;
     private Module editingModule;
     private Map<String, List<Module>> groups;
     private final Map<String, String> matchSummaries = new HashMap<>();
     private final Map<String, Anim> anims = new HashMap<>();
     private final Module appearance = Module.group("ui.appearance", "Appearance", "Theme and interface preferences.", "Appearance", List.of(
-            new Setting.Section("Interface"),
             new Setting.Choice("Theme", "Shared by both menus and your readouts.", Theme.palettes().stream().map(Palette::name).toList(),
-                    () -> Theme.palette().name(), name -> Theme.palettes().stream().filter(p -> p.name().equals(name)).findFirst().ifPresent(Theme::set))));
+                    () -> Theme.palette().name(), name -> Theme.palettes().stream().filter(p -> p.name().equals(name)).findFirst().ifPresent(Theme::set)),
+            new Setting.Slider("Menu opacity", "How much of the game shows through.", 60, 100, 2,
+                    () -> Theme.panelOpacity() * 100, value -> Theme.panelOpacity((float) value / 100f), "%")));
     private final Map<String, List<Module>> appearanceGroups = Map.of("Appearance", List.of(appearance));
+    private final Module keybinds = Module.group("ui.keybinds", "Keybinds", "Click a key to set it, right-click to clear it.", "Keybinds",
+            List.of(new Setting.Binds("Keybinds", this::binds)));
+    private final Map<String, List<Module>> keybindsGroups = Map.of("Keybinds", List.of(keybinds));
+    /** The list behind that page. Kept, and dropped every second, so a new command shows up without a walk per frame. */
+    private List<Setting.Bind> bindList;
     private int beforeSearchScroll;
     private String beforeSearchExpanded;
     private final List<Placed> rows = new ArrayList<>();
@@ -48,7 +54,7 @@ public class EndsightScreen extends Screen {
     private record Placed(Module module, ModuleRowLayout geometry, int bodyY, int bodyH) { }
     private record Heading(String title, int count, int y) { }
     private record Nav(String title, String category, int y) { }
-    private static final int HEADER = 66, INSET = 12, NAV_PITCH = 26;
+    private static final int HEADER = 66, INSET = 12, NAV_PITCH = 25, NAV_TIGHT = 23, NAV_TOP = 33, NAV_GAP = 10, NAV_TIGHT_GAP = 4;
 
     public EndsightScreen(String brand, ModuleRegistry registry) {
         super(Component.literal(brand));
@@ -83,6 +89,10 @@ public class EndsightScreen extends Screen {
             refreshTicks = 0;
             if (!query.isBlank() && (editor == null || !editor.capturesKeyboard())) registry.invalidateSearch();
         }
+        if (++bindTicks >= 20) {
+            bindTicks = 0;
+            bindList = null;
+        }
     }
 
     @Override
@@ -102,20 +112,30 @@ public class EndsightScreen extends Screen {
     private int contentW() { return panelW() - sidebarW(); }
     private int contentTop() { return panelY() + HEADER; }
     private int contentBottom() { return panelY() + panelH() - 10; }
-    private int navTop() { return contentTop() - 1; }
+    // Up beside the search box rather than level with the list: eight categories cut Chat
+    // in half at the usual window size, and that strip of sidebar was holding nothing.
+    private int navTop() { return panelY() + NAV_TOP; }
     private int navBottom() { return Math.max(navTop() + 20, moveButtonY() - 8); }
-    private int moveButtonY() { return panelY() + panelH() - 59; }
+    /** The top of the footer: Keybinds, Edit HUD and Appearance, which are tools and not categories. */
+    private int moveButtonY() { return panelY() + panelH() - 84; }
+    private int navRows() { return registry.categories().size() + 2; }
+    /** Closer rows before any scrolling: a category behind an arrow is one nobody finds. */
+    private boolean navTight() { return navRows() * NAV_PITCH + NAV_GAP > navBottom() - navTop(); }
+    private int navPitch() { return navTight() ? NAV_TIGHT : NAV_PITCH; }
+    private int navGap() { return navTight() ? NAV_TIGHT_GAP : NAV_GAP; }
     private int searchX() { return contentX() + INSET; }
     private int searchY() { return panelY() + 31; }
     private int searchW() { return Math.max(40, contentW() - INSET * 2); }
     private int maxScroll() { return Math.max(0, contentHeight - (contentBottom() - contentTop())); }
-    private int maxNavScroll() { return Math.max(0, (registry.categories().size() + 2) * NAV_PITCH + 10 - (navBottom() - navTop())); }
+    private int maxNavScroll() { return Math.max(0, navRows() * navPitch() + navGap() - (navBottom() - navTop())); }
 
     private Anim anim(String key) { return anims.computeIfAbsent(key, ignored -> new Anim(0)); }
 
     private void results() {
         // The header search is global; keeping a hidden category filter made real features appear missing.
-        Map<String, List<Module>> next = !query.isBlank() ? registry.grouped(null, query)
+        // Keybinds keeps its own page while searching: the box filters the keys on it.
+        Map<String, List<Module>> next = KEYBINDS.equals(category) ? keybindsGroups
+                : !query.isBlank() ? registry.grouped(null, query)
                 : APPEARANCE.equals(category) ? appearanceGroups
                 : ModuleRegistry.FAVORITES.equals(category) ? registry.favorites() : registry.grouped(category, "");
         if (groups == next) return;
@@ -130,6 +150,44 @@ public class EndsightScreen extends Screen {
                 matchSummaries.put(module.id(), "Matches: " + text + (labels.size() > 2 ? " +" + (labels.size() - 2) : ""));
             }
         }
+    }
+
+    /** Every key the browser can reach, in sidebar order, once each. */
+    private List<Setting.Bind> binds() {
+        if (bindList != null) return bindList;
+        List<Setting.Bind> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        out.add(new Setting.Bind(Keybinds.OPEN_MENU, "Open menu", "", "Menu"));
+        for (Map.Entry<String, List<Module>> group : registry.grouped(null, "").entrySet()) for (Module module : group.getValue()) {
+            if (module.settings() == null) continue;
+            for (Setting setting : module.settings()) {
+                if (setting instanceof Setting.KeyAction action && Keybinds.worthAKey(action.id()) && seen.add(action.id())) {
+                    String name = action.label().endsWith(" key") ? action.label().substring(0, action.label().length() - 4) : action.label();
+                    out.add(new Setting.Bind(action.id(), name, name.equals(module.title()) ? "" : module.title(), group.getKey()));
+                } else if (setting instanceof Setting.Command command && seen.add(command.id())) {
+                    out.add(new Setting.Bind(command.id(), command.command().isBlank() ? "Empty command" : command.command(), module.title(), group.getKey()));
+                } else if (setting instanceof Setting.Loadout loadout) {
+                    int number = 0;
+                    for (Setting.Swap swap : loadout.swaps().get()) {
+                        number++;
+                        if (seen.add(swap.key()))
+                            out.add(new Setting.Bind(swap.key(), number == 1 ? "Swap key" : "Swap key " + number, module.title(), group.getKey()));
+                    }
+                    // Once it has a key: each is set on its own picture, and hundreds of pets
+                    // would otherwise be hundreds of rows here.
+                    for (Setting.Tile tile : loadout.tiles().get())
+                        if (Keybinds.get(tile.id()) != Keybinds.NONE && seen.add(tile.id()))
+                            out.add(new Setting.Bind(tile.id(), tile.name(), module.title(), group.getKey()));
+                }
+            }
+        }
+        // A switch set before the list was cut still works, so it has to stay where it can be cleared.
+        for (Module module : registry.all()) {
+            String id = Keybinds.moduleId(module);
+            if (Keybinds.get(id) != Keybinds.NONE && seen.add(id)) out.add(new Setting.Bind(id, module.title(), "", module.category()));
+        }
+        bindList = List.copyOf(out);
+        return bindList;
     }
 
     private Module visibleModule(String id) {
@@ -149,7 +207,7 @@ public class EndsightScreen extends Screen {
 
     private void layout() {
         results();
-        if (category != null && !ModuleRegistry.FAVORITES.equals(category) && !APPEARANCE.equals(category) && !registry.categories().contains(category)) {
+        if (category != null && !ModuleRegistry.FAVORITES.equals(category) && !APPEARANCE.equals(category) && !KEYBINDS.equals(category) && !registry.categories().contains(category)) {
             category = null;
             results();
         }
@@ -157,12 +215,13 @@ public class EndsightScreen extends Screen {
         navScroll = Math.max(0, Math.min(navScroll, maxNavScroll()));
         nav.clear();
         int ny = navTop() - navScroll;
+        int pitch = navPitch();
         nav.add(new Nav("Favorites", ModuleRegistry.FAVORITES, ny));
-        ny += NAV_PITCH;
+        ny += pitch;
         nav.add(new Nav("All features", null, ny));
-        ny += 10;
+        ny += navGap();
         for (String name : registry.categories()) {
-            ny += NAV_PITCH;
+            ny += pitch;
             nav.add(new Nav(name, name, ny));
         }
         placeRows();
@@ -175,7 +234,7 @@ public class EndsightScreen extends Screen {
         int x = contentX() + INSET, w = Math.max(80, contentW() - INSET * 2);
         int y = contentTop() + 8 - scroll;
         for (Map.Entry<String, List<Module>> group : groups.entrySet()) {
-            if (category == null || ModuleRegistry.FAVORITES.equals(category) || !query.isBlank()) {
+            if (!KEYBINDS.equals(category) && (category == null || ModuleRegistry.FAVORITES.equals(category) || !query.isBlank())) {
                 headings.add(new Heading(group.getKey(), group.getValue().size(), y));
                 y += 24;
             }
@@ -200,9 +259,13 @@ public class EndsightScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         layout();
-        g.fill(0, 0, width, height, Draw.alpha(Theme.scrim(), .78f));
-        Draw.roundedOutline(g, panelX() - 1, panelY() - 1, panelW() + 2, panelH() + 2,
-                Theme.RADIUS_LG + 1, Theme.line(), Theme.bg());
+        // Light on purpose: the game behind is already blurred and dimmed by the vanilla
+        // backdrop, and at .78 on top of that noon read as midnight around the panel.
+        g.fill(0, 0, width, height, Draw.alpha(Theme.scrim(), .30f));
+        // A ring and a fill rather than Draw.roundedOutline, which lays its fill over a solid
+        // border colour: see-through, that showed the border across the whole panel.
+        Draw.roundedRect(g, panelX(), panelY(), panelW(), panelH(), Theme.RADIUS_LG, Theme.panel());
+        Draw.roundedRing(g, panelX() - 1, panelY() - 1, panelW() + 2, panelH() + 2, Theme.RADIUS_LG + 1, Theme.line());
         drawSidebar(g, mouseX, mouseY);
         drawContent(g, mouseX, mouseY);
         drawHeader(g);
@@ -211,7 +274,9 @@ public class EndsightScreen extends Screen {
 
     private void drawSidebar(GuiGraphicsExtractor g, int mx, int my) {
         int x = panelX(), y = panelY(), w = sidebarW();
-        Draw.roundedRect(g, x, y, w, panelH(), Theme.RADIUS_LG, Theme.surface(), true, false, true, false);
+        // A shade above the ground, not a slab of its own: as a full surface it was the
+        // brightest thing on screen and pulled the eye away from the content.
+        Draw.roundedRect(g, x, y, w, panelH(), Theme.RADIUS_LG, Draw.alpha(Theme.hair(), .55f), true, false, true, false);
         Draw.rect(g, x + w - 1, y + 8, 1, panelH() - 16, Theme.line());
         Draw.roundedRect(g, x + 15, y + 18, 5, 5, 2, Theme.accent());
         Draw.text(g, font, Draw.fit(font, brand, w - 42), x + 27, y + 16, Theme.text());
@@ -235,8 +300,30 @@ public class EndsightScreen extends Screen {
             if (navScroll < maxNavScroll())
                 MenuIcons.arrow(g, x + w - 19, navBottom() - 12, MenuIcons.Arrow.DOWN, Theme.muted());
         }
-        footer(g, "Edit HUD", moveButtonY(), mx, my, false);
-        footer(g, "Appearance", moveButtonY() + 25, mx, my, APPEARANCE.equals(category));
+        footer(g, "Keybinds", moveButtonY(), mx, my, KEYBINDS.equals(category));
+        footer(g, "Edit HUD", moveButtonY() + 25, mx, my, false);
+        footer(g, "Appearance", moveButtonY() + 50, mx, my, APPEARANCE.equals(category));
+        drawChatDragSwitch(g, mx, my);
+    }
+
+    private int chatDragX() { return panelX() + sidebarW() - 30; }
+
+    /** Taller and wider than the switch it covers, because that is only 16 by 8. */
+    private boolean overChatDrag(int mx, int my) {
+        return contains(chatDragX() - 4, moveButtonY() + 25, 26, 23, mx, my);
+    }
+
+    /**
+     * Whether chat is a second way to move the HUD. On the Edit HUD row because it is the same
+     * job, and small because it is set once: a row of its own would push a category off the list.
+     */
+    private void drawChatDragSwitch(GuiGraphicsExtractor g, int mx, int my) {
+        boolean on = com.endsight.hud.ChatHudDrag.enabled();
+        int x = chatDragX(), y = moveButtonY() + 32;
+        Draw.roundedRect(g, x, y, 16, 8, 4, on ? Theme.accent() : Theme.line());
+        Draw.roundedRect(g, on ? x + 9 : x + 1, y + 1, 6, 6, 3, on ? Theme.text() : Theme.dim());
+        if (overChatDrag(mx, my)) g.setTooltipForNextFrame(font,
+                net.minecraft.network.chat.Component.literal("Drag HUD from chat: " + (on ? "on" : "off")), mx, my);
     }
 
     private void footer(GuiGraphicsExtractor g, String title, int y, int mx, int my, boolean selected) {
@@ -249,18 +336,18 @@ public class EndsightScreen extends Screen {
     }
 
     private void drawHeader(GuiGraphicsExtractor g) {
-        Draw.roundedRect(g, contentX(), panelY(), contentW(), HEADER, Theme.RADIUS_LG,
-                Theme.bg(), false, true, false, false);
-        String title = !query.isBlank() ? "Search results" : ModuleRegistry.FAVORITES.equals(category) ? "Favorites"
+        boolean keys = KEYBINDS.equals(category);
+        String title = keys ? "Keybinds" : !query.isBlank() ? "Search results" : ModuleRegistry.FAVORITES.equals(category) ? "Favorites"
                 : APPEARANCE.equals(category) ? "Appearance" : category == null ? "All features" : category;
         Draw.text(g, font, Draw.fit(font, title, Math.max(30, contentW() - 94)), contentX() + INSET, panelY() + 12, Theme.text());
-        Draw.textRight(g, font, resultCount + (resultCount == 1 ? " entry" : " entries"),
+        Draw.textRight(g, font, keys ? KeybindsView.boundCount(binds()) + " bound" : resultCount + (resultCount == 1 ? " entry" : " entries"),
                 panelX() + panelW() - INSET, panelY() + 12, Theme.dim());
+        // Accent only with something typed. The box holds focus from the moment the menu
+        // opens, so lighting it on focus was a loud purple ring around nothing, always.
         Draw.roundedOutline(g, searchX(), searchY(), searchW(), 23, 5,
-                searchFocused || !query.isEmpty() ? Theme.accent() : Theme.line(), Theme.input());
-        String shown = query.isEmpty() ? "Search all features and settings..." : query;
-        MenuIcons.search(g, searchX() + 8, searchY() + 5,
-                searchFocused || !query.isEmpty() ? Theme.accent() : Theme.muted());
+                !query.isEmpty() ? Theme.accent() : Theme.line(), Theme.input());
+        String shown = !query.isEmpty() ? query : keys ? "Search keys..." : "Search all features and settings...";
+        MenuIcons.search(g, searchX() + 8, searchY() + 5, !query.isEmpty() ? Theme.accent() : Theme.muted());
         Draw.text(g, font, Draw.fit(font, shown, searchW() - 49), searchX() + 25, searchY() + 7,
                 query.isEmpty() ? Theme.dim() : Theme.text());
         if (!query.isEmpty()) Draw.text(g, font, "x", searchX() + searchW() - 14, searchY() + 7, Theme.muted());
@@ -301,8 +388,9 @@ public class EndsightScreen extends Screen {
         boolean open = module == editingModule && editor != null;
         boolean hot = row.contains(mx, my) && my >= contentTop() && my < contentBottom();
         float a = anim("row:" + module.id()).to(hot ? 1 : 0, Theme.EASE_FAST);
-        Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5,
-                open ? Theme.surface() : Draw.lerp(Theme.bg(), Theme.hover(), a));
+        // Nothing at rest, so the panel's see-through ground runs unbroken under the list.
+        if (open) Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5, Theme.surface());
+        else if (a > .01f) Draw.roundedRect(g, row.x(), row.y(), row.w(), row.h(), 5, Draw.alpha(Theme.surface(), a));
         Draw.text(g, font, Draw.fit(font, module.title(), label.w()), label.x(), label.y(),
                 module.implemented() ? Theme.text() : Theme.dim());
         String description = matchSummaries.getOrDefault(module.id(), module.description());
@@ -400,17 +488,30 @@ public class EndsightScreen extends Screen {
             return true;
         }
         searchFocused = false;
-        if (contains(panelX() + 8, moveButtonY() + 25, sidebarW() - 16, 23, mx, my)) {
+        if (contains(panelX() + 8, moveButtonY() + 50, sidebarW() - 16, 23, mx, my)) {
             category = APPEARANCE; query = ""; scroll = 0; expandedId = appearance.id(); binding = null;
             layout(); return true;
         }
-        if (contains(panelX() + 8, moveButtonY(), sidebarW() - 16, 23, mx, my)) {
+        if (overChatDrag(mx, my)) {
+            com.endsight.hud.ChatHudDrag.enabled(!com.endsight.hud.ChatHudDrag.enabled());
+            com.endsight.Config.save(registry);
+            return true;
+        }
+        if (contains(panelX() + 8, moveButtonY() + 25, sidebarW() - 16, 23, mx, my)) {
             com.endsight.hud.HudPlacementScreen.open(); return true;
+        }
+        if (contains(panelX() + 8, moveButtonY(), sidebarW() - 16, 23, mx, my)) {
+            category = KEYBINDS; query = ""; scroll = 0; expandedId = keybinds.id(); binding = null;
+            bindList = null;
+            layout(); return true;
         }
         if (contains(panelX(), navTop(), sidebarW(), navBottom() - navTop(), mx, my)) for (Nav item : nav) {
             if (!contains(panelX() + 8, item.y(), sidebarW() - 16, 23, mx, my)) continue;
             category = item.category(); query = ""; scroll = 0; binding = null;
             if (editor != null) editor.cancelInteractions();
+            results();
+            if (FeatureCatalog.LOADOUTS.equals(category) && visibleModule(expandedId) == null)
+                expandedId = groups.values().iterator().next().getFirst().id();
             layout(); return true;
         }
         if (!contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my))
@@ -490,7 +591,7 @@ public class EndsightScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         layout();
         if (contains(panelX(), navTop(), sidebarW(), navBottom() - navTop(), (int) mouseX, (int) mouseY)) {
-            navScroll = Math.max(0, Math.min(navScroll + (int) (-scrollY * NAV_PITCH), maxNavScroll()));
+            navScroll = Math.max(0, Math.min(navScroll + (int) (-scrollY * navPitch()), maxNavScroll()));
         } else scrollBy((int) (-scrollY * 28));
         return true;
     }

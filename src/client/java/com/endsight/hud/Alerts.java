@@ -38,6 +38,7 @@ public final class Alerts {
 
     private static boolean miniboss = true;
     private static boolean slayerBoss = true;
+    private static boolean slayerQuest = true;
     private static boolean protector = true;
     private static boolean fireball = true;
     private static boolean fullInventory = true;
@@ -73,6 +74,9 @@ public final class Alerts {
                         new Setting.Toggle("Slayer boss spawning",
                                 "Your slayer boss is spawning.",
                                 () -> slayerBoss, v -> slayerBoss = v),
+                        new Setting.Toggle("No slayer quest",
+                                "You are killing mobs in a slayer area with no quest.",
+                                () -> slayerQuest, v -> slayerQuest = v),
                         new Setting.Toggle("Endstone Protector",
                                 "When it finishes rising and spawns.",
                                 () -> protector, v -> protector = v),
@@ -163,6 +167,10 @@ public final class Alerts {
     }
 
     // ── what the modules ask ──────────────────────────────────────────────────
+
+    public static void slayerQuest() {
+        if (enabled && slayerQuest) fire("Start Slayer Quest", "", YELLOW, 1f);
+    }
 
     public static void goopBaitTab(String text) {
         long now = System.currentTimeMillis();

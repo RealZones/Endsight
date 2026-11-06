@@ -79,6 +79,24 @@ public final class Theme {
         return current.light() ? 0x99202020 : 0xB3000000;
     }
 
+    /** Low enough to see: at 92% a near-black panel read as solid, and nobody could tell it had changed. */
+    public static final float DEFAULT_OPACITY = 0.8f;
+    private static float panelOpacity = DEFAULT_OPACITY;
+
+    /** How solid the menu's own panel is, 0..1. Cards on it stay solid, so text never loses contrast. */
+    public static float panelOpacity() {
+        return panelOpacity;
+    }
+
+    public static void panelOpacity(float value) {
+        panelOpacity = Math.max(0.5f, Math.min(1f, value));
+    }
+
+    /** The menu's ground, see-through by {@link #panelOpacity()}. */
+    public static int panel() {
+        return Draw.alpha(ground, panelOpacity);
+    }
+
     // ── geometry, which is not a matter of taste ──────────────────────────────
     // Generous on purpose. The first pass was correct and cramped - every element
     // was where it belonged and the whole thing still read as a settings dialog,
@@ -90,12 +108,18 @@ public final class Theme {
      * A fixed inset is a different proportion on every monitor - near-fullscreen on a
      * laptop and a floating box on an ultrawide. A share looks the same everywhere,
      * and "make it a bit smaller" becomes one number instead of a guess.
+     *
+     * Capped, because text does not grow with the window. On a maximized 1080p window at
+     * GUI scale 2 the bare share put a switch 650 units from its own label and ran sliders
+     * across the whole screen, with the game shut out behind it.
      */
     public static final float PANEL_W_PCT = 0.92f;
     public static final float PANEL_H_PCT = 0.90f;
+    public static final int PANEL_MAX_W = 720;
+    public static final int PANEL_MAX_H = 440;
 
-    public static int panelW(int screenW) { return Math.round(screenW * PANEL_W_PCT); }
-    public static int panelH(int screenH) { return Math.round(screenH * PANEL_H_PCT); }
+    public static int panelW(int screenW) { return Math.min(PANEL_MAX_W, Math.round(screenW * PANEL_W_PCT)); }
+    public static int panelH(int screenH) { return Math.min(PANEL_MAX_H, Math.round(screenH * PANEL_H_PCT)); }
     public static int panelX(int screenW) { return (screenW - panelW(screenW)) / 2; }
     public static int panelY(int screenH) { return (screenH - panelH(screenH)) / 2; }
 

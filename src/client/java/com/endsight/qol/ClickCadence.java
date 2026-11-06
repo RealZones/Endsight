@@ -11,7 +11,8 @@ import java.util.function.DoubleSupplier;
  */
 public final class ClickCadence {
     private static final double MIN_CPS = 1;
-    private static final double MAX_CPS = 20;
+    static final double MAX_CPS = 9.5;
+    static final long MIN_INTERVAL_NANOS = (long) Math.ceil(1_000_000_000.0 / MAX_CPS);
 
     private final DoubleSupplier minCps;
     private final DoubleSupplier maxCps;
@@ -81,7 +82,9 @@ public final class ClickCadence {
         if (r < 0.0067) gap = base + 150 + rng.nextDouble() * 150;
         else if (r < 0.05) gap = 55 + rng.nextDouble() * 30;
         else gap = base * Math.exp(rng.nextGaussian() * 0.18);
-        return ms(gap);
+        // A bounded target alone is insufficient: jitter and the short-gap branch
+        // can otherwise exceed it. Every emitted interval shares the same hard floor.
+        return Math.max(MIN_INTERVAL_NANOS, ms(gap));
     }
 
     private static double boundedCps(double value, double fallback) {

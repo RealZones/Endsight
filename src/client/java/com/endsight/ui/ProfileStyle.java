@@ -1,25 +1,24 @@
 package com.endsight.ui;
 
-/** Profiles use a quiet, fixed canvas so item colours carry the visual detail. */
+/**
+ * The profile viewer wears the menu's theme. It had a teal palette of its own, which made
+ * opening /pv feel like leaving the mod. Money stays gold in every theme: that colour says coins.
+ */
 final class ProfileStyle {
-    private static final Palette P = new Palette("Profile",
-            0x172027, 0x83CEC2, 0xEDF1F3, 0xA5ADB7, 0x7E8996,
-            0x88CA91, 0xEB8B88, 0xE6C27F, false);
-    private static final int BG=P.ground(), SURFACE=P.surface(), INPUT=P.input(),
-            RAISED=P.raised(), HOVER=P.hover(), HAIR=P.hair(), LINE=P.line();
-    static int bg() { return BG; }
-    static int surface() { return SURFACE; }
-    static int input() { return INPUT; }
-    static int raised() { return RAISED; }
-    static int hover() { return HOVER; }
-    static int hair() { return HAIR; }
-    static int line() { return LINE; }
-    static int text() { return P.textColor(); }
-    static int muted() { return P.mutedColor(); }
-    static int dim() { return P.dimColor(); }
-    static int accent() { return P.accentColor(); }
-    static int pos() { return P.posColor(); }
-    static int obs() { return P.obsColor(); }
-    static int complete() { return P.obsColor(); }
-    static int scrim() { return 0xAC000000; }
+    private static final int GOLD = 0xFFE6C27F;
+    static int bg() { return Theme.bg(); }
+    static int surface() { return Theme.surface(); }
+    static int input() { return Theme.input(); }
+    static int raised() { return Theme.raised(); }
+    static int hover() { return Theme.hover(); }
+    static int hair() { return Theme.hair(); }
+    static int line() { return Theme.line(); }
+    static int text() { return Theme.text(); }
+    static int muted() { return Theme.muted(); }
+    static int dim() { return Theme.dim(); }
+    static int accent() { return Theme.accent(); }
+    static int pos() { return Theme.pos(); }
+    static int obs() { return GOLD; }
+    static int complete() { return GOLD; }
+    static int scrim() { return Draw.alpha(Theme.scrim(), .30f); }
 }

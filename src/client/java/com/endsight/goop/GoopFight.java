@@ -67,6 +67,7 @@ public final class GoopFight {
 
     private Phase phase = Phase.NONE;
     private long due = -1, fightAt = -1, lastAt = -1;
+    private long finishedAt = -1;
     private boolean placedThis;
     /** Goops other people placed since your last one; -1 until you have placed one. */
     private int sinceMine = -1;
@@ -82,6 +83,10 @@ public final class GoopFight {
     public Result line(String text, long now, String me) {
         String line = text.strip();
         Result closed = poll(now);
+        // The result box is a fallback if the final narration was missed. Keep the
+        // first timestamp: the narration and result must not restart the placement countdown.
+        if (line.equals("✦ THE RIFT SLEEPS") && finishedAt < 0
+                && (phase == Phase.NONE || phase == Phase.DISTURBED)) finishedAt = now;
         if (endedAt >= 0 && payout(text, line)) {
             lastAt = now;
             return closed;
@@ -125,6 +130,7 @@ public final class GoopFight {
         } else if (line.equals("The rift swallows everything.")) {
             if (phase == Phase.DEVOURED) due = now + SWALLOW_TO_DISTURBED;
         } else if (line.equals("The rift falls silent.")) {
+            if (finishedAt < 0) finishedAt = now;
             Result previous = close();
             if (closed == null) closed = previous;
             endedAt = now;
@@ -218,6 +224,7 @@ public final class GoopFight {
     }
 
     private void enter(Phase next, long nextDue) {
+        if (next != Phase.NONE) finishedAt = -1;
         phase = next;
         due = nextDue;
     }
@@ -246,6 +253,7 @@ public final class GoopFight {
     public void reset() {
         enter(Phase.NONE, -1);
         fightAt = lastAt = -1;
+        finishedAt = -1;
         placedThis = false;
         close();
     }
@@ -256,6 +264,11 @@ public final class GoopFight {
 
     public Phase phase() {
         return phase;
+    }
+
+    /** Final kill or result receipt, independent of the payout collection window. */
+    public long finishedAt() {
+        return finishedAt;
     }
 
     /** Milliseconds until the wait ends, or -1 when the current step waits on damage. */

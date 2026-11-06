@@ -60,7 +60,7 @@ public final class RarityOutline {
         behind(g, slot.x, slot.y, slot.getItem());
     }
 
-    /** Called from the HUD's hotbar slot drawing, with the item's own corner. */
+    /** For anything drawing its own stacks, with the item's corner: the hotbar, and pages not open. */
     public static void behindHotbar(GuiGraphicsExtractor g, int x, int y, ItemStack stack) {
         behind(g, x, y, stack);
     }

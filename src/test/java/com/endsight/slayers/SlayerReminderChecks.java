@@ -22,6 +22,11 @@ public final class SlayerReminderChecks {
         equal(Slayer.voidgloomQuest("Slayer: Revenant Horror V", "XP: 0/13,750", false, null), false);
         equal(Slayer.voidgloomQuest(null, null, true, "Voidgloom"), true);
         equal(Slayer.voidgloomQuest(null, null, false, "Voidgloom"), false);
+        equal(Slayer.popupDue(100_000, -60_000, -10_000), true); // first hit of the session
+        equal(Slayer.popupDue(100_000, 50_000, -10_000), false); // shown under a minute ago
+        equal(Slayer.popupDue(100_000, 40_000, -10_000), true); // a minute on and still no quest
+        equal(Slayer.popupDue(100_000, 0, 95_000), false); // the quest only just ended
+        equal(Slayer.popupDue(100_000, 0, 90_000), true); // ten seconds on, that is forgetting
         equal(Slayer.reminderCommand("Revenant"), "/slayer 5");
         equal(Slayer.reminderCommand("Voidgloom"), "/slayer enderman 4");
         SlayerTiers tiers = new SlayerTiers();

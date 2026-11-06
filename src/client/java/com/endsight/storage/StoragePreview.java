@@ -4,6 +4,7 @@ import com.endsight.ui.Draw;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import com.endsight.ui.Theme;
+import com.endsight.visual.RarityOutline;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
@@ -97,7 +98,7 @@ public final class StoragePreview {
                 concat(List.of(
                         new Setting.Section("Preview"),
                         new Setting.Toggle("All-page overview",
-                                "Replace the Storage menu with a browsable view of every page.",
+                                "Browse remembered pages while moving items in the open PV and your inventory.",
                                 () -> overview, v -> overview = v),
                         StorageOverview.opacitySetting(),
                         new Setting.Toggle("Snapshot on close",
@@ -352,6 +353,39 @@ public final class StoragePreview {
         return enabled && overview;
     }
 
+    /**
+     * Read once per screen: a screen's title never changes, and the storage view asks for
+     * every slot it hit-tests, which was two regexes over the title a hundred times a frame.
+     */
+    private static void readTitle(AbstractContainerScreen<?> screen) {
+        if (screen == titled) return;
+        titled = screen;
+        Matcher match = PAGE_WINDOW.matcher(plain(screen.getTitle()));
+        boolean page = match.matches();
+        titledPage = isEnderChest(screen) ? ENDER_CHEST : page ? parse(match.group(1)) : -1;
+        titledCount = page ? parse(match.group(2)) : 0;
+        titledRoot = plain(screen.getTitle()).equals("Storage");
+    }
+    private static AbstractContainerScreen<?> titled;
+    private static int titledPage, titledCount;
+    private static boolean titledRoot;
+
+    /** The server's own Storage menu: the list of pages, not one of them. */
+    static boolean isRoot(AbstractContainerScreen<?> screen) {
+        readTitle(screen);
+        return titledRoot;
+    }
+
+    static int currentPage(AbstractContainerScreen<?> screen) {
+        readTitle(screen);
+        return titledPage;
+    }
+
+    static int currentPageCount(AbstractContainerScreen<?> screen) {
+        readTitle(screen);
+        return titledCount;
+    }
+
     /** The most recent page seen, for the placement screen to show something real. */
     static PageSnapshot lastSnapshot() {
         return SNAPSHOTS.get(lastPage);
@@ -360,13 +394,13 @@ public final class StoragePreview {
     // ── draw ──────────────────────────────────────────────────────────────────
 
     private static boolean enderNextHit(AbstractContainerScreen<?> screen, double mx, double my) {
-        if (!enabled || !isEnderChest(screen)) return false;
+        if (!enabled || StorageOverview.active(screen) || !isEnderChest(screen)) return false;
         int x = screen.leftPos + screen.imageWidth - 24, y = screen.topPos + 3;
         return mx >= x && mx < x + 18 && my >= y && my < y + 12;
     }
 
     private static void drawEnderNext(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
-        if (!enabled || !isEnderChest(screen)) return;
+        if (!enabled || StorageOverview.active(screen) || !isEnderChest(screen)) return;
         int x = screen.leftPos + screen.imageWidth - 24, y = screen.topPos + 3;
         boolean hovered = enderNextHit(screen, mx, my);
         // Keep navigation in the title bar, so no chest item or server control is covered.
@@ -382,7 +416,7 @@ public final class StoragePreview {
     }
 
     private static void draw(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g) {
-        if (!enabled) {
+        if (!enabled || StorageOverview.active(screen)) {
             hoverPage = -1;
             return;
         }
@@ -464,6 +498,7 @@ public final class StoragePreview {
                 if (snap == null) continue;
                 ItemStack stack = snap.at((r + SKIP_ROWS) * PageSnapshot.COLS + c);
                 if (stack.isEmpty()) continue;
+                RarityOutline.behindHotbar(g, cx, cy, stack);
                 g.item(stack, cx, cy);
                 if (showCounts) g.itemDecorations(font, stack, cx, cy);
             }

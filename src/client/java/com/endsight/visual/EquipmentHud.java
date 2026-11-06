@@ -191,6 +191,11 @@ public final class EquipmentHud {
 
     private EquipmentHud() { }
 
+    /** The pet the sidebar or tab says is out, or "" when the HUD is off or does not know. */
+    public static String activePetName() {
+        return activePet == null ? "" : activePet.name();
+    }
+
     public static Module armorModule() {
         return new Module(ARMOR_ID, "Armor Display", "Your equipped helmet, chestplate, leggings and boots.", "Visual",
                 () -> armorEnabled, value -> armorEnabled = value, List.of(

@@ -21,10 +21,14 @@ public final class AutoClicker {
     public static Module module() {
         return new Module("qol.autoclicker", "Auto Clicker", "Hold left click to repeat attacks at a varying rate.", "General",
                 () -> enabled, value -> { enabled = value; cadence.reset(); }, List.of(
-                new Setting.Slider("Min CPS", "Lower end of the click-rate range.", 1, 20, 0.5,
-                        () -> minCps, value -> minCps = Math.min(value, maxCps), ""),
-                new Setting.Slider("Max CPS", "Upper end of the click-rate range.", 1, 20, 0.5,
-                        () -> maxCps, value -> maxCps = Math.max(value, minCps), "")));
+                new Setting.Slider("Min CPS", "Lower end of the click-rate range; capped at 9.5 CPS.", 1, ClickCadence.MAX_CPS, 0.5,
+                        () -> minCps, value -> minCps = Math.min(settingCps(value, minCps), maxCps), ""),
+                new Setting.Slider("Max CPS", "Upper end of the click-rate range; capped at 9.5 CPS.", 1, ClickCadence.MAX_CPS, 0.5,
+                        () -> maxCps, value -> maxCps = Math.max(settingCps(value, maxCps), minCps), "")));
+    }
+
+    private static double settingCps(double value, double fallback) {
+        return Double.isNaN(value) ? fallback : Math.max(1, Math.min(ClickCadence.MAX_CPS, value));
     }
 
     public static boolean enabled() { return enabled; }

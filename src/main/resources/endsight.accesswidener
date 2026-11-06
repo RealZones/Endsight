@@ -32,6 +32,14 @@ accessible	field	net/minecraft/client/gui/components/ChatComponent	chatScrollbar
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageWidth	I
 accessible	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageHeight	I
 
+# The live storage layout relocates the same native slots, retaining menu indices
+# and vanilla click/drag handling. Restore their coordinates when the view closes.
+mutable	field	net/minecraft/world/inventory/Slot	x	I
+mutable	field	net/minecraft/world/inventory/Slot	y	I
+mutable	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageWidth	I
+mutable	field	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	imageHeight	I
+accessible	method	net/minecraft/client/gui/screens/inventory/AbstractContainerScreen	extractTooltip	(Lnet/minecraft/client/gui/GuiGraphicsExtractor;II)V
+
 # Ability Cooldowns reads the action bar - "-100 Mana (Giant's Slam)" is the one line
 # that says an ability fired. A server sets it with its own packet, which never passes
 # the chat listener, so no message event sees it: the text has to be read off the Gui.

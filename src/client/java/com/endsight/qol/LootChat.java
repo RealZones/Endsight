@@ -1,6 +1,5 @@
 package com.endsight.qol;
 
-import com.endsight.ui.Keybinds;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 
@@ -32,12 +31,7 @@ public final class LootChat {
                 new Setting.Slider("Close call under",
                         "Used by Close calls and Compact; drops always show.",
                         CUTOFF.min(), CUTOFF.max(), CUTOFF.step(), CUTOFF.get(), CUTOFF.set(), CUTOFF.unit()),
-                new Setting.Toggle("Both ends", BOTH_ENDS.description(), BOTH_ENDS.get(), BOTH_ENDS.set()),
-                new Setting.Section("Individual keybinds"),
-                new Setting.KeyAction(Keybinds.moduleId(FILTER), "Loot filter key", "Keep or change the old module key.",
-                        "Toggle", FILTER::toggle),
-                new Setting.KeyAction(Keybinds.moduleId(COMPACT), "Compact roll key", "Keep or change the old module key.",
-                        "Toggle", COMPACT::toggle)));
+                new Setting.Toggle("Both ends", BOTH_ENDS.description(), BOTH_ENDS.get(), BOTH_ENDS.set())));
     }
 
     /** A config saved as either old Compact view reads as the new one; the filter comes with it. */

@@ -67,6 +67,9 @@ public final class Config {
         migrate(p);
 
         registry.loadBrowserState(p);
+        try { Theme.panelOpacity(Float.parseFloat(p.getProperty("menuOpacity", Float.toString(Theme.DEFAULT_OPACITY)))); }
+        catch (NumberFormatException keepDefault) { }
+        com.endsight.hud.ChatHudDrag.enabled(!"false".equals(p.getProperty("chatHudDrag")));
         String palette = p.getProperty("palette");
         if (palette != null) {
             for (Palette candidate : Theme.palettes()) {
@@ -164,6 +167,8 @@ public final class Config {
         p.setProperty("configVersion", String.valueOf(VERSION));
         registry.saveBrowserState(p);
         p.setProperty("palette", Theme.palette().name());
+        p.setProperty("menuOpacity", Float.toString(Theme.panelOpacity()));
+        p.setProperty("chatHudDrag", Boolean.toString(com.endsight.hud.ChatHudDrag.enabled()));
 
         com.endsight.hud.HudLayout.scales().forEach((id, s) -> p.setProperty("hud." + id + ".scale", String.valueOf(s)));
         for (String id : com.endsight.hud.HudLayout.ids()) {

@@ -47,7 +47,9 @@ public final class ProfileScreen extends Screen {
     private int pricedCount, missingCount;
     private final List<Hit> hits=new ArrayList<>();
     private final Map<String,ItemStack> symbols=new HashMap<>();
-    private int px,py,pw,ph,cx,cw,top,bottom,mx,my;
+    private int px,py,pw,ph,cx,cw,top,bottom,mx,my,side,choicesY;
+    /** The same shape as the module browser: who and where on the left, the page on the right. */
+    private static final int SIDE_W=132, SIDE_ICONS=38, HEAD=44, NAV_Y=56, NAV_PITCH=25;
     private long nextRefresh;
     private long nextPrices;
 
@@ -59,7 +61,6 @@ public final class ProfileScreen extends Screen {
     @Override protected void init() { if (data==null && generation==0) load(false); }
     @Override public boolean isPauseScreen() { return false; }
     @Override public void onClose() { generation++; Minecraft.getInstance().setScreen(parent); }
-    @Override public void extractBackground(GuiGraphicsExtractor g,int mx,int my,float delta) { }
 
     private void load(boolean force) {
         int request=++generation;
@@ -130,14 +131,16 @@ public final class ProfileScreen extends Screen {
     private void choose(View next) { view=next; pinned=null; scroll=0; filter=""; filterFocused=false; profileMenu=false; }
 
     private void geometry() {
-        pw=Math.min(850,Math.max(280,width-40)); ph=Math.min(500,Math.max(154,height-66));
-        px=(width-pw)/2; py=(height-ph)/2+10;
+        pw=Math.min(860,Math.max(280,width-24)); ph=Math.min(470,Math.max(154,height-24));
+        px=(width-pw)/2; py=(height-ph)/2;
+        // Icons alone once the labels would squeeze the page; the profile picker moves up then.
+        side=pw>=560 ? SIDE_W : SIDE_ICONS;
         // No footer: the save age and Esc hint it held were noise, and the 14 rows go to content.
-        cx=px+16; cw=pw-32; top=py+62; bottom=py+ph-10;
+        cx=px+side+14; cw=pw-side-28; top=py+HEAD+(side==SIDE_W ? 8 : 27); bottom=py+ph-10;
         if(compactInspector()) {
             // At large GUI scales the profile chrome would leave one visible lore
             // line. Inspection gets the canvas; Back restores the profile layout.
-            pw=width-24; ph=height-24; px=12; py=12;
+            pw=width-24; ph=height-24; px=12; py=12; side=0;
             cx=px+12; cw=pw-24; top=py+10; bottom=py+ph-12;
         }
         scroll=Math.clamp(scroll,0,Math.max(0,contentHeight-(bottom-top)));
@@ -154,13 +157,15 @@ public final class ProfileScreen extends Screen {
         if (prices!=null && !prices.fresh()) { prices=null; summarize(); priceError="Item prices are updating"; }
         if (g!=null) {
             Draw.rect(g,0,0,width,height,ProfileStyle.scrim());
-            Draw.roundedOutline(g,px,py,pw,ph,7,ProfileStyle.line(),ProfileStyle.bg());
+            Draw.roundedRect(g,px,py,pw,ph,Theme.RADIUS_LG,Theme.panel());
+            Draw.roundedRing(g,px-1,py-1,pw+2,ph+2,Theme.RADIUS_LG+1,ProfileStyle.line());
             if(!compactInspector()) {
-                Draw.roundedRect(g,px+1,py+1,pw-2,52,6,ProfileStyle.surface(),true,true,false,false);
-                Draw.rect(g,cx,py+52,cw,1,ProfileStyle.hair());
+                Draw.roundedRect(g,px,py,side,ph,Theme.RADIUS_LG,Draw.alpha(ProfileStyle.hair(),.55f),true,false,true,false);
+                Draw.rect(g,px+side-1,py+8,1,ph-16,ProfileStyle.line());
+                Draw.rect(g,px+side,top-9,pw-side,1,ProfileStyle.line());
             }
         }
-        if(!compactInspector()) { header(g); navigation(g); }
+        if(!compactInspector()) { header(g); sidebar(g); }
         if (loading) {
             empty(g,"Opening "+requested,"Reading the latest saved profile."); contentHeight=0;
         } else if (data==null) {
@@ -185,38 +190,53 @@ public final class ProfileScreen extends Screen {
     }
 
     private void header(GuiGraphicsExtractor g) {
-        boolean small=pw<540;
-        int searchW=small ? 96 : 142, searchX=px+pw-searchW-123;
+        int y=py+12, close=px+pw-14-16, refresh=close-5-54, go=refresh-5-28, searchX=cx, searchW=Math.max(40,go-5-searchX);
         if (g!=null) {
-            Draw.roundedRect(g,cx,py+10,30,30,4,ProfileStyle.raised());
-            if(data!=null) g.item(items.playerHead(data.uuid,data.player),cx+7,py+17);
-            String identity=data==null ? requested : (text(data.profile,"profile_mode","").equalsIgnoreCase("IRONMAN") ? "♲ " : "")+data.player;
-            Draw.text(g,font,Draw.fit(font,identity,Math.max(40,searchX-cx-45)),cx+40,py+12,ProfileStyle.text());
-            if(data==null) Draw.text(g,font,"Player profile",cx+40,py+29,ProfileStyle.muted());
-            else ProfileRank.draw(g,font,data.rank,cx+40,py+26,Math.max(40,searchX-cx-45));
-            Draw.roundedOutline(g,searchX,py+10,searchW,20,3,searchFocused ? ProfileStyle.accent() : ProfileStyle.line(),ProfileStyle.input());
-            MenuIcons.search(g,searchX+6,py+14,ProfileStyle.muted());
-            Draw.text(g,font,Draw.fit(font,search+(searchFocused && System.currentTimeMillis()%1000<500 ? "_" : ""),searchW-26),searchX+23,py+16,ProfileStyle.text());
+            Draw.roundedOutline(g,searchX,y,searchW,20,5,searchFocused ? ProfileStyle.accent() : ProfileStyle.line(),ProfileStyle.input());
+            MenuIcons.search(g,searchX+6,y+4,ProfileStyle.muted());
+            Draw.text(g,font,Draw.fit(font,search+(searchFocused && System.currentTimeMillis()%1000<500 ? "_" : ""),searchW-26),searchX+23,y+6,ProfileStyle.text());
         }
-        hits.add(new Hit(searchX,py+10,searchW,20,() -> { searchFocused=true; filterFocused=false; }));
-        button(g,searchX+searchW+5,py+10,28,20,"Go",false,this::searchPlayer,false);
-        button(g,px+pw-85,py+10,54,20,"Refresh",false,() -> {
+        hits.add(new Hit(searchX,y,searchW,20,() -> { searchFocused=true; filterFocused=false; }));
+        button(g,go,y,28,20,"Go",false,this::searchPlayer,false);
+        button(g,refresh,y,54,20,"Refresh",false,() -> {
             if (System.currentTimeMillis()<nextRefresh) return;
             nextRefresh=System.currentTimeMillis()+5000; load(true);
         },false);
-        button(g,px+pw-26,py+10,16,20,"x",false,this::onClose,false);
-        if (data!=null) {
-            int profileW=Math.min(110,searchW);
-            profileSelector(g,searchX,py+33,profileW,15);
-            // Where the Main/Beta switch was: the same profile on the website, through the
-            // game's own open-link prompt so a stray click doesn't throw a browser up.
-            int siteX=searchX+profileW+5;
-            String site="https://dragsim.co/stats/"+data.player+(data.profileId.isEmpty() ? "" : "/"+data.profileId);
-            button(g,siteX,py+33,px+pw-10-siteX,15,"View on dragsim.co",false,
-                    () -> ConfirmLinkScreen.confirmLinkNow(this,site),false);
+        button(g,close,y,16,20,"x",false,this::onClose,false);
+        if(data!=null && side!=SIDE_W) {
+            int profileW=Math.min(110,cw/3);
+            profileSelector(g,cx,py+36,profileW,15);
+            siteButton(g,cx+profileW+5,py+36,cw-profileW-5,15);
         }
-        if(g!=null && inside(mx,my,px+pw-85,py+10,54,20))
+        if(g!=null && inside(mx,my,refresh,y,54,20))
             g.setTooltipForNextFrame(font,Component.literal("Refresh profile (R)"),mx,my);
+    }
+
+    /** Where the Main/Beta switch was: the same profile on the website, through the game's own
+     *  open-link prompt so a stray click doesn't throw a browser up. */
+    private void siteButton(GuiGraphicsExtractor g,int x,int y,int w,int h) {
+        String site="https://dragsim.co/stats/"+data.player+(data.profileId.isEmpty() ? "" : "/"+data.profileId);
+        button(g,x,y,w,h,"View on dragsim.co",false,() -> ConfirmLinkScreen.confirmLinkNow(this,site),false);
+    }
+
+    private void sidebar(GuiGraphicsExtractor g) {
+        boolean wide=side==SIDE_W;
+        int head=wide ? px+10 : px+(side-30)/2, textX=px+46, textW=side-54;
+        if (g!=null) {
+            Draw.roundedRect(g,head,py+10,30,30,6,ProfileStyle.raised());
+            if(data!=null) g.item(items.playerHead(data.uuid,data.player),head+7,py+17);
+            if(wide) {
+                String identity=data==null ? requested : (text(data.profile,"profile_mode","").equalsIgnoreCase("IRONMAN") ? "♲ " : "")+data.player;
+                Draw.text(g,font,Draw.fit(font,identity,textW),textX,py+11,ProfileStyle.text());
+                if(data==null) Draw.text(g,font,"Profile",textX,py+25,ProfileStyle.muted());
+                else ProfileRank.draw(g,font,data.rank,textX,py+23,textW);
+            }
+        }
+        navigation(g);
+        if(data!=null && wide) {
+            profileSelector(g,px+8,py+ph-46,side-16,18);
+            siteButton(g,px+8,py+ph-25,side-16,18);
+        }
     }
 
     private void profileSelector(GuiGraphicsExtractor g,int x,int y,int w,int h) {
@@ -236,7 +256,9 @@ public final class ProfileScreen extends Screen {
 
     private void profileChoices(GuiGraphicsExtractor g) {
         if(!profileMenu || data==null) return;
-        int w=Math.min(198,cw),x=px+pw-w-10,y=py+53,h=data.profiles.size()*25+8;
+        // Up from the picker at the foot of the sidebar; down from it in the narrow layout.
+        int h=data.profiles.size()*25+8,w=Math.min(198,cw),x=side==SIDE_W ? px+8 : cx,y=side==SIDE_W ? Math.max(py+8,py+ph-48-h) : py+54;
+        choicesY=y;
         if(g!=null) {
             g.nextStratum();
             Draw.roundedOutline(g,x,y,w,h,4,ProfileStyle.line(),ProfileStyle.raised());
@@ -252,21 +274,21 @@ public final class ProfileScreen extends Screen {
     }
 
     private void navigation(GuiGraphicsExtractor g) {
-        int w=Math.min(118,(pw-16)/5),y=py-29,x=px+8;
+        boolean wide=side==SIDE_W;
+        int x=px+(wide ? 8 : 4),w=side-(wide ? 16 : 8);
         String[] labels={"Overview","Items","Pets","Progression","Bestiary"};
         String[] icons={"compass","chest","bone","experience_bottle","writable_book"};
         for (View next:View.values()) {
-            int nx=x+next.ordinal()*w;
-            boolean selected=view==next;
+            int ny=py+NAV_Y+next.ordinal()*NAV_PITCH;
+            boolean selected=view==next,hot=inside(mx,my,x,ny,w,23);
             if (g!=null) {
-                Draw.roundedRect(g,nx,y,w-3,27,4,selected ? ProfileStyle.surface() : inside(mx,my,nx,y,w-3,27) ? ProfileStyle.hover() : ProfileStyle.input());
-                g.item(symbol(icons[next.ordinal()]),nx+6,y+5);
-                String label=w<100 && next==View.PROGRESSION ? "Progress" : labels[next.ordinal()];
-                if(w>=80) Draw.text(g,font,Draw.fit(font,label,w-32),nx+27,y+10,selected ? ProfileStyle.text() : ProfileStyle.muted());
-                else if(inside(mx,my,nx,y,w-3,27)) g.setTooltipForNextFrame(font,Component.literal(labels[next.ordinal()]),mx,my);
-                if (selected) Draw.rect(g,nx+5,y+25,w-13,2,ProfileStyle.accent());
+                if(selected || hot) Draw.roundedRect(g,x,ny,w,23,5,Draw.alpha(ProfileStyle.accent(),selected ? .14f : .08f));
+                if(selected) Draw.rect(g,x,ny+6,2,11,ProfileStyle.accent());
+                g.item(symbol(icons[next.ordinal()]),wide ? x+7 : x+(w-16)/2,ny+3);
+                if(wide) Draw.text(g,font,labels[next.ordinal()],x+29,ny+7,selected ? ProfileStyle.accent() : ProfileStyle.muted());
+                else if(hot) g.setTooltipForNextFrame(font,Component.literal(labels[next.ordinal()]),mx,my);
             }
-            hits.add(new Hit(nx,y,w-3,27,() -> choose(next)));
+            hits.add(new Hit(x,ny,w,23,() -> choose(next)));
         }
     }
 
@@ -879,7 +901,7 @@ public final class ProfileScreen extends Screen {
         if(w<=0 || clipped && (y<top || y+h>bottom)) return;
         boolean hot=inside(mx,my,x,y,w,h);
         if(g!=null) {
-            Draw.roundedRect(g,x,y,w,h,4,selected ? Draw.lerp(ProfileStyle.raised(),ProfileStyle.accent(),.22f) : hot ? ProfileStyle.hover() : ProfileStyle.input());
+            Draw.roundedRect(g,x,y,w,h,4,selected ? Draw.lerp(ProfileStyle.raised(),ProfileStyle.accent(),.22f) : hot ? ProfileStyle.hover() : ProfileStyle.raised());
             Draw.textCentered(g,font,Draw.fit(font,label,w-8),x+w/2,y+(h-font.lineHeight)/2,selected ? ProfileStyle.text() : ProfileStyle.muted());
         }
         hits.add(new Hit(x,y,w,h,() -> { searchFocused=false; filterFocused=false; action.run(); }));

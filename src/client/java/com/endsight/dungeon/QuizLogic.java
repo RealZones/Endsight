@@ -16,37 +16,35 @@ import java.util.regex.Pattern;
 /**
  * The Quiz puzzle's answer book, and the parsing around it.
  *
- * Confirmed answers ship as defaults. Each player's own answers and exclusions stay in
- * a separate file and override those defaults, so a corrected server answer can be
- * learned without changing the jar or erasing the player's book.
+ * Since Dragsim's new dungeons (seen 2026-11-09) the room is Hypixel's word for word:
+ * Oruo the Omniscient asks in chat ("Question #1", the question on the next line, then
+ * "ⓐ Wendell", "ⓑ Jamie", "ⓒ Pat") and a label such as "ⓒ Pat." floats over the block
+ * you click for each answer. The old room, a "1/3 ..." hologram over lettered signs, is
+ * gone, and so is the code that read it.
+ *
+ * Lore answers ship as defaults. Each player's own answers and exclusions stay in a
+ * separate file and override those defaults, so a server answer that differs from
+ * Hypixel's is learned without changing the jar: "How many total Fairy Souls are
+ * there?" was 289 here on the first night, which is not Hypixel's count.
  *
  * The book is plain text, one "question = answer" per line, so it can be read, edited
- * and shared by hand - a few players swapping files fills it far faster than any one
- * person running dungeons.
+ * and shared by hand.
  */
 public final class QuizLogic {
 
     private QuizLogic() {
     }
 
-    /** "1/3 Which Wither Lord is crushed under pillars?" -> index 1, of 3. */
+    /** "1/3 Which Wither Lord ..." - the old room's counter, still stripped from saved books. */
     private static final Pattern NUMBERED = Pattern.compile("^(\\d+)\\s*/\\s*(\\d+)\\s*(.*)$");
-
-    /** One question as it was asked: which of the three it is, and the text itself. */
-    public record Question(int index, int total, String text) {
-        public boolean valid() {
-            return index >= 1 && total >= 1 && index <= total && !text.isBlank();
-        }
-    }
+    private static final Pattern HEADER = Pattern.compile("^Question #(\\d+)$");
+    /** "ⓐ Wendell" in chat, "ⓐ Wendell." on the label over its block. */
+    private static final Pattern CIRCLED = Pattern.compile("^[ⓐ-ⓩ]\\s*(.+)$");
 
     /**
-     * Strip the colour codes, the counter and the decoration, so the same question
-     * recognises itself next week.
-     *
-     * Lowercased and stripped of trailing punctuation for the same reason the other
-     * solvers do it: the server is free to re-punctuate a line and we are not free to
-     * care. Interior spacing is collapsed because holograms are assembled from parts
-     * and occasionally arrive double-spaced.
+     * Strip the colour codes and the decoration, so the same question recognises itself
+     * next week. Lowercased and stripped of trailing punctuation: the server is free to
+     * re-punctuate a line and we are not free to care.
      */
     public static String normalize(String raw) {
         if (raw == null) return "";
@@ -60,38 +58,20 @@ public final class QuizLogic {
         return text.replaceAll("[.?!]+$", "").toLowerCase(Locale.ROOT).trim();
     }
 
-    /** Read a hologram line as a question, or null when it is not one. */
-    public static Question question(String raw) {
-        if (raw == null) return null;
-        String text = raw.replaceAll("§.", "").replaceAll("\\s+", " ").trim();
-        Matcher m = NUMBERED.matcher(text);
-        if (!m.matches()) return null;
-        String body = m.group(3).trim();
-        if (body.isBlank()) return null;
-        try {
-            Question q = new Question(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), body);
-            return q.valid() ? q : null;
-        } catch (NumberFormatException notANumber) {
-            return null;
-        }
-    }
-
     /**
-     * An option label without its slot letter.
+     * An option without its slot letter: "ⓒ Pat." on the label and "ⓒ Pat" in chat are
+     * both "Pat". The letters say where an answer stands this time, not what it is, so
+     * nothing is ever stored with one.
      *
-     * The room labels its three answers "A Necron", "B Goldor", "C Storm" - and the
-     * letters MOVE. Storm was C on one question and B on the next, because the letter
-     * says which pillar an answer is standing at this time, not what the answer is.
-     * Storing the label whole therefore stored a position: the book filled up with
-     * "C Goldor", which matches nothing the next time Goldor stands at B, so the hint
-     * named the wrong button and the highlight found nothing to mark.
-     *
-     * One leading letter and a space only. An option that is genuinely one letter long
-     * keeps it, since stripping that would leave nothing.
+     * The old room's "C Storm" form is still read, because saved books hold answers like
+     * that. One leading letter and a space only, and an exact match wins in
+     * {@link #resolve}, so a real answer such as "A chest" is never cut down.
      */
     public static String option(String raw) {
         if (raw == null) return "";
-        String text = raw.replaceAll("§.", "").replaceAll("\s+", " ").trim();
+        String text = raw.replaceAll("§.", "").replaceAll("\\s+", " ").trim();
+        Matcher circled = CIRCLED.matcher(text);
+        if (circled.matches()) return circled.group(1).replaceAll("\\.+$", "").trim();
         if (text.length() > 2 && Character.isLetter(text.charAt(0)) && text.charAt(1) == ' ') {
             String rest = text.substring(2).trim();
             if (!rest.isEmpty()) return rest;
@@ -99,15 +79,12 @@ public final class QuizLogic {
         return text;
     }
 
-    /**
-     * The live option a stored answer names.
-     *
-     * Books written before {@link #option} existed hold the slot letter too ("C Storm"),
-     * which named a pillar rather than an answer: it matched nothing once Storm stood
-     * somewhere else, so the hint repeated a stale letter and nothing was highlighted.
-     * An exact match wins, so an answer that really starts with a letter and a space
-     * ("A chest") is never cut down further.
-     */
+    /** Whether a line or label carries a circled slot letter, i.e. is one of the options. */
+    static boolean lettered(String raw) {
+        return raw != null && CIRCLED.matcher(raw.replaceAll("§.", "").trim()).matches();
+    }
+
+    /** The live option a stored answer names; an old lettered answer finds its bare option. */
     public static String resolve(String stored, List<String> options) {
         if (stored == null || options == null || options.contains(stored)) return stored;
         String bare = option(stored);
@@ -122,28 +99,104 @@ public final class QuizLogic {
     }
 
     /**
-     * Which way the answer pillars face, from where their three labels stand: {dx, dz}
-     * with one of them ±1, or null when the labels are not three or not that shape.
-     *
-     * The room is two pillars side by side with the third set back between them (a
-     * recording: A at +4,+5, B at +7,0, C at +4,-5, entered from the west). The pillar
-     * set back is the corner opposite the longest side, and the front is the way from
-     * it to the middle of that side. Read off the room rather than assumed, so a room
-     * built facing another way still gets its own front.
+     * The SkyBlock year, for "What SkyBlock year is it?". Dragsim keeps Hypixel's
+     * calendar: year 1 began 2019-06-11 17:55 UTC and a year is 124 hours. On
+     * 2026-11-09 this gave 525, Early Spring 25th, which is what the server's sidebar
+     * said and the answer it accepted.
      */
-    public static int[] front(List<double[]> labels) {
-        if (labels == null || labels.size() != 3) return null;
-        int back = -1;
-        double longest = -1;
-        for (int i = 0; i < 3; i++) {
-            double[] a = labels.get((i + 1) % 3), b = labels.get((i + 2) % 3);
-            double side = Math.hypot(a[0] - b[0], a[1] - b[1]);
-            if (side > longest) { longest = side; back = i; }
+    static int skyblockYear(long epochMillis) {
+        return (int) Math.floorDiv(epochMillis - 1_560_275_700_000L, 446_400_000L) + 1;
+    }
+
+    /** The answer for a question that is worked out rather than remembered, or null. */
+    static String worked(String question, long epochMillis) {
+        return normalize(question).equals("what skyblock year is it") ? "Year " + skyblockYear(epochMillis) : null;
+    }
+
+    /**
+     * One question as Oruo asks it, assembled from separate chat lines: the header, the
+     * question on the next line, then the three lettered options.
+     */
+    static final class Asking {
+        private int index;
+        private String text;
+        private final List<String> options = new ArrayList<>();
+        private boolean open;
+
+        /** Feed one plain chat line. True on the line that completes a question. */
+        boolean feed(String line) {
+            String text = line == null ? "" : line.replaceAll("§.", "").trim();
+            Matcher header = HEADER.matcher(text);
+            if (header.matches()) {
+                index = Integer.parseInt(header.group(1));
+                this.text = null;
+                options.clear();
+                open = true;
+                return false;
+            }
+            if (!open || text.isEmpty()) return false;
+            if (this.text == null) {
+                if (lettered(text)) { open = false; return false; }   // no question line: not ours
+                this.text = text;
+                return false;
+            }
+            if (!lettered(text)) return false;
+            options.add(option(text));
+            if (options.size() < 3) return false;
+            open = false;
+            return true;
         }
-        double[] a = labels.get((back + 1) % 3), b = labels.get((back + 2) % 3), m = labels.get(back);
-        double dx = (a[0] + b[0]) / 2 - m[0], dz = (a[1] + b[1]) / 2 - m[1];
-        if (Math.hypot(dx, dz) < 1) return null;              // three in a row has no front
-        return Math.abs(dx) >= Math.abs(dz) ? new int[]{(int) Math.signum(dx), 0} : new int[]{0, (int) Math.signum(dz)};
+
+        int index() { return index; }
+        String text() { return text; }
+        List<String> options() { return List.copyOf(options); }
+        void clear() { index = 0; text = null; options.clear(); open = false; }
+    }
+
+    enum Verdict { RIGHT, WRONG, RESET, DONE }
+
+    /** A verdict and whose answer it was; the name is null for RESET and DONE. */
+    record Ruling(Verdict verdict, String name) { }
+
+    private static final String ORUO = "Oruo the Omniscient: ";
+    private static final Pattern ANSWERED = Pattern.compile("^(\\S+) answered (?:Question #\\d+|the final question) correctly!$");
+    private static final Pattern MISSED = Pattern.compile("^(\\S+) chose the wrong answer!.*$");
+
+    /** What a chat line says about the quiz, or null when it says nothing. */
+    static Ruling ruling(String line) {
+        String text = line == null ? "" : line.replaceAll("§.", "").trim();
+        if (text.equals("Quiz has reset. You can try again!")) return new Ruling(Verdict.RESET, null);
+        int at = text.indexOf(ORUO);
+        if (at < 0) return null;
+        String said = text.substring(at + ORUO.length()).trim();
+        if (said.startsWith("I bestow upon you")) return new Ruling(Verdict.DONE, null);
+        Matcher m = ANSWERED.matcher(said);
+        if (m.matches()) return new Ruling(Verdict.RIGHT, m.group(1));
+        m = MISSED.matcher(said);
+        if (m.matches()) return new Ruling(Verdict.WRONG, m.group(1));
+        return null;
+    }
+
+    /**
+     * Which answer a teammate took, from how far they stand from each answer's label:
+     * the index of the nearest, or -1 unless it is within reach and clearly nearer than
+     * the next. Oruo names who answered but not what, and you only see your own clicks;
+     * a player has to be at the block to click it, and the blocks stand well apart.
+     */
+    static int standingAt(List<Double> distances, double reach, double margin) {
+        int best = -1;
+        double nearest = Double.MAX_VALUE, next = Double.MAX_VALUE;
+        for (int i = 0; i < distances.size(); i++) {
+            double d = distances.get(i);
+            if (d < nearest) { next = nearest; nearest = d; best = i; }
+            else if (d < next) next = d;
+        }
+        return best >= 0 && nearest <= reach && next - nearest >= margin ? best : -1;
+    }
+
+    /** Whether a line is Oruo speaking, which is how the room announces itself. */
+    static boolean oruo(String line) {
+        return line != null && line.replaceAll("§.", "").contains(ORUO);
     }
 
     /** Bundled answers with per-player corrections and discoveries backed by a file. */
@@ -176,7 +229,7 @@ public final class QuizLogic {
             String key = normalize(question);
             if (key.isEmpty() || option == null || option.isBlank()) return false;
             // A confirmed wrong press must silence a stale saved/default answer.
-            // Otherwise the solver would keep pointing to the same failed button.
+            // Otherwise the solver would keep pointing to the same failed block.
             boolean removed = answer(key) != null && rulesOut(option, answer(key))
                     && answers.remove(key) != null;
             boolean added = wrong.computeIfAbsent(key, k -> new java.util.LinkedHashSet<>()).add(option.trim());
@@ -189,15 +242,18 @@ public final class QuizLogic {
         }
 
         /**
-         * The answer, or the only option the exclusions leave standing.
+         * The answer among these options, or the only option the exclusions leave
+         * standing.
          *
-         * Elimination is only trusted when exactly one survives; two left is still a
-         * guess, and a guess here fails the room.
+         * A stored answer the room is not showing is no answer. "Which of these enemies
+         * does not spawn in the Spider's Den?" has a different outsider each time, and
+         * naming last time's would point at nothing. Elimination is only trusted when
+         * exactly one survives; two left is still a guess, and a guess costs a reset.
          */
         public String deduce(String question, java.util.List<String> options) {
-            String known = answer(question);
-            if (known != null) return known;
-            if (options == null || options.isEmpty()) return null;
+            String known = resolve(answer(question), options);
+            if (options == null || options.isEmpty()) return known;
+            if (known != null && options.contains(known)) return known;
             java.util.Set<String> out = excluded(question);
             java.util.List<String> left = options.stream()
                     .filter(o -> out.stream().noneMatch(e -> rulesOut(e, o))).toList();
@@ -301,54 +357,6 @@ public final class QuizLogic {
             Map<String, String> all = new LinkedHashMap<>(defaults);
             all.putAll(answers);
             return Map.copyOf(all);
-        }
-    }
-
-    /**
-     * Which option the player chose, held until the server says whether it was right.
-     *
-     * The confirmation is the counter moving on: a question that advances from 1/3 to
-     * 2/3 was answered correctly, because a wrong press fails the room instead. So the
-     * pending answer is bound to the question it was given for, and committed only when
-     * a LATER question appears - never on the press itself.
-     */
-    public static final class Pending {
-        private String question;
-        private String answer;
-
-        public void offer(String forQuestion, String option) {
-            if (forQuestion == null || option == null) return;
-            question = forQuestion;
-            answer = option;
-        }
-
-        public void clear() {
-            question = null;
-            answer = null;
-        }
-
-        public boolean has() {
-            return question != null && answer != null;
-        }
-
-        public String question() {
-            return question;
-        }
-
-        public String answer() {
-            return answer;
-        }
-
-        /**
-         * Commit the pending answer if the puzzle moved past the question it was for.
-         * Returns true when something was learned.
-         */
-        public boolean confirm(Book book, Question now) {
-            if (!has() || now == null) return false;
-            if (normalize(now.text()).equals(normalize(question))) return false;  // same question, no verdict yet
-            boolean learned = book.learn(question, answer);
-            clear();
-            return learned;
         }
     }
 }

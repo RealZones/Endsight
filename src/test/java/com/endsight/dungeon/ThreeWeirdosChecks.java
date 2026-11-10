@@ -44,8 +44,10 @@ public final class ThreeWeirdosChecks {
         model.accept(ENTRY);
         check(model.active() && model.answered() == 0, "new room entry clears all former clues");
         model.clear();
+        model.accept("[NPC] Mort: Here, I found this map when I first entered the dungeon.");
+        check(!model.active() && model.answered() == 0, "dialogue that is not a clue does not open a room");
         model.accept(OBSERVED[0]);
-        check(model.answered() == 0, "NPC dialogue outside an entered room is ignored");
+        check(model.active() && model.answered() == 1, "a clue opens the room without the entry line, which the new dungeons no longer send");
 
         model = started();
         model.accept("[NPC] Wren: Whatever you do, Barnaby's chest is not the one.");
@@ -87,6 +89,30 @@ public final class ThreeWeirdosChecks {
         model.accept(OBSERVED[0]); model.accept(OBSERVED[1]);
         model.accept("[NPC] Barnaby: Don’t trust Wren, they’re lying.");
         check("Ferris".equals(model.solution()), "curly apostrophes preserve observed logical meaning");
+
+        // -- the new dungeons' room is Hypixel's: latest.log of 2026-11-09, 17:35 ------
+        String virginia = "§e[NPC] §r§cVirginia§r§f: §rThe reward isn't in any of our chests.";
+        String ardis = "§e[NPC] §r§cArdis§r§f: §rThe reward is not in my chest. They are both lying.";
+        String eveleth = "§e[NPC] §r§cEveleth§r§f: §rThe reward is in my chest!";
+        model = new ThreeWeirdosLogic();
+        check(model.accept(ardis) && model.active(), "a Hypixel line opens the room with no entry line");
+        check(model.solution() == null, "a line that marks nobody gives no answer");
+        model.accept(virginia);
+        check("Virginia".equals(model.solution()), "the weirdo with an answer line owns the chest");
+        model.accept(eveleth);
+        model.accept(virginia);
+        check("Virginia".equals(model.solution()), "the rest of the room and repeats do not change it");
+        for (String line : List.of("The reward is not in my chest!", "At least one of them's lying, and the reward is not in Ardis's chest.",
+                "My chest doesn't have the reward. We are all telling the truth.", "My chest has the reward and I’m telling the truth!",
+                "The reward isn't in any of our chests.", "Both of them are telling the truth. Also, Ardis has the reward in their chest!")) {
+            model = new ThreeWeirdosLogic();
+            model.accept("[NPC] Eveleth: The reward is in my chest!");
+            model.accept("[NPC] Virginia: " + line);
+            check("Virginia".equals(model.solution()), "answer line: " + line);
+        }
+        model = new ThreeWeirdosLogic();
+        model.accept("[NPC] Mort: Good luck.");
+        check(!model.active(), "Mort's lines still open nothing");
 
         Vec3 center = new Vec3(.5, .5, .5);
         BlockPos near = new BlockPos(1, 0, 0), far = new BlockPos(3, 0, 0);

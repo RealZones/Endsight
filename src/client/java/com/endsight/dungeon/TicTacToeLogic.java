@@ -1,7 +1,8 @@
 package com.endsight.dungeon;
 
-/** DragSim's machine places blue first; the player places red and only has to
- * avoid losing. No world state, clicks, or guessed tile contents enter this search. */
+/** The machine moves first (BLUE: blue concrete on the old board, X now); the player
+ * (RED, now O) only has to avoid losing. No world state, clicks, or guessed tile
+ * contents enter this search. */
 public final class TicTacToeLogic {
     public static final int EMPTY = 0, BLUE = 1, RED = 2;
     private static final int[] ORDER = {4, 0, 2, 6, 8, 1, 3, 5, 7};

@@ -360,13 +360,6 @@ tasks.register('simonSaysChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'simonSaysChecks' }
 
-tasks.register('higherOrLowerChecks', JavaExec) {
-    dependsOn 'testClasses', 'clientClasses'
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'com.endsight.dungeon.HigherOrLowerChecks'
-}
-tasks.named('check') { dependsOn 'higherOrLowerChecks' }
-
 tasks.register('quizChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -382,6 +375,22 @@ tasks.register('icePathChecks', JavaExec) {
 }
 
 tasks.named('check') { dependsOn 'icePathChecks' }
+
+tasks.register('iceFillChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.IceFillChecks'
+}
+
+tasks.named('check') { dependsOn 'iceFillChecks' }
+
+tasks.register('creeperBeamsChecks', JavaExec) {
+	dependsOn 'testClasses', 'clientClasses'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.endsight.dungeon.CreeperBeamsChecks'
+}
+
+tasks.named('check') { dependsOn 'creeperBeamsChecks' }
 
 tasks.register('bloodRoomChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
@@ -523,7 +532,7 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
         || providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
         || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
         || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
-        || providers.gradleProperty('storageVisualTest').isPresent()) {
+        || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()) {
     fabricApi.configureTests {
         createSourceSet = true
         modId = 'endsight-profile-tests'
@@ -544,6 +553,7 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
             : providers.gradleProperty('cacheVisualTest').isPresent() ? '"com.endsight.storage.CacheVisualTest"'
             : providers.gradleProperty('mapVisualTest').isPresent() ? '"com.endsight.dungeon.DungeonMapVisualTest"'
             : providers.gradleProperty('keyVisualTest').isPresent() ? '"com.endsight.dungeon.KeyAlertVisualTest"'
+            : providers.gradleProperty('puzzleVisualTest').isPresent() ? '"com.endsight.dungeon.PuzzleVisualTest"'
             : '"com.endsight.profile.ProfileVisualTest"'
     tasks.named('processGametestResources') {
         inputs.property('only', only)
@@ -554,8 +564,9 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     if (providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
             || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
             || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
-            || providers.gradleProperty('storageVisualTest').isPresent()) {
+            || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()) {
         def testDirectory = providers.gradleProperty('storageVisualTest').isPresent() ? 'run/storage-live-test'
+                : providers.gradleProperty('puzzleVisualTest').isPresent() ? 'run/puzzle-test'
                 : providers.gradleProperty('goopVisualTest').isPresent() ? 'run/goop-test'
                 : providers.gradleProperty('menuVisualTest').isPresent() ? 'run/menu-test'
                 : providers.gradleProperty('rarityVisualTest').isPresent() ? 'run/rarity-outline-test'

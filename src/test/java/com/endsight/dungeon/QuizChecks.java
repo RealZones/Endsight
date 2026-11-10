@@ -2,147 +2,139 @@ package com.endsight.dungeon;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 
 public final class QuizChecks {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
-        // -- reading the hologram ------------------------------------------------
-        QuizLogic.Question q = QuizLogic.question("1/3 Which Wither Lord is crushed under pillars?");
-        check(q != null && q.index() == 1 && q.total() == 3, "counter parsed");
-        check(q != null && q.text().equals("Which Wither Lord is crushed under pillars?"), "question text kept intact");
-        check(QuizLogic.question("§e2/3 §fWhich one is the youngest?") != null, "colour codes do not block parsing");
-        check(QuizLogic.question("Quiz") == null, "the title line is not a question");
-        check(QuizLogic.question("3/3") == null, "a bare counter is not a question");
-        check(QuizLogic.question(null) == null, "null is not a question");
+        // -- Oruo's chat, as latest.log has it on 2026-11-09 (colour codes kept) -------
+        QuizLogic.Asking asking = new QuizLogic.Asking();
+        check(!asking.feed("§4[STATUE] Oruo the Omniscient§r§f: Answer incorrectly, and your moment of ineptitude will live on for generations."),
+                "an intro line is not a question");
+        check(!asking.feed("§f                                §r§6§lQuestion #1"), "the header alone is not a question");
+        check(!asking.feed("§f                    §r§6What is the name of Rick's brother?"), "nor the header and the question");
+        check(!asking.feed("    §6 ⓐ §aWendell") && !asking.feed("    §6 ⓑ §aJamie"), "nor two options");
+        check(asking.feed("    §6 ⓒ §aPat"), "the third option completes it");
+        check(asking.index() == 1 && "What is the name of Rick's brother?".equals(asking.text()), "number and question read");
+        check(asking.options().equals(List.of("Wendell", "Jamie", "Pat")), "options read without their letters");
+        check(!asking.feed("    §6 ⓐ §aWendell"), "a stray option after the question is ignored");
+        asking.feed("§f                                §r§6§lQuestion #2");
+        asking.feed("§f                   §r§6How many total Fairy Souls are there?");
+        asking.feed("    §6 ⓐ §a289 Fairy Souls");
+        asking.feed("    §6 ⓑ §a247 Fairy Souls");
+        check(asking.feed("    §6 ⓒ §a253 Fairy Souls") && asking.index() == 2
+                && asking.options().get(0).equals("289 Fairy Souls"), "the next question replaces the last");
 
-        // -- the same question recognising itself --------------------------------
-        String a = "1/3 Which Wither Lord is crushed under pillars?";
-        String b = "§a2/3  Which Wither Lord is crushed under pillars!";
-        check(QuizLogic.normalize(a).equals(QuizLogic.normalize(b)),
-                "counter, colour, spacing and trailing punctuation all ignored");
-        check(QuizLogic.normalize("Which Wither Lord is crushed under pillars?")
-                .equals("which wither lord is crushed under pillars"), "normalised form is lowercase and bare");
+        // -- the labels over the answer blocks ("ⓑ Year 525." in the clip) -------------
+        check(QuizLogic.lettered("ⓑ Year 525.") && "Year 525".equals(QuizLogic.option("ⓑ Year 525.")),
+                "a label loses its letter and full stop");
+        check("289 Fairy Souls".equals(QuizLogic.option("§6ⓐ §a289 Fairy Souls.")), "colour codes on a label are ignored");
+        check(!QuizLogic.lettered("Question #3") && !QuizLogic.lettered("Oruo the Omniscient"), "other names are not options");
+        check("Storm".equals(QuizLogic.option("C Storm")), "an old book's lettered answer still reads bare");
 
-        // -- the book ------------------------------------------------------------
+        // -- verdicts, and whose they are ----------------------------------------------
+        check(QuizLogic.ruling("§4[STATUE] Oruo the Omniscient§r§f: §r§dImFear §r§aanswered §r§6Question #1 §r§acorrectly!")
+                .equals(new QuizLogic.Ruling(QuizLogic.Verdict.RIGHT, "ImFear")), "a right answer, and who gave it");
+        check(QuizLogic.ruling("[STATUE] Oruo the Omniscient: ImFear answered the final question correctly!")
+                .equals(new QuizLogic.Ruling(QuizLogic.Verdict.RIGHT, "ImFear")), "the final answer is a right answer too");
+        check(QuizLogic.ruling("[STATUE] Oruo the Omniscient: ImFear chose the wrong answer! I shall never forget this moment of misrememberance.")
+                .equals(new QuizLogic.Ruling(QuizLogic.Verdict.WRONG, "ImFear")), "a wrong answer");
+        check(QuizLogic.ruling("[STATUE] Oruo the Omniscient: Teammate_1 answered Question #2 correctly!")
+                .equals(new QuizLogic.Ruling(QuizLogic.Verdict.RIGHT, "Teammate_1")), "a teammate's answer names them");
+        check(QuizLogic.ruling("§aQuiz has reset. You can try again!").verdict() == QuizLogic.Verdict.RESET, "the room resets");
+        check(QuizLogic.ruling("[STATUE] Oruo the Omniscient: I bestow upon you all the power of a hundred years!").verdict()
+                == QuizLogic.Verdict.DONE, "the room is done");
+        check(QuizLogic.ruling("[STATUE] Oruo the Omniscient: Yikes") == null
+                && QuizLogic.ruling("[STATUE] Oruo the Omniscient: One more question!") == null
+                && QuizLogic.ruling("[STATUE] Oruo the Omniscient: 2 questions left... Then you will have proven your worth to me!") == null,
+                "chatter says nothing");
+        check(QuizLogic.ruling("[VIP+] Someone: ImFear answered Question #1 correctly!") == null, "a player typing it is not Oruo");
+        check(QuizLogic.oruo("§4[STATUE] Oruo the Omniscient§r§f: I am Oruo"), "Oruo speaking is the room");
+
+        // -- which block a teammate answered at ---------------------------------------
+        check(QuizLogic.standingAt(List.of(7.5, 1.8, 9.0), 5, 2) == 1, "beside one block, far from the others");
+        check(QuizLogic.standingAt(List.of(6.0, 7.0, 9.0), 5, 2) == -1, "out of reach of every block");
+        check(QuizLogic.standingAt(List.of(3.5, 4.5, 9.0), 5, 2) == -1, "between two blocks says nothing");
+        check(QuizLogic.standingAt(List.of(), 5, 2) == -1, "no labels, no answer");
+
+        // -- the year is worked out, and matched what the server took ------------------
+        check(QuizLogic.skyblockYear(Instant.parse("2026-11-09T10:06:40Z").toEpochMilli()) == 525, "year 525 on the night");
+        check(QuizLogic.skyblockYear(Instant.parse("2019-06-11T17:56:00Z").toEpochMilli()) == 1, "year 1 at the start");
+        check("Year 525".equals(QuizLogic.worked("What SkyBlock year is it?", Instant.parse("2026-11-09T10:06:40Z").toEpochMilli())),
+                "the year question is answered from the clock");
+        check(QuizLogic.worked("What is the name of Rick's brother?", 0) == null, "other questions are not worked out");
+
+        // -- the bundled book ---------------------------------------------------------
+        QuizLogic.Book bundled = new QuizLogic.Book();
+        Path file = Files.createTempDirectory("endsight-quiz").resolve("quiz-answers.txt");
+        bundled.load(file);
+        check("289 Fairy Souls".equals(bundled.deduce("How many total Fairy Souls are there?",
+                List.of("289 Fairy Souls", "247 Fairy Souls", "253 Fairy Souls"))), "the server's own count");
+        check("Necromancer Lord".equals(bundled.deduce("What is the status of Sadan?",
+                List.of("Professor", "The Wither Lords", "Necromancer Lord"))), "a lore answer");
+        check("Kat".equals(bundled.deduce("What is the name of the person that upgrades pets?", List.of("Jamie", "Kat", "Elle"))),
+                "another accepted answer");
+        check(bundled.deduce("Which of these enemies does not spawn in the Spider's Den?",
+                List.of("Zombie Spider", "Voracious Spider", "Splitter Spider")) == null,
+                "a stored answer the room is not showing names nothing");
+
+        // -- learning ------------------------------------------------------------------
         QuizLogic.Book book = new QuizLogic.Book();
+        String a = "Which Wither Lord is crushed under pillars?";
         check(!book.knows(a), "an unseen question is unknown");
         check(book.learn(a, "Goldor"), "learning a new answer reports a change");
         check(!book.learn(a, "Goldor"), "learning the same answer again reports no change");
-        check("Goldor".equals(book.answer(b)), "the answer is found from a differently worded counter");
-        check(book.learn(a, "Maxor"), "a corrected answer overwrites the old one");
-        check("Maxor".equals(book.answer(a)), "the correction is what gets returned");
+        check("Goldor".equals(book.answer("which wither lord is crushed under pillars!")), "found again despite punctuation");
+        check(book.learn(a, "Maxor") && "Maxor".equals(book.answer(a)), "a corrected answer overwrites the old one");
         check(!book.learn(a, "  "), "a blank answer is not learned");
-        check(book.size() == 1, "one question, one entry");
 
-        // -- it survives a round trip through the file ---------------------------
-        Path file = Files.createTempDirectory("endsight-quiz").resolve("quiz-answers.txt");
-        book.save();                       // no path yet: must not throw
-        book.load(file);                   // missing file: must not throw
-        check(book.size() == 17, "missing local file did not load all bundled answers");
-        check("Storm".equals(book.answer("Which Wither Lord is crushed under pillars?")),
-                "bundled answer was not available without a local file");
-        check("A chest".equals(book.answer("What does the mimic pretend to be?")),
-                "a bundled answer beginning with A lost part of its name");
-        book.learn("1/3 Which boss stands on the bridge?", "Goldor");
-        book.learn("2/3 Who is the youngest?", "Maxor");
+        book.load(file);
+        book.learn("How many total Fairy Souls are there?", "289 Fairy Souls");
+        book.learn("What is the colour of the sky?", "Blue");
         book.save();
-        check(Files.readAllLines(file).size() == 4, "bundled defaults were copied into the player's book");
+        check(Files.readAllLines(file).size() == 3, "only the new answer is written; a confirmed bundled one is not");
         QuizLogic.Book reopened = new QuizLogic.Book();
         reopened.load(file);
-        check(reopened.size() == 19, "local answers did not merge with bundled defaults");
-        check("Goldor".equals(reopened.answer("3/3 Which boss stands on the bridge?")),
-                "an answer survives the round trip and ignores the counter");
+        check("Blue".equals(reopened.answer("What is the colour of the sky")), "an answer survives the round trip");
 
-        // a hand-edited book with comments and junk must still load
-        Files.write(file, java.util.List.of(
-                "# a comment",
-                "",
-                "who is the oldest = Necron",
-                "malformed line with no separator",
-                "= dangling",
-                "trailing = Storm ",
-                "which wither lord is crushed under pillars = Maxor"));
+        Files.write(file, List.of("# a comment", "", "malformed line with no separator", "= dangling",
+                "trailing = Storm ", "what is the status of sadan = Shaman Necromancer"));
         reopened.load(file);
-        check(reopened.size() == 19, "comments and malformed lines are skipped");
-        check("Necron".equals(reopened.answer("1/3 Who is the oldest?")), "hand-written entry is readable");
-        check("Storm".equals(reopened.answer("trailing")), "surrounding whitespace is trimmed");
-        check("Maxor".equals(reopened.answer("Which Wither Lord is crushed under pillars?")),
-                "a local correction did not override the bundled answer");
+        check("Storm".equals(reopened.answer("trailing")), "surrounding whitespace is trimmed, junk skipped");
+        check("Shaman Necromancer".equals(reopened.answer("What is the status of Sadan?")), "a local answer beats the bundled one");
 
         QuizLogic.Book stale = new QuizLogic.Book();
         Path staleFile = Files.createTempDirectory("endsight-quiz-stale").resolve("quiz-answers.txt");
         stale.load(staleFile);
-        check(stale.exclude("What opens the blood door?", "The Blood Key"), "wrong bundled answer was not rejected");
-        check(stale.answer("What opens the blood door?") == null, "wrong bundled answer stayed active");
+        check(stale.exclude("What is the name of Rick's brother?", "Pat"), "a wrong bundled answer is rejected");
+        check(stale.answer("What is the name of Rick's brother?") == null, "and stops being given");
         stale.save();
         QuizLogic.Book rememberedWrong = new QuizLogic.Book();
         rememberedWrong.load(staleFile);
-        check(rememberedWrong.answer("What opens the blood door?") == null,
-                "wrong bundled answer returned after reload");
+        check(rememberedWrong.answer("What is the name of Rick's brother?") == null, "even after a reload");
 
-        // -- only commit an answer once the puzzle has moved on ------------------
-        QuizLogic.Book fresh = new QuizLogic.Book();
-        QuizLogic.Pending pending = new QuizLogic.Pending();
-        pending.offer("1/3 Which Wither Lord is crushed under pillars?", "Goldor");
-        check(!pending.confirm(fresh, QuizLogic.question("1/3 Which Wither Lord is crushed under pillars?")),
-                "still on the same question: nothing is learned yet");
-        check(pending.has(), "the pending answer is kept while the question stands");
-        check(pending.confirm(fresh, QuizLogic.question("2/3 Who is the youngest?")),
-                "the counter moving on confirms the previous answer");
-        check("Goldor".equals(fresh.answer("Which Wither Lord is crushed under pillars?")), "and it is written down");
-        check(!pending.has(), "the pending answer is cleared once committed");
-        check(!pending.confirm(fresh, QuizLogic.question("3/3 Anything?")), "nothing pending, nothing learned");
-
-        // -- learning from a failed room ----------------------------------------
+        // -- elimination ----------------------------------------------------------------
         QuizLogic.Book e = new QuizLogic.Book();
-        java.util.List<String> opts = java.util.List.of("Maxor", "Storm", "Goldor");
-        String q2 = "2/3 Who guards the Blood Room?";
-        check(e.deduce(q2, opts) == null, "no answer and no exclusions means no guess");
-        check(e.exclude(q2, "Maxor"), "a wrong answer is recorded");
-        check(!e.exclude(q2, "Maxor"), "the same wrong answer twice is not news");
-        check(e.deduce(q2, opts) == null, "two options left is still a guess, so stay quiet");
-        e.exclude(q2, "Goldor");
-        check("Storm".equals(e.deduce(q2, opts)), "one option left is the answer by elimination");
-        check(e.answer(q2) == null, "elimination does not pretend the answer was taught");
-        e.learn(q2, "Storm");
-        check("Storm".equals(e.answer(q2)), "and a real answer still overrides");
-
-        // exclusions survive the file, and a solved question drops them
+        List<String> opts = List.of("Wendell", "Jamie", "Pat");
+        String q = "Who is the youngest?";
+        check(e.deduce(q, opts) == null, "no answer and no exclusions means no guess");
+        check(e.exclude(q, "Wendell") && !e.exclude(q, "Wendell"), "a wrong answer is news once");
+        check(e.deduce(q, opts) == null, "two options left is still a guess, so stay quiet");
+        e.exclude(q, "Jamie");
+        check("Pat".equals(e.deduce(q, opts)), "one option left is the answer by elimination");
+        check(e.answer(q) == null, "elimination does not pretend the answer was taught");
         java.nio.file.Path f2 = Files.createTempDirectory("endsight-quiz2").resolve("book.txt");
-        QuizLogic.Book k = new QuizLogic.Book();
-        k.load(f2);
-        k.exclude("1/3 Which is oldest?", "Maxor");
-        k.exclude("1/3 Which is oldest?", "Storm");
-        k.learn("2/3 Settled?", "Goldor");
-        k.save();
+        e.load(f2);
+        e.exclude(q, "Wendell");
+        e.exclude(q, "Jamie");
+        e.learn("Settled?", "Kat");
+        e.save();
         QuizLogic.Book k2 = new QuizLogic.Book();
         k2.load(f2);
-        check(k2.excluded("Which is oldest?").size() == 2, "exclusions came back from the file");
-        check("Goldor".equals(k2.answer("Settled?")), "answers still came back too");
+        check(k2.excluded(q).size() == 2 && "Kat".equals(k2.answer("Settled?")), "exclusions and answers come back from the file");
         check(!Files.readString(f2).contains("settled? !="), "a solved question writes no exclusion line");
-
-        // -- books written while answers kept their slot letter -------------------
-        java.util.List<String> lords = java.util.List.of("Storm", "Necron", "Goldor");
-        check("Storm".equals(QuizLogic.resolve("C Storm", lords)), "a lettered answer finds its bare option");
-        check("A chest".equals(QuizLogic.resolve("A chest", java.util.List.of("A chest", "A door"))),
-                "an answer that really starts with a letter is not cut down");
-        check("Storm".equals(QuizLogic.resolve("B A Storm", lords)) == false, "only one letter is ever stripped");
-        check("Fairy".equals(QuizLogic.resolve("Fairy", lords)), "an answer missing from the room is left alone");
-        QuizLogic.Book old = new QuizLogic.Book();
-        old.exclude("1/3 Who revives a fallen teammate?", "A The Watcher");
-        old.exclude("1/3 Who revives a fallen teammate?", "B Mort");
-        check("The Fairy".equals(old.deduce("Who revives a fallen teammate?",
-                java.util.List.of("The Watcher", "Mort", "The Fairy"))), "lettered wrong answers still eliminate");
-
-        // -- which way the pillars face (room-20261014-005531: A +4,+5  B +7,0  C +4,-5)
-        int[] front = QuizLogic.front(java.util.List.of(new double[]{4, 5}, new double[]{7, 0}, new double[]{4, -5}));
-        check(front != null && front[0] == -1 && front[1] == 0, "the front faces back toward the entrance");
-        int[] turned = QuizLogic.front(java.util.List.of(new double[]{5, 4}, new double[]{0, 7}, new double[]{-5, 4}));
-        check(turned != null && turned[0] == 0 && turned[1] == -1, "a room built the other way gets its own front");
-        check(QuizLogic.front(java.util.List.of(new double[]{0, 0}, new double[]{0, 5}, new double[]{0, 10})) == null,
-                "three signs in a row have no front");
-        check(QuizLogic.front(java.util.List.of(new double[]{0, 0}, new double[]{0, 5})) == null, "two signs say nothing");
 
         System.out.println(checks + " quiz checks passed");
     }

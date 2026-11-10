@@ -59,7 +59,10 @@ public final class SimonSays {
         SimonSaysBoard.Probe probe = (support, facing) -> cell(mc.level, support, facing);
         SimonSaysBoard.Snapshot snapshot;
         if (grid == null) {
-            if (++ticks % 5 != 0) return;
+            // Once a second until the device is found: the search reads 5,733 blocks and ran
+            // four times a second in every room of every dungeon (performance audit,
+            // 2026-11-09). Walking up to the device takes longer than a second anyway.
+            if (++ticks % 20 != 0) return;
             snapshot = SimonSaysBoard.find(buttonsNear(mc), probe);
             if (snapshot == null) return;
             grid = snapshot.grid();

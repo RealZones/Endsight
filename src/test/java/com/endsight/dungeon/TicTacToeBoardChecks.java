@@ -57,6 +57,25 @@ public final class TicTacToeBoardChecks {
         check(TicTacToe.endsRoom("PUZZLE FAIL! The machine won Tic Tac Toe"), "observed machine win ends room");
         check(TicTacToe.endsRoom("PUZZLE SOLVED! Tic Tac Toe"), "matching solution ends room");
         check(TicTacToe.endsRoom("PUZZLE! Three Weirdos - One of the three always lies."), "entering a different puzzle clears turn state");
+
+        // The new board's marks: red X and O on maps (2026-11-09 clip). Red is map colour
+        // byte 114 (base colour 28), white paper 34; one map gets a grey border to stand in
+        // for any frame. Ink here is base colour 28 in any shade, as the game's is "red".
+        java.util.function.IntPredicate red = c -> c >> 2 == 28;
+        check(TicTacToeBoard.mark(map(true, (byte) 34, false), red) == TicTacToeLogic.BLUE, "an X is the machine's");
+        check(TicTacToeBoard.mark(map(false, (byte) 34, false), red) == TicTacToeLogic.RED, "an O is yours");
+        check(TicTacToeBoard.mark(map(true, (byte) 0, true), red) == TicTacToeLogic.BLUE, "any paper colour, with a border");
+        check(TicTacToeBoard.mark(map(false, (byte) 0, true), red) == TicTacToeLogic.RED, "an O with a border too");
+        // The paper inside the ring a different shade from the paper outside it: what read
+        // an O as an X in the real room and killed the hint after the first move.
+        byte[] shaded = map(false, (byte) 34, false);
+        for (int z = 40; z < 88; z++) for (int x = 40; x < 88; x++) if (shaded[x + z * 128] == 34) shaded[x + z * 128] = 33;
+        check(TicTacToeBoard.mark(shaded, red) == TicTacToeLogic.RED, "an O stays an O when its middle is another shade of paper");
+        byte[] darkInk = map(true, (byte) 34, false);
+        for (int i = 0; i < darkInk.length; i++) if (darkInk[i] == 114) darkInk[i] = 113;
+        check(TicTacToeBoard.mark(darkInk, red) == TicTacToeLogic.BLUE, "an X in a darker shade of red is still an X");
+        check(TicTacToeBoard.mark(new byte[128 * 128], red) == TicTacToeBoard.UNKNOWN, "a blank map is not read yet");
+        check(TicTacToeBoard.mark(new byte[10], red) == TicTacToeBoard.UNKNOWN, "a short array is not a map");
         System.out.println(checks + " tic tac toe board checks passed");
     }
 
@@ -94,6 +113,18 @@ public final class TicTacToeBoardChecks {
         List<TicTacToeBoard.Seed> seeds = new ArrayList<>();
         for (int i = 0; i < 9; i++) if (values[i] == 0) seeds.add(new TicTacToeBoard.Seed(grid.button(i), grid.plane()));
         return seeds;
+    }
+
+    /** A map drawn the way the board's look: thick red strokes on plain paper. */
+    private static byte[] map(boolean x, byte paper, boolean border) {
+        byte[] colors = new byte[128 * 128];
+        for (int z = 0; z < 128; z++) for (int column = 0; column < 128; column++) {
+            boolean ink = x ? column > 14 && column < 113 && (Math.abs(column - z) < 7 || Math.abs(column + z - 127) < 7)
+                    : Math.abs(Math.hypot(column - 63.5, z - 63.5) - 40) < 6;
+            boolean edge = border && (column < 4 || z < 4 || column > 123 || z > 123);
+            colors[column + z * 128] = edge ? (byte) 45 : ink ? (byte) 114 : paper;
+        }
+        return colors;
     }
 
     private static void check(boolean condition, String name) {

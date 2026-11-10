@@ -64,10 +64,12 @@ public final class ThreeWeirdos {
                 world = mc.level;
                 entryOrigin = mc.player.position();
             }
+            boolean was = clues.active();
             if (clues.accept(line)) {
                 correctChest = null;
                 chestPositions = Map.of(); matchedChests = Map.of();
                 if (!clues.active()) reset();
+                else if (!was) { world = mc.level; entryOrigin = mc.player.position(); }   // opened by a clue
             }
         });
         ClientTickEvents.END_CLIENT_TICK.register(ThreeWeirdos::tick);

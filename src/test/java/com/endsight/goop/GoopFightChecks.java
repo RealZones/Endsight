@@ -3,8 +3,8 @@ package com.endsight.goop;
 import java.util.Map;
 
 /**
- * The Goop's waits and payout, against lines and times from Fear's recording of
- * 2026-11-01 20:33Z (the second fight in it, millisecond stamps) and his chat logs.
+ * The Goop's waits and payout, against lines and times from a fight on 2026-11-01
+ * 20:33Z (millisecond stamps) and chat logs.
  */
 public final class GoopFightChecks {
     private static int checks;
@@ -191,6 +191,24 @@ public final class GoopFightChecks {
         equal(test.finishedAt(), 60_000L);
         test.reset();
         equal(test.finishedAt(), -1L);
+
+        // Session time starts at placement, keeps counting through a slow first round,
+        // and covers the wait between rounds without needing another payout.
+        GoopFight clock = new GoopFight();
+        equal(GoopTracker.sessionTimeBetween(clock, 0, 10_000), 0L);
+        clock.line("ImFear squeezes the goop into the altar.", 10_000, me);
+        equal(GoopTracker.sessionTimeBetween(clock, 0, 41_300), 31_300L);
+        clock.line("The rift throws you skyward!", 41_300, me);
+        equal(GoopTracker.sessionTimeBetween(clock, 41_300, 110_000), 68_700L);
+        clock.line("The rift falls silent.", 110_000, me);
+        equal(GoopTracker.sessionTimeBetween(clock, 110_000, 116_000), 6_000L);
+        equal(GoopTracker.sessionTimeBetween(clock, 116_000, 180_000), 9_000L);
+        equal(GoopTracker.sessionTimeBetween(clock, 125_000, 200_000), 0L);
+        clock.line("ImFear squeezes the goop into the altar.", 200_000, me);
+        equal(GoopTracker.sessionTimeBetween(clock, 180_000, 205_000), 5_000L);
+        equal(GoopTracker.sessionTimeBetween(clock, 205_000, 400_000), 85_000L);
+        clock.reset();
+        equal(GoopTracker.sessionTimeBetween(clock, 400_000, 405_000), 0L);
 
         System.out.println(checks + " goop checks passed");
     }

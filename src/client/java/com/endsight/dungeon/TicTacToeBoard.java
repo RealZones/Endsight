@@ -91,6 +91,38 @@ final class TicTacToeBoard {
         return candidates.size() == 1 ? candidates.values().iterator().next() : null;
     }
 
+    /**
+     * The mark on a taken square's map: the machine's X ({@link TicTacToeLogic#BLUE}) or
+     * your O ({@link TicTacToeLogic#RED}), or UNKNOWN for a blank map or one whose pixels
+     * have not arrived.
+     *
+     * Dragsim's new board (2026-11-09 clip) is Hypixel's: red X and O drawn on maps in
+     * item frames. X's strokes cross in the middle of the map and O's ring leaves it bare,
+     * so the middle says which: it is ink for an X and paper for an O.
+     *
+     * Ink, not "anything but the background". The first version compared the middle with
+     * the commonest colour on the map, exact byte for byte, and in a real room the hint
+     * died as soon as your first O went down (17:07, 17:20 and 17:51 clips), while the
+     * board-read log stayed silent, i.e. every square read as something. An O read as an
+     * X does exactly that: three X and no O is not a board you can be asked to move on.
+     * A map image converted to map colours keeps paper in more than one shade, so the
+     * paper inside the ring need not be the byte the outside is. Asking whether the
+     * middle is red ink does not care how many shades of paper there are.
+     */
+    static int mark(byte[] colors, java.util.function.IntPredicate ink) {
+        if (colors == null || colors.length != 128 * 128) return UNKNOWN;
+        boolean drawn = false;
+        for (int z = 0; z < 128 && !drawn; z += 8) for (int x = 0; x < 128; x += 8) {
+            if (ink.test(colors[x + z * 128] & 0xFF)) { drawn = true; break; }
+        }
+        if (!drawn) return UNKNOWN;                                  // blank, or not arrived yet
+        int middle = 0;
+        for (int dz = -2; dz <= 2; dz++) for (int dx = -2; dx <= 2; dx++) {
+            if (ink.test(colors[64 + dx + (64 + dz) * 128] & 0xFF)) middle++;
+        }
+        return middle >= 5 ? TicTacToeLogic.BLUE : TicTacToeLogic.RED;
+    }
+
     /** Never keep the previous hint while packets are replacing a button and its tile. */
     static final class Stabilizer {
         private Snapshot previous, stable;

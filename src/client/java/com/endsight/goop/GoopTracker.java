@@ -55,8 +55,10 @@ public final class GoopTracker {
     private static final String ID = "tracker.goop", TIMER = "goop.timer";
     /** Each fight you place costs one. */
     public static final String COST_ITEM = "Goop";
-    /** Fights at the altar come every minute or so; this long without one and you have left. */
+    /** Keep the card visible after a round and stop the clock if an unfinished fight goes silent. */
     private static final long SHOWN_MS = 90_000;
+    /** Give the group time to place the next Goop after the placement cooldown. */
+    private static final long SESSION_IDLE_MS = 15_000;
     private static final long PLACEMENT_COOLDOWN_MS = 6_000;
     private static final long PLACEMENT_READY_MS = 5_000;
 
@@ -64,13 +66,13 @@ public final class GoopTracker {
     private static boolean enabled = true, timer = true, dirty, historySafe = true;
     private static String period = "Session";
     private static Counts session = new Counts(), total = new Counts();
-    private static long savedAt, bookedAt;
+    private static long savedAt, bookedAt, sessionClockAt;
     private static Object level;
 
     /** Saved as goop-tracker.json; a session is the same shape, never saved. */
     static final class Counts {
         long fights, paid, placed;
-        /** Time between fights at the altar, so a profit per hour leaves out the time you were elsewhere. */
+        /** Live farming time for Session, or the saved payout-gap estimate for All Time. */
         long activeMs;
         final Map<String, Integer> drops = new LinkedHashMap<>();
 
@@ -89,7 +91,10 @@ public final class GoopTracker {
 
     public static Module module() {
         return new Module(ID, "Goop Tracker", "Your Goop fights, pay and loot; /drops goop lists them.",
-                "The End", () -> enabled, v -> enabled = v, List.of(
+                "The End", () -> enabled, v -> {
+                    advanceSessionClock(System.currentTimeMillis());
+                    enabled = v;
+                }, List.of(
                 new Setting.Choice("Period", "Show this session or saved totals.", List.of("Session", "All Time"),
                         () -> period, v -> period = v),
                 new Setting.Action("Drop prices", "Set what each drop and a Goop are worth.", "Edit",
@@ -102,7 +107,7 @@ public final class GoopTracker {
         load();
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> { if (!overlay) message(message); });
         ClientReceiveMessageEvents.GAME_CANCELED.register((message, overlay) -> { if (!overlay) message(message); });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> { leave(); save(); });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> { leave(System.currentTimeMillis()); save(); });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> save());
         ClientTickEvents.END_CLIENT_TICK.register(GoopTracker::tick);
         // Same switch as the Cache Tracker's: the underlined [Session] in the header flips the period.
@@ -144,21 +149,44 @@ public final class GoopTracker {
         Minecraft mc = Minecraft.getInstance();
         String me = mc.player == null ? "" : mc.player.getName().getString();
         long now = System.currentTimeMillis();
+        // Settle time using the old phase before a new signal can extend or end the active window.
+        updateSessionClock(mc, now);
         // The end box is one message of many lines; the payout is read a line at a time.
         for (String part : Zealots.strip(message.getString()).split("\\R")) book(fight.line(part, now, me));
     }
 
     private static void tick(Minecraft mc) {
+        long now = System.currentTimeMillis();
+        updateSessionClock(mc, now);
+        book(fight.poll(now));
+        if (dirty && now - savedAt > 2_000) save();
+    }
+
+    private static void updateSessionClock(Minecraft mc, long now) {
         if (level != mc.level) {
-            leave();
+            leave(now);
             level = mc.level;
+        } else {
+            advanceSessionClock(now);
         }
-        book(fight.poll(System.currentTimeMillis()));
-        if (dirty && System.currentTimeMillis() - savedAt > 2_000) save();
+    }
+
+    private static void advanceSessionClock(long now) {
+        if (enabled) session.activeMs += sessionTimeBetween(fight, sessionClockAt, now);
+        sessionClockAt = now;
+    }
+
+    static long sessionTimeBetween(GoopFight fight, long from, long now) {
+        long seen = Math.max(fight.lastSeen(), fight.finishedAt());
+        if (seen < 0) return 0;
+        boolean betweenRounds = fight.phase() == GoopFight.Phase.NONE || fight.finishedAt() >= 0;
+        long until = seen + (betweenRounds ? SESSION_IDLE_MS : SHOWN_MS);
+        return Math.max(0, Math.min(now, until) - Math.max(from, seen));
     }
 
     /** Off the island: a fight that ended is still yours to keep, the one on screen is not. */
-    private static void leave() {
+    private static void leave(long now) {
+        advanceSessionClock(now);
         book(fight.poll(Long.MAX_VALUE));
         fight.reset();
     }
@@ -169,10 +197,7 @@ public final class GoopTracker {
         total.add(r);
         r.drops().keySet().forEach(NpcPrices::track);
         long now = System.currentTimeMillis();
-        if (bookedAt > 0 && now - bookedAt <= SHOWN_MS) {
-            session.activeMs += now - bookedAt;
-            total.activeMs += now - bookedAt;
-        }
+        if (bookedAt > 0 && now - bookedAt <= SHOWN_MS) total.activeMs += now - bookedAt;
         bookedAt = now;
         dirty = true;
     }
@@ -188,6 +213,7 @@ public final class GoopTracker {
 
     private static void resetSession() {
         session = new Counts();
+        sessionClockAt = System.currentTimeMillis();
         bookedAt = 0;
     }
 
@@ -270,7 +296,7 @@ public final class GoopTracker {
             String unknown = takings.unpriced() ? " §7+ ?" : "";
             int colour = takings.profit() < 0 ? Theme.neg() : Theme.pos();
             rows.add(new HudCard.Row("Profit", NpcPrices.coins(takings.profit()) + unknown, colour));
-            // Under a minute of fights is one lucky drop scaled up to an hour.
+            // Under a minute is one lucky drop scaled up to an hour.
             if (c.activeMs >= 60_000) rows.add(new HudCard.Row("Profit/h",
                     NpcPrices.coins(Math.round(takings.profit() * (3_600_000.0 / c.activeMs))) + unknown, colour));
         }

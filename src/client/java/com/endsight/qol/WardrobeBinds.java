@@ -24,6 +24,8 @@ import java.util.regex.Pattern;
 public final class WardrobeBinds {
     private WardrobeBinds() { }
     private static final String ID = "qol.wardrobe", SWAP_KEY = ID + ".swap", FILE = "wardrobe-binds";
+    /** The server rejects wardrobe clicks during the first second after opening. */
+    static final long OPENING_DELAY_MS = 1_000;
     private static final int OUTFITS = 9;
     private static final EquipmentSlot[] WORN = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
     private static final Pattern SLOT = Pattern.compile("(?i)^Slot\\s+(\\d{1,2})$");
@@ -75,7 +77,7 @@ public final class WardrobeBinds {
 
     public static void request(int outfit) {
         if (outfit < 1 || outfit > OUTFITS) return;
-        MenuBindRequest.start("Wardrobe Binds", "wardrobe", WardrobeBinds::menu, 1_100, (screen, sent) -> {
+        MenuBindRequest.start("Wardrobe Binds", "wardrobe", WardrobeBinds::menu, OPENING_DELAY_MS, (screen, sent) -> {
             MenuBindRequest.Decision decision = finish(screen, entries(screen), outfit, sent);
             // Clicking it would take it off. Saying nothing made a press on the outfit you
             // are wearing look like a swap that failed: the menu just opened and went away.
@@ -89,7 +91,7 @@ public final class WardrobeBinds {
         int a = outfit(first), b = outfit(second);
         if (a == 0 || b == 0) { MenuBindRequest.tell("Choose two outfits in Loadouts first."); return; }
         int[] target = {0};
-        MenuBindRequest.start("Wardrobe Binds", "wardrobe", WardrobeBinds::menu, 1_100, (screen, sent) -> {
+        MenuBindRequest.start("Wardrobe Binds", "wardrobe", WardrobeBinds::menu, OPENING_DELAY_MS, (screen, sent) -> {
             List<OutfitEntry> entries = entries(screen);
             // Decided once: after the click the other one reads as equipped, and asking
             // again would click straight back.

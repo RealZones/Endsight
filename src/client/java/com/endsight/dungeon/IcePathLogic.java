@@ -19,7 +19,7 @@ import java.util.Set;
  *
  * That makes it a shortest-path problem over slide destinations rather than over cells,
  * which is why a breadth-first search finds the real answer rather than a plausible
- * one. A recorded room is 272 cells with 15 blocks, so the search is small.
+ * one. A real room is 272 cells with 15 blocks, so the search is small.
  *
  * Nothing here knows about Minecraft. The client half supplies the sheet, the blocks,
  * the fish and the goal, and gets back the direction to hit first.

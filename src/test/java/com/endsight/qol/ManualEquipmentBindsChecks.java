@@ -31,9 +31,9 @@ public final class ManualEquipmentBindsChecks {
         check(WardrobeBinds.choose(List.of(equip), 4, true).kind() == MenuBindRequest.Kind.WAIT, "unacknowledged click is never repeated");
         check(WardrobeBinds.choose(List.of(equip, equip), 4, false).kind() == MenuBindRequest.Kind.FAIL, "duplicate wardrobe labels fail closed");
         check(WardrobeBinds.choose(List.of(), 4, false).kind() == MenuBindRequest.Kind.WAIT, "missing metadata waits");
-        check(!MenuBindRequest.ready(100, 100, 1_100, 1_199), "wardrobe cannot click before server delay");
-        check(MenuBindRequest.ready(100, 100, 1_100, 1_200), "wardrobe delay starts at menu arrival");
-        check(!MenuBindRequest.ready(100, 1_180, 1_100, 1_200), "late metadata must settle too");
+        check(!MenuBindRequest.ready(100, 100, WardrobeBinds.OPENING_DELAY_MS, 1_099), "wardrobe cannot click before server delay");
+        check(MenuBindRequest.ready(100, 100, WardrobeBinds.OPENING_DELAY_MS, 1_100), "wardrobe can click as soon as the server delay passes");
+        check(!MenuBindRequest.ready(100, 1_080, WardrobeBinds.OPENING_DELAY_MS, 1_100), "late metadata must settle too");
         check(!MenuBindRequest.expired(100, 5_099), "request live before timeout");
         check(MenuBindRequest.expired(100, 5_100), "request expires at five seconds");
         check(PetBinds.page("Pets") == 1, "recorded Pets title");

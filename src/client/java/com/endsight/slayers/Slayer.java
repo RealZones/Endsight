@@ -176,6 +176,7 @@ public final class Slayer {
                         new Setting.Toggle("Quest reminder",
                                 "A /slayer link when you arrive without a quest.",
                                 () -> questReminder, v -> questReminder = v),
+                        Alerts.slayerQuestSetting(),
                         new Setting.Section("Session"),
                         new Setting.Action("Reset session",
                                 "Zero the kill count and the clock.",

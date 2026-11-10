@@ -1,10 +1,8 @@
 package com.endsight.dungeon;
 
-import com.endsight.dragons.DragonTimer;
 import com.endsight.ui.Module;
 import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
@@ -26,7 +24,7 @@ import java.util.Set;
 /**
  * "Ice Path": hit the silverfish so it slides into the chest at the far end.
  *
- * The room, from a recording of a real one: a flat sheet of packed ice, a scatter of
+ * The room, as a real one is built: a flat sheet of packed ice, a scatter of
  * polished andesite standing on it that the fish stops against, and a single chest at
  * the sheet's far edge, halfway along - the "opening" the hint means.
  *
@@ -35,21 +33,25 @@ import java.util.Set;
  *   silverfish   -5  floor+1 +6
  *
  * The search lives in {@link IcePathLogic}; this half only finds those three things and
- * draws every slide. Finding the chest rather than assuming a corner matters: the
- * sheet is laid out differently in each room, and the two earlier recordings were
+ * draws every slide.
+ *
+ * It starts from the room, not from chat. Until November it waited for "PUZZLE! Ice
+ * Path", and Dragsim's new dungeon generation stopped sending that line: a 2026-11-09
+ * run went through the room with only "You cannot hit the silverfish while it's moving!"
+ * in chat, so the solver never woke. A silverfish standing on packed ice is the room. Finding the chest rather than assuming a corner matters: the
+ * sheet is laid out differently in each room, and the two earlier looks at it were
  * clipped at the radius, so a guessed "back middle" would have aimed at open ice.
  */
 public final class IcePath {
     private static final String ID = "dungeon.icePath";
-    private static final String ENTRY = "PUZZLE! Ice Path";
-
-    private static boolean enabled = true, throughWalls = true, active;
+    private static boolean enabled = true, throughWalls = true;
     private static ClientLevel world;
     private static List<Vec3> points = List.of();
     private static BlockPos goalBlock;
     private static IcePathLogic.Sheet sheet;
     private static BlockPos scannedAt, plannedAt, lastFishAt;
-    private static int scanTicks;
+    private static int[] bounds;                  // the sheet: min x, min z, max x, max z, floor y
+    private static int scanTicks, idleTicks;
 
     private IcePath() { }
 
@@ -63,54 +65,32 @@ public final class IcePath {
     public static void init() {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> reset());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay || !enabled) return;
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.level == null || mc.player == null || !DungeonContext.active()) return;
-            String line = plain(message.getString());
-            if (DragonTimer.isPlayerChat(line)) return;
-            if (entry(line)) {
-                reset();
-                active = true;
-                world = mc.level;
-            } else if (ends(line)) {
-                reset();
-            }
-        });
         ClientTickEvents.END_CLIENT_TICK.register(IcePath::tick);
         LevelRenderEvents.BEFORE_GIZMOS.register(context -> draw());
     }
 
-    static String plain(String raw) {
-        return raw == null ? "" : raw.replaceAll("§.", "").trim();
-    }
-
-    static boolean entry(String line) {
-        String text = plain(line);
-        return text.equals(ENTRY) || text.startsWith(ENTRY + " -") || text.startsWith(ENTRY + ":");
-    }
-
-    static boolean ends(String line) {
-        String text = plain(line);
-        return text.startsWith("PUZZLE SOLVED! Ice Path") || text.startsWith("PUZZLE FAIL! Ice Path")
-                || text.startsWith("PUZZLE! ") && !entry(text);
-    }
-
     private static boolean visible(Minecraft mc) {
-        return enabled && active && mc.player != null && mc.level == world && DungeonContext.active();
+        return enabled && mc.player != null && mc.level != null && DungeonContext.active();
     }
 
     private static void reset() {
-        active = false; world = null; points = List.of(); goalBlock = null;
+        world = null; points = List.of(); goalBlock = null; bounds = null;
         sheet = null; scannedAt = null; plannedAt = null; lastFishAt = null; scanTicks = 0;
     }
 
     private static void tick(Minecraft mc) {
-        if (!visible(mc)) { if (active) reset(); return; }
+        if (!visible(mc)) { if (world != null) reset(); return; }
+        if (world != mc.level) { reset(); world = mc.level; }
+        // Every tick once the fish is found; four times a second until then, since every
+        // other room has none and this walks every entity (performance audit, 2026-11-09).
+        if (lastFishAt == null && ++idleTicks % 5 != 0) return;
         Entity fish = nearestSilverfish(mc);
+        // Dungeon mobs include silverfish. Only the puzzle's stands on the sheet, so one
+        // on anything else never costs a 2,401-block read.
+        if (fish != null && !mc.level.getBlockState(fish.blockPosition().below()).is(Blocks.PACKED_ICE)) fish = null;
         if (fish == null) {
             points = List.of(); plannedAt = null; lastFishAt = null; scanTicks = 0;
-            goalBlock = null; sheet = null; scannedAt = null;
+            goalBlock = null; sheet = null; scannedAt = null; bounds = null;
             return;
         }
 
@@ -174,9 +154,9 @@ public final class IcePath {
                 blocked.add(cell);
             }
         }
-        if (chest == null || ice.isEmpty()) { goalBlock = null; return null; }
+        if (chest == null || ice.isEmpty()) { goalBlock = null; bounds = null; return null; }
 
-        // The recorded chest approach has stone floor between patches of ice. Include
+        // The real chest approach has stone floor between patches of ice. Include
         // its local supported cells; scanning stone throughout the room would let the
         // search leave the puzzle and route through the surrounding walkways.
         for (BlockPos pos : BlockPos.betweenClosed(chest.offset(-3, -1, -3), chest.offset(3, -1, 3))) {
@@ -190,6 +170,12 @@ public final class IcePath {
         }
 
         goalBlock = chest;
+        int minX = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (IcePathLogic.Cell cell : ice) {
+            minX = Math.min(minX, cell.x()); maxX = Math.max(maxX, cell.x());
+            minZ = Math.min(minZ, cell.z()); maxZ = Math.max(maxZ, cell.z());
+        }
+        bounds = new int[]{minX, minZ, maxX, maxZ, floor};
         IcePathLogic.Cell goal = new IcePathLogic.Cell(chest.getX(), chest.getZ());
         blocked.remove(goal);                       // the goal catches the fish, it does not stop it
         return new IcePathLogic.Sheet(ice, blocked, goal);
@@ -210,9 +196,23 @@ public final class IcePath {
         return best;
     }
 
+    /**
+     * Whether you are at the ice: over the sheet or within two blocks of its edge, at its
+     * height. The solver wakes on any silverfish standing on packed ice within 40 blocks,
+     * since the room no longer announces itself, and on 2026-11-09 that drew the route
+     * through the wall of the start room before the run had begun (a screenshot). You
+     * hit the fish from beside the ice, so nothing useful is lost by waiting until then.
+     */
+    private static boolean atTheIce(Minecraft mc) {
+        if (bounds == null) return false;
+        double x = mc.player.getX(), z = mc.player.getZ();
+        return x >= bounds[0] - 2 && x <= bounds[2] + 3 && z >= bounds[1] - 2 && z <= bounds[3] + 3
+                && Math.abs(mc.player.getY() - (bounds[4] + 1)) <= 4;
+    }
+
     private static void draw() {
         Minecraft mc = Minecraft.getInstance();
-        if (!visible(mc)) return;
+        if (!visible(mc) || mc.level != world || !atTheIce(mc)) return;
         if (goalBlock != null) {
             var outline = Gizmos.cuboid(new AABB(goalBlock).inflate(.02),
                     GizmoStyle.strokeAndFill(0xFF55FFFF, 2f, 0x3055FFFF));

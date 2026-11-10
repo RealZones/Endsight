@@ -40,8 +40,9 @@ public final class FeatureCatalog {
         c.single("qol.math", "The End", "Golden Dragon math", "Answers the Golden Dragon's sum.");
         c.single("dungeon.map", "Dungeons");
         c.single("dungeon.keys", "Dungeons");
-        c.group("page.roomPuzzles", "Room puzzles", "Five independently controlled room solvers.", "Dungeons",
-                "dungeon.threeWeirdos", "dungeon.ticTacToe", "dungeon.quiz", "dungeon.higherOrLower", "dungeon.icePath");
+        c.group("page.roomPuzzles", "Room puzzles", "Six independently controlled room solvers.", "Dungeons",
+                "dungeon.threeWeirdos", "dungeon.ticTacToe", "dungeon.quiz", "dungeon.icePath", "dungeon.iceFill",
+                "dungeon.creeperBeams");
         c.single("dungeon.bloodRoom", "Dungeons");
         c.single("dungeon.terminals", "Dungeons");
         c.group("page.miningTracking", "Mining tracking", "Mining session, powder gains and rates.", "Mining", "mining.session", "mining.powder");

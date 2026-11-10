@@ -127,6 +127,10 @@ public final class Config {
                     // The old boss-only toggle now also controls the constant tile tracer.
                     raw = p.getProperty(base + ".set.Spawn tracer");
                 }
+                if (raw == null && m.id().equals("slayer.timer") && s.label().equals("Start Slayer Quest")) {
+                    raw = p.getProperty("module.alerts.set.Start Slayer Quest",
+                            p.getProperty("module.alerts.set.No slayer quest"));
+                }
                 if (raw == null) continue;
                 apply(s, raw);
             }

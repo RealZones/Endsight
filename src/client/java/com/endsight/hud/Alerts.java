@@ -19,9 +19,8 @@ import java.util.regex.Pattern;
  *
  * They started scattered - the miniboss call lived on the slayer module, the Protector
  * one on the dragon module - and that was already wrong at two: to find out what could
- * interrupt you, you had to open every module and read its settings. Alerts are a class
- * of thing in their own right, so they get a page of their own, and a new one is a line
- * in this file rather than a decision about which module it belongs to.
+ * interrupt you, you had to open every module and read its settings. General alerts
+ * get a page of their own. The Slayer quest popup sits beside its chat reminder.
  *
  * The appearance settings live here for the same reason: one popup is drawn at a time,
  * so there is exactly one size and one opacity, and nobody should be able to set them
@@ -54,6 +53,7 @@ public final class Alerts {
      */
     private static final Pattern FIREBALL = Pattern.compile("^\\[BOSS\\] .*Dragon: .*FIREBALL");
     private static final Pattern STASH = Pattern.compile("You have ([\\d,]+) materials stashed away!!");
+    private static final String START_SLAYER_QUEST = "Start Slayer Quest";
     private static final int ORANGE = 0xFFFFAA00;
     private static final int YELLOW = 0xFFFFEE55;
     /** Whether the inventory was full last tick, so the alert fires once per filling. */
@@ -74,9 +74,6 @@ public final class Alerts {
                         new Setting.Toggle("Slayer boss spawning",
                                 "Your slayer boss is spawning.",
                                 () -> slayerBoss, v -> slayerBoss = v),
-                        new Setting.Toggle("No slayer quest",
-                                "You are killing mobs in a slayer area with no quest.",
-                                () -> slayerQuest, v -> slayerQuest = v),
                         new Setting.Toggle("Endstone Protector",
                                 "When it finishes rising and spawns.",
                                 () -> protector, v -> protector = v),
@@ -168,8 +165,14 @@ public final class Alerts {
 
     // ── what the modules ask ──────────────────────────────────────────────────
 
+    public static Setting.Toggle slayerQuestSetting() {
+        return new Setting.Toggle(START_SLAYER_QUEST,
+                "Show a popup when you fight in a slayer area without an active quest.",
+                () -> slayerQuest, v -> slayerQuest = v);
+    }
+
     public static void slayerQuest() {
-        if (enabled && slayerQuest) fire("Start Slayer Quest", "", YELLOW, 1f);
+        if (enabled && slayerQuest) fire(START_SLAYER_QUEST, "", YELLOW, 1f);
     }
 
     public static void goopBaitTab(String text) {

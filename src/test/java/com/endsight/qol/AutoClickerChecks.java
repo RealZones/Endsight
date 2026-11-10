@@ -10,8 +10,13 @@ public final class AutoClickerChecks {
         check(module.id().equals("qol.autoclicker") && module.category().equals("General"), "normal feature identity");
         check(!module.isEnabled(), "off by default");
         check(Keybinds.moduleId(module).equals("module.qol.autoclicker"), "normal module key binding");
-        Setting.Slider min = (Setting.Slider) module.settings().getFirst();
-        Setting.Slider max = (Setting.Slider) module.settings().getLast();
+        Setting.Slider min = (Setting.Slider) module.settings().get(0);
+        Setting.Slider max = (Setting.Slider) module.settings().get(1);
+        Setting.Toggle right = (Setting.Toggle) module.settings().get(2);
+        check(right.label().equals("Right click") && !right.get().getAsBoolean(), "right click is opt-in");
+        right.set().accept(true);
+        check((boolean) AutoClicker.settingsSnapshot().get("right"), "right click turns on");
+        right.set().accept(false);
         check(min.get().getAsDouble() == 6 && max.get().getAsDouble() == 9, "existing default CPS preserved");
         check(min.min() == 1 && min.max() == 9.5 && max.max() == 9.5 && min.step() == .5 && max.step() == .5,
                 "both rate sliders enforce the 9.5 CPS cap");

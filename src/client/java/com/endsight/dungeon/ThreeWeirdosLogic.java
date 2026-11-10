@@ -8,9 +8,43 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** The DragSim room says exactly one liar, which is a different rule from guessing
- * a chest from a familiar Hypixel catchphrase. Enumerate the stated rules instead. */
+/**
+ * Two rooms. Dragsim's old room said "one of the three always lies" in single claims, so
+ * its answer is worked out from the claims ({@link #solution}'s fallback).
+ *
+ * Its new dungeons (2026-11-09) use Hypixel's room instead: the weirdos say compound lines
+ * ("The reward is not in my chest. They are both lying.") that the old parser could not
+ * read, so the room never opened. Hypixel's room is not solved by logic - in the run of
+ * that night no truth-teller count fits all three lines - but by script: the weirdo who
+ * says one of six lines owns the reward chest. That night Virginia said "The reward isn't
+ * in any of our chests." beside "The reward is not in my chest. They are both lying." and
+ * "The reward is in my chest!".
+ */
 final class ThreeWeirdosLogic {
+    /** Hypixel's six lines that mark the speaker's chest as the one, normalised. */
+    private static final List<Pattern> ANSWER_LINES = List.of(
+            Pattern.compile("^the reward is not in my chest$"),
+            Pattern.compile("^at least one of them's lying, and the reward is not in .+'s chest$"),
+            Pattern.compile("^my chest doesn't have the reward\\. we are all telling the truth$"),
+            Pattern.compile("^my chest has the reward and i'm telling the truth$"),
+            Pattern.compile("^the reward isn't in any of our chests$"),
+            Pattern.compile("^both of them are telling the truth\\. also, .+ has the reward in their chest$"));
+    /** The rest of that room's lines, so hearing one of them first still opens the room. */
+    private static final List<Pattern> OTHER_LINES = List.of(
+            Pattern.compile("^one of us is telling the truth$"),
+            Pattern.compile("^they are both telling the truth\\. the reward isn't in .+'s chest$"),
+            Pattern.compile("^we are all telling the truth$"),
+            Pattern.compile("^.+ is telling the truth and the reward is in (?:his|her|their) chest$"),
+            Pattern.compile("^my chest doesn't have the reward\\. at least one of the others is telling the truth$"),
+            Pattern.compile("^one of the others is lying$"),
+            Pattern.compile("^they are both telling the truth, the reward is in .+'s chest$"),
+            Pattern.compile("^they are both lying, the reward is in my chest$"),
+            Pattern.compile("^the reward is in my chest$"),
+            Pattern.compile("^the reward is not in my chest\\. they are both lying$"),
+            Pattern.compile("^.+ is telling the truth$"));
+
+    static boolean answerLine(String text) { return ANSWER_LINES.stream().anyMatch(p -> p.matcher(text).matches()); }
+    static boolean roomLine(String text) { return answerLine(text) || OTHER_LINES.stream().anyMatch(p -> p.matcher(text).matches()); }
     private static final Pattern NPC = Pattern.compile("^\\[NPC] ([A-Za-z][A-Za-z0-9_ -]{0,31}): (.+)$");
     private static final String NAME = "([a-z][a-z0-9_ -]{0,31}?)";
     private static final Pattern NAMED_CHEST = Pattern.compile("^(?:whatever you do, )?" + NAME + "'s chest is (not )?the one$");
@@ -36,12 +70,19 @@ final class ThreeWeirdosLogic {
         String line = plain(raw);
         if (entry(line)) { begin(); return true; }
         if (line.startsWith("PUZZLE! ") || finished(line)) { clear(); return true; }
-        if (!active) return false;
         Matcher npc = NPC.matcher(line);
         if (!npc.matches()) return false;
         String name = npc.group(1).trim();
         String key = name.toLowerCase(Locale.ROOT);
         String text = normalized(npc.group(2));
+        // A clue opens the room by itself. Dragsim's new dungeon generation (seen
+        // 2026-11-09) stopped saying "PUZZLE! Three Weirdos" on the way in, so waiting
+        // for it ignored every weirdo. Only a line that reads as a clue counts, so Mort's
+        // greeting at the start of a run does not open a room with a speaker in it.
+        if (!active) {
+            if (parse(name, text) == null && !roomLine(text)) return false;
+            begin();
+        }
         Statement old = statements.get(key);
         if (old != null) {
             // Repeated dialogue is common. A changed statement from the same NPC
@@ -65,7 +106,16 @@ final class ThreeWeirdosLogic {
     }
 
     String solution() {
-        if (!active || statements.size() != 3 || unsupported()) return null;
+        if (!active || conflict) return null;
+        // Hypixel's room: the one weirdo saying an answer line. Two saying one is not that
+        // room's script, so it falls through to the claims and, failing them, no answer.
+        String scripted = null;
+        int saying = 0;
+        for (Statement statement : statements.values()) {
+            if (answerLine(statement.text())) { scripted = statement.name(); saying++; }
+        }
+        if (saying == 1) return scripted;
+        if (statements.size() != 3 || unsupported()) return null;
         List<String> names = new ArrayList<>(statements.keySet());
         String answer = null;
         for (String owner : names) {

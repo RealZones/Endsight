@@ -143,8 +143,11 @@ public final class RoomGlow {
 
     // ── reading a seam from the world ─────────────────────────────────────────────
 
-    /** Cached, since a seam never changes once read; one not loaded yet is asked again. */
-    private static boolean seam(Level level, int i, int j, boolean alongX) {
+    /**
+     * Cached, since a seam never changes once read; one not loaded yet is asked again. Door
+     * Highlight reads its rooms through here too, so the two share one cache.
+     */
+    static boolean seam(Level level, int i, int j, boolean alongX) {
         int key = (i * CELLS + j) * 2 + (alongX ? 1 : 0);
         Boolean known = seams.get(key);
         if (known != null) return known;

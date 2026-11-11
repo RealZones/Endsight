@@ -6,6 +6,7 @@ import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.dungeon.DungeonContext;
 import com.endsight.dungeon.DungeonMap;
+import com.endsight.dungeon.DoorHighlight;
 import com.endsight.dungeon.KeyAlert;
 import com.endsight.dungeon.BloodRoom;
 import com.endsight.dungeon.CreeperBeams;
@@ -160,6 +161,7 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Quiz.module());
             registry.replace(BloodRoom.module());
             registry.add(KeyAlert.module());
+            registry.add(DoorHighlight.module());
             registry.add(com.endsight.dungeon.RoomGlow.module());
             registry.replace(IcePath.module());
             registry.replace(IceFill.module());
@@ -222,6 +224,7 @@ public class EndsightClient implements ClientModInitializer {
         Drops.init();
         DungeonContext.init();
         KeyAlert.init();
+        DoorHighlight.init();
         HudLayout.init();
         com.endsight.hud.ChatHudDrag.init();
         StoragePreview.init();

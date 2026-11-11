@@ -40,6 +40,7 @@ public final class FeatureCatalog {
         c.single("qol.math", "The End", "Golden Dragon math", "Answers the Golden Dragon's sum.");
         c.single("dungeon.map", "Dungeons");
         c.single("dungeon.keys", "Dungeons");
+        c.single("dungeon.doors", "Dungeons");
         c.single("dungeon.roomGlow", "Dungeons");
         c.group("page.roomPuzzles", "Room puzzles", "Six independently controlled room solvers.", "Dungeons",
                 "dungeon.threeWeirdos", "dungeon.ticTacToe", "dungeon.quiz", "dungeon.icePath", "dungeon.iceFill",

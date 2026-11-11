@@ -488,6 +488,13 @@ tasks.register('arrowAlignChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'arrowAlignChecks' }
 
+tasks.register('doorHighlightChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.DoorHighlightChecks'
+}
+tasks.named('check') { dependsOn 'doorHighlightChecks' }
+
 if (providers.gradleProperty('menuPreview').isPresent()) {
     loom.runs.client.vmArg '-Dendsight.menuPreview=true'
 }
@@ -571,7 +578,7 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
             : providers.gradleProperty('puzzleVisualTest').isPresent() ? '"com.endsight.dungeon.PuzzleVisualTest"'
             : providers.gradleProperty('recipesVisualTest').isPresent() ? '"com.endsight.storage.RecipesVisualTest"'
             : providers.gradleProperty('cameraVisualTest').isPresent() ? '"com.endsight.visual.CameraVisualTest", "com.endsight.visual.HeldItemVisualTest"'
-            : providers.gradleProperty('roomGlowVisualTest').isPresent() ? '"com.endsight.dungeon.RoomGlowVisualTest"'
+            : providers.gradleProperty('roomGlowVisualTest').isPresent() ? '"com.endsight.dungeon.RoomGlowVisualTest", "com.endsight.dungeon.DoorHighlightVisualTest"'
             : '"com.endsight.profile.ProfileVisualTest"'
     tasks.named('processGametestResources') {
         inputs.property('only', only)

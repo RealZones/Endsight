@@ -56,7 +56,7 @@ public final class FeatureCatalog {
         c.single("qol.pets", LOADOUTS, "Pets", "A key for each pet, and one that flips between two.");
         c.single("qol.wardrobe", LOADOUTS, "Wardrobe", "A key for each outfit, and one that flips between two.");
         c.single("qol.lootChat", "Chat");
-        c.group("page.chatBehavior", "Chat behavior", "Ability and Goop boss cleanup, plus global chat on join.", "Chat", "qol.abilityspam", "qol.globalchat");
+        c.single("qol.abilityspam", "Chat");
         c.single("qol.copychat", "Chat");
         c.group("page.playerHud", "Player HUD", "Armor, pet, server stats and ability cooldowns.", "General", "hud.armor", "hud.activePet", "hud.stats", "visual.cooldowns");
         c.group("page.worldAppearance", "World appearance", "Lighting and explosion clouds.", "General", "visual.fullbright", "visual.explosionParticles");

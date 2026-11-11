@@ -36,7 +36,6 @@ public final class LiveStorageVisualTest implements FabricClientGameTest {
         try (var world = context.worldBuilder().create()) {
             context.runOnClient(mc -> {
                 mc.options.guiScale().set(2); mc.resizeGui();
-                com.endsight.qol.GlobalChat.module().setEnabled().accept(false);
                 StoragePreview.module().setEnabled().accept(true);
                 List<ItemStack> cached = new ArrayList<>();
                 for (int i=0;i<54;i++) cached.add(i>=9 && i<20 ? new ItemStack(Items.AMETHYST_SHARD, i) : ItemStack.EMPTY);

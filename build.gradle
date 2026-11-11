@@ -495,6 +495,13 @@ tasks.register('doorHighlightChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'doorHighlightChecks' }
 
+tasks.register('eyeGuardChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.qol.EyeGuardChecks'
+}
+tasks.named('check') { dependsOn 'eyeGuardChecks' }
+
 if (providers.gradleProperty('menuPreview').isPresent()) {
     loom.runs.client.vmArg '-Dendsight.menuPreview=true'
 }

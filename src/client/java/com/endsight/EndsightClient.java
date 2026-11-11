@@ -29,7 +29,6 @@ import com.endsight.qol.CommandBinds;
 import com.endsight.qol.DamageNumbers;
 import com.endsight.qol.DebugMessage;
 import com.endsight.qol.Drops;
-import com.endsight.qol.GlobalChat;
 import com.endsight.qol.CopyChat;
 import com.endsight.qol.ArmorGuard;
 import com.endsight.qol.EyeGuard;
@@ -184,7 +183,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Etherwarp.module());
             registry.replace(Cooldowns.module());
             registry.replace(LootAlerts.module());
-            registry.replace(GlobalChat.module());
             registry.replace(LootFilter.module());
             registry.replace(LootRoll.module());
             registry.replace(AbilitySpam.module());
@@ -240,7 +238,6 @@ public class EndsightClient implements ClientModInitializer {
         EyeGuard.init();
         ArmorGuard.init();
         DamageNumbers.init();
-        GlobalChat.init();
         DebugMessage.init();
         LootFilter.init();
         LootRoll.init();

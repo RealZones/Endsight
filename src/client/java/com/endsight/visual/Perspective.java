@@ -11,8 +11,11 @@ import java.util.List;
  * Third person where the mouse moves the camera and the player stays exactly as they were.
  *
  * The mouse's turn is caught before it reaches the head (PerspectiveTurnMixin) and spent on a
- * camera angle of our own instead (PerspectiveCameraMixin). So what the camera circles is the
+ * camera angle of our own instead (CameraMixin). So what the camera circles is the
  * head the server has, the one everybody else sees, and looking around never turns you.
+ *
+ * Called Free Look on the page since it moved onto Camera; the class and its id keep the old
+ * name so a saved key still works.
  */
 public final class Perspective {
     private Perspective() { }
@@ -23,7 +26,7 @@ public final class Perspective {
     private static CameraType before = CameraType.FIRST_PERSON;
 
     public static Module module() {
-        return new Module("visual.perspective", "Perspective Mode",
+        return new Module("visual.perspective", "Free Look",
                 "Third person where the mouse moves the camera, not you.", "Visual",
                 () -> on, Perspective::set, List.of());
     }
@@ -37,7 +40,8 @@ public final class Perspective {
             yaw = mc.player.getYRot();
             pitch = mc.player.getXRot();
             before = mc.options.getCameraType();
-            mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
+            // The view the Camera page's F5 views allows, not always the back one.
+            mc.options.setCameraType(CameraTweaks.thirdPerson());
         } else {
             mc.options.setCameraType(before);
         }

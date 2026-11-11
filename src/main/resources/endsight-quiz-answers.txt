@@ -24,6 +24,28 @@ what is the name of the lady of the nether = Elle
 which villager in the village gives you a rogue sword = Jamie
 # accepted 2026-11-09, against Voracious Spider and Splitter Spider. Other outsiders
 # are learned as they come up; the room shows one among two that do spawn there.
-which of these enemies does not spawn in the spider's den = Wither Skeleton
-which of these enemies does not spawn in the spiders den = Wither Skeleton
+# Night Spider accepted 2026-11-10 against a different pair. The answer depends on the
+# options shown, so both are kept; the first one on offer is the hint.
+which of these enemies does not spawn in the spider's den = Wither Skeleton|Night Spider
+which of these enemies does not spawn in the spiders den = Wither Skeleton|Night Spider
 which of these monsters only spawns at night = Zombie Villager
+
+# Accepted by Dragsim in play, 2026-11-10. Option letters taken off: they move between rounds.
+what cracks open a crypt = Superboom TNT
+which room hides the wither lords' portal = The Blood Room
+who guards the blood room = The Watcher
+how much score does a death cost = 2
+what does the mimic pretend to be = A chest
+who revives a fallen teammate = The Fairy
+what does a star mob carry = Wither Keys
+which wither lord is crushed under pillars = Storm
+which wither lord is fought first = Maxor
+how many rooms wide is floor vii = 6
+what score earns an s+ rank = 300
+how many crypt kills count towards bonus score = 5
+how many fairy souls are there in gold mine = 12 Fairy Souls
+how many fairy souls are there in jerry's workshop = 5 Fairy Souls
+how many fairy souls are there in dungeon hub = 7 Fairy Souls
+which of these is not a dragon in the end = Weak Dragon
+# Dragsim cuts this one short, "...who sells stained", on its own line.
+what is the name of the vendor in the hub who sells stained = Wool Weaver

@@ -1304,20 +1304,23 @@ public final class Recipes {
         page = idx < 0 ? 0 : idx / Math.max(1, f.cols() * f.rows());
     }
 
-    private static ItemStack riftIcon;
+    private static ItemStack riftIcon, dungeonsIcon;
 
     private static ItemStack categoryIcon(String c) {
         if (c != null) {
             ItemStack own = ICONS.get(c);
             if (own != null) return own;
-            // Rift is the mod's own category, not a button in the server's menu, so it has
-            // no face to copy: it gets a dead bush with the enchant glint.
+            // Rift and Dungeons are the mod's own categories, not buttons in the server's
+            // menu, so they have no face to copy: a dead bush and a wither skeleton skull,
+            // each with the enchant glint. Dungeons' first item, a Nightfall Helmet, would
+            // make its button look like one more armour set rather than a group.
             if (c.equals("Rift")) {
-                if (riftIcon == null) {
-                    riftIcon = new ItemStack(net.minecraft.world.item.Items.DEAD_BUSH);
-                    riftIcon.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-                }
+                if (riftIcon == null) riftIcon = glinting(net.minecraft.world.item.Items.DEAD_BUSH);
                 return riftIcon;
+            }
+            if (c.equals("Dungeons")) {
+                if (dungeonsIcon == null) dungeonsIcon = glinting(net.minecraft.world.item.Items.WITHER_SKELETON_SKULL);
+                return dungeonsIcon;
             }
             // Any other category with no button wears its first item's face, not a letter.
             for (String n : CATEGORY.getOrDefault(c, new LinkedHashSet<>())) {
@@ -1330,6 +1333,12 @@ public final class Recipes {
             if (e.getKey().startsWith("All Recipes")) return e.getValue();
         }
         return null;
+    }
+
+    private static ItemStack glinting(net.minecraft.world.item.Item item) {
+        ItemStack s = new ItemStack(item);
+        s.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        return s;
     }
 
     private static void draw(AbstractContainerScreen<?> s, GuiGraphicsExtractor g, int mx, int my) {
@@ -1443,7 +1452,8 @@ public final class Recipes {
             else Draw.textCentered(g, font, c == null ? "All" : c.substring(0, 1), cx + 9, cy + 5, on ? Theme.accent() : Theme.muted());
             if (on) Draw.rect(g, cx - 3, cy + 3, 1, 12, Theme.accent());
             if (hover) {
-                pendingTip = List.of(c == null ? "All" : c);
+                pendingTip = List.of(Component.literal(c == null ? "All" : c));
+                pendingStyle = null;
                 tipX = mx;
                 tipY = my;
             }
@@ -1562,7 +1572,8 @@ public final class Recipes {
 
     private static String tipFor;
     private static Map<String, Integer> tipHave;
-    private static List<String> tipLines;
+    private static List<Component> tipLines;
+    private static net.minecraft.resources.Identifier tipStyle;
     private static ItemStack tipIcon;
     private static long tipForgeRevision = -1;
 
@@ -1576,6 +1587,7 @@ public final class Recipes {
         long forgeRevision = ForgeRecipes.revision();
         if (r.name().equals(tipFor) && have == tipHave && icon == tipIcon && tipForgeRevision == forgeRevision) {
             pendingTip = tipLines;
+            pendingStyle = tipStyle;
             tipX = mx;
             tipY = my;
             return;
@@ -1585,14 +1597,12 @@ public final class Recipes {
         tipIcon = icon;
         tipForgeRevision = forgeRevision;
         List<String> lines = new ArrayList<>();
+        List<Component> item = new ArrayList<>();
         // The item as the game would show it - its stats and what it does - because
         // "what does this even give" is the question a grid of icons raises first.
+        // Kept as components, font and all: see itemLines.
         if (icon != null) {
-            Minecraft mc = Minecraft.getInstance();
-            for (Component c : icon.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
-                    net.minecraft.world.item.TooltipFlag.NORMAL)) {
-                lines.add(c.getString());
-            }
+            item.addAll(itemLines(icon));
             lines.add("");
         } else {
             lines.add(r.name());
@@ -1616,8 +1626,11 @@ public final class Recipes {
                     + ingredientCount(i.name(), got, i.count()) + " §7" + i.name());
         }
         lines.add("§8R / click: recipe   U / right-click: uses");
-        tipLines = lines;
-        pendingTip = lines;
+        for (String l : lines) item.add(Component.literal(l));
+        tipLines = item;
+        tipStyle = icon == null ? null : icon.get(DataComponents.TOOLTIP_STYLE);
+        pendingTip = item;
+        pendingStyle = tipStyle;
         tipX = mx;
         tipY = my;
     }
@@ -1722,15 +1735,24 @@ public final class Recipes {
 
     /** The item's own tooltip - name and lore, as the game would show it - for a cell. */
     private static void itemTip(ItemStack s, int mx, int my) {
-        Minecraft mc = Minecraft.getInstance();
-        List<String> lines = new ArrayList<>();
-        for (Component c : s.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
-                net.minecraft.world.item.TooltipFlag.NORMAL)) {
-            lines.add(c.getString());
-        }
-        pendingTip = lines;
+        pendingTip = itemLines(s);
+        pendingStyle = s.get(DataComponents.TOOLTIP_STYLE);
         tipX = mx;
         tipY = my;
+    }
+
+    /**
+     * An item's tooltip lines as the game builds them, styles kept. These were turned into
+     * plain strings, which throws away each part's font as well as its colour. Since the
+     * 2026-11 wipe Dragsim draws its lore with a font of its own - rarity pills, separators,
+     * XP bars, all characters from its pack's "dragsim:tooltip" font - so in the default font
+     * every one of them came out as a missing-glyph box, a whole row of them per line, and
+     * the panel's tooltip ran the width of the screen. Seen on the recipes added that night.
+     */
+    private static List<Component> itemLines(ItemStack s) {
+        Minecraft mc = Minecraft.getInstance();
+        return new ArrayList<>(s.getTooltipLines(net.minecraft.world.item.Item.TooltipContext.of(mc.level), mc.player,
+                net.minecraft.world.item.TooltipFlag.NORMAL));
     }
 
     /**
@@ -1739,28 +1761,26 @@ public final class Recipes {
      * has been and gone, so a tooltip handed to it was a tooltip for nobody. One
      * pending tooltip per frame, whoever asked last.
      */
-    private static List<String> pendingTip;
+    private static List<Component> pendingTip;
+    private static net.minecraft.resources.Identifier pendingStyle;
     private static int tipX, tipY;
 
+    /**
+     * In the game's own tooltip, drawn now rather than queued (the screen's tooltip pass
+     * has already run), the way EquipmentHud does it, and in the item's own tooltip style
+     * if the server gave it one. It used to be our own box with the text in plain strings,
+     * which is what lost Dragsim's tooltip font.
+     */
     private static void drawTip(GuiGraphicsExtractor g, Font font) {
         if (pendingTip == null || pendingTip.isEmpty()) return;
-        Minecraft mc = Minecraft.getInstance();
-        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
-        int w = 0;
-        for (String l : pendingTip) w = Math.max(w, font.width(l));
-        int h = pendingTip.size() * 10 + 6;
-        int x = tipX + 12, y = tipY - 12;
-        if (x + w + 8 > sw) x = tipX - w - 16;
-        if (y + h > sh) y = sh - h;
-        if (y < 0) y = 0;
-        Draw.roundedRect(g, x - 1, y - 1, w + 10, h + 2, 4, Theme.accent());
-        Draw.roundedRect(g, x, y, w + 8, h, 4, 0xF0100010);
-        int ly = y + 4;
-        for (int i = 0; i < pendingTip.size(); i++) {
-            Draw.text(g, font, pendingTip.get(i), x + 4, ly, i == 0 ? Theme.text() : 0xFFAAAAAA);
-            ly += 10;
-        }
+        List<net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent> lines = new ArrayList<>(pendingTip.size());
+        for (Component c : pendingTip)
+            lines.add(net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent.create(c.getVisualOrderText()));
+        g.nextStratum();
+        g.tooltip(font, lines, tipX, tipY,
+                net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, pendingStyle);
         pendingTip = null;
+        pendingStyle = null;
     }
 
     /**
@@ -1844,7 +1864,8 @@ public final class Recipes {
                     ItemStack st = ICONS.get(in.name());
                     if (st != null) itemTip(st, mx, my);
                     else {
-                        pendingTip = List.of(in.name());
+                        pendingTip = List.of(Component.literal(in.name()));
+                        pendingStyle = null;
                         tipX = mx;
                         tipY = my;
                     }

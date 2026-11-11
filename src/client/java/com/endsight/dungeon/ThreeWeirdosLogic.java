@@ -24,7 +24,9 @@ final class ThreeWeirdosLogic {
     /** Hypixel's six lines that mark the speaker's chest as the one, normalised. */
     private static final List<Pattern> ANSWER_LINES = List.of(
             Pattern.compile("^the reward is not in my chest$"),
-            Pattern.compile("^at least one of them's lying, and the reward is not in .+'s chest$"),
+            // Hypixel says "them's lying", Dragsim "them is lying" (2026-11-10: Eveleth said it,
+            // Hope and Carver lied, and with only Hypixel's wording no chest was picked).
+            Pattern.compile("^at least one of them(?:'s| is) lying, and the reward is not in .+'s chest$"),
             Pattern.compile("^my chest doesn't have the reward\\. we are all telling the truth$"),
             Pattern.compile("^my chest has the reward and i'm telling the truth$"),
             Pattern.compile("^the reward isn't in any of our chests$"),

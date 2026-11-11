@@ -35,7 +35,8 @@ public final class RecipesChecks {
                 new MagicalPower.Accessory("Zombie Artifact", "EPIC"),
                 new MagicalPower.Accessory("Zombie Talisman", "UNCOMMON")), zombie) == 12);
         cacheInvalidation();
-        System.out.println("Recipe name, Magical Power and render-cache checks passed");
+        bundle();
+        System.out.println("Recipe name, Magical Power, render-cache and bundled list checks passed");
     }
 
     private static void cacheInvalidation() throws Exception {
@@ -79,6 +80,40 @@ public final class RecipesChecks {
         forgeRead.invoke(null, List.of("Refining\tCache Ingot\t2m\t2*Cache Ore\t"), false);
         check(ForgeRecipes.revision() > revision);
         check(ForgeRecipes.info("Cache Ingot").durationMs() == 120_000);
+    }
+
+    /**
+     * The shipped list. Every name a category lists needs a recipe line, or its cell draws
+     * empty. Rift and Dungeons are the mod's own groups on top of the server's six: each of
+     * their items must still sit in a server category, because Magical Power and Upgrades
+     * read "Accessories" by name and a dungeon talisman moved out of it would stop counting.
+     */
+    private static void bundle() throws Exception {
+        String text;
+        try (var in = RecipesChecks.class.getResourceAsStream("/endsight-recipes.txt")) {
+            check(in != null);
+            text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        java.util.Set<String> recipes = new java.util.HashSet<>();
+        Map<String, List<String>> cats = new java.util.LinkedHashMap<>();
+        for (String line : text.lines().toList()) {
+            if (line.isBlank() || line.startsWith("#") || line.startsWith("-")) continue;
+            String[] p = line.split("	", -1);
+            if (line.startsWith("@")) {
+                cats.put(p[0].substring(1), List.of(p).subList(1, p.length));
+                continue;
+            }
+            check(p.length == 11 && recipes.add(p[0]));
+        }
+        check(recipes.size() >= 330);
+        for (List<String> names : cats.values()) for (String n : names) check(recipes.contains(n));
+        java.util.Set<String> server = new java.util.HashSet<>();
+        cats.forEach((c, names) -> { if (!c.equals("Rift") && !c.equals("Dungeons")) server.addAll(names); });
+        for (String own : List.of("Rift", "Dungeons")) {
+            check(cats.containsKey(own));
+            for (String n : cats.get(own)) check(server.contains(n));
+        }
+        check(cats.get("Dungeons").contains("Catacombs Expert Ring") && cats.get("Accessories").contains("Catacombs Expert Ring"));
     }
 
     private static String recipe(String name, int count, String ingredient) {

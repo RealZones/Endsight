@@ -41,10 +41,21 @@ public final class NameGradient {
     private static final WeakHashMap<FormattedCharSequence, Plan> CACHE = new WeakHashMap<>();
     private static final WeakHashMap<FormattedCharSequence, Plan> COMPONENT_CACHE = new WeakHashMap<>();
     private static final WeakHashMap<FormattedCharSequence, Plan> NAMETAG_CACHE = new WeakHashMap<>();
-    private static final Plan NONE = new Plan(List.of(), -1, 0, 0, 0, -1);
+    private static final Plan NONE = new Plan(List.of(), -1, 0, 0, 0, -1, -1, 0);
 
     private record Glyph(int index, Style style, int codepoint) {}
-    private record Plan(List<Glyph> glyphs, int start, int a, int b, int length, int who) {}
+    /**
+     * A name to animate: where it starts and how long it is, its gradient, and the rank tag
+     * just in front of it ("[DRAGON]"), which fades with it as one wave from the bracket on.
+     * The tag was left as the server sent it until Fear asked for it to fade too.
+     */
+    private record Plan(List<Glyph> glyphs, int start, int a, int b, int length, int who, int tagStart, int tagLength) {
+        boolean animates(int index) {
+            return index >= start && index < start + length || tagLength > 0 && index >= tagStart && index < tagStart + tagLength;
+        }
+        /** Letters counted from the tag's bracket when there is one, so tag and name are one wave. */
+        int letter(int index) { return index - (tagLength > 0 ? tagStart : start); }
+    }
 
     private NameGradient() {}
 
@@ -102,12 +113,16 @@ public final class NameGradient {
         Plan plan = CACHE.get(original);
         if (plan == null) {
             List<Glyph> glyphs = new ArrayList<>();
-            boolean complete = original.accept((index, style, cp) -> {
+            // Whether the walk got to the end is told by the count, not by what accept()
+            // returns: sequences disagree on it. The client's chat lines answer true, but a
+            // plain Language's visual order answers false when it finishes, and the chat
+            // path then skipped every line - the checks found it once they looked at names.
+            original.accept((index, style, cp) -> {
                 if (glyphs.size() >= 2048) return false;
                 glyphs.add(new Glyph(index, style, cp));
                 return true;
             });
-            plan = complete ? plan(glyphs) : NONE;
+            plan = glyphs.size() < 2048 ? plan(glyphs) : NONE;
             if (CACHE.size() >= 512) CACHE.clear();
             CACHE.put(original, plan);
         }
@@ -181,10 +196,21 @@ public final class NameGradient {
 
     /** The server's current gradient when it is known; the line's own until then. */
     private static Style recolour(Plan plan, Style original, int index, long time) {
-        if (index < plan.start || index >= plan.start + plan.length) return original;
+        if (!plan.animates(index)) return original;
         int first = liveFirst[plan.who], a = first >= 0 ? first : plan.a, b = first >= 0 ? liveSecond[plan.who] : plan.b;
         if (a < 0) return original;
-        return original.withColor(colour(a, b, index - plan.start, time));
+        return original.withColor(colour(a, b, plan.letter(index), time));
+    }
+
+    /** "[TAG] " right before the name: where its bracket is and how long it is, or {-1, 0}. */
+    private static int[] tag(List<Glyph> glyphs, int start) {
+        if (start < 3 || glyphs.get(start - 1).codepoint != ' ' || glyphs.get(start - 2).codepoint != ']') return new int[]{-1, 0};
+        for (int k = start - 3; k >= 0 && k >= start - 24; k--) {
+            int cp = glyphs.get(k).codepoint;
+            if (cp == '[') return new int[]{k, start - 1 - k};
+            if (cp == ']' || cp == ' ') break;
+        }
+        return new int[]{-1, 0};
     }
 
     private static Plan plan(List<Glyph> glyphs) {
@@ -203,11 +229,12 @@ public final class NameGradient {
             var a = glyphs.get(start).style.getColor();
             var b = glyphs.get(end - 1).style.getColor();
             // Plain mentions and rank text are untouched. The server is the source of both endpoints.
+            int[] tag = tag(glyphs, start);
             if (a != null && b != null && a.getValue() != b.getValue())
-                return new Plan(List.copyOf(glyphs), start, a.getValue(), b.getValue(), end - start, who);
+                return new Plan(List.copyOf(glyphs), start, a.getValue(), b.getValue(), end - start, who, tag[0], tag[1]);
             // The entity's actual profile has already been checked by nametag(). Chat mentions
             // still require a server gradient; a plain player nametag can use the server's colours.
-            if (nametag) return new Plan(List.copyOf(glyphs), start, -1, -1, end - start, who);
+            if (nametag) return new Plan(List.copyOf(glyphs), start, -1, -1, end - start, who, tag[0], tag[1]);
         }
         return NONE;
     }

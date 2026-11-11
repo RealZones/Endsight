@@ -44,14 +44,16 @@ public final class TerminalSolver {
     private TerminalSolver() { }
 
     public static Module module() {
-        return new Module("dungeon.terminals", "Terminal Solvers", "Compact menu hints and Simon Says button guidance.",
+        return new Module("dungeon.terminals", "Terminal Solvers", "Compact menu hints, Simon Says and Arrow Align guidance.",
                 "Dungeons", () -> enabled, v -> enabled = v, List.of(
                 new Setting.Choice("Layout", "Compact grid or highlights over the normal chest; every click is yours.",
                         List.of("Compact", "Normal chest"), () -> layout, v -> layout = v),
                 new Setting.Toggle("Block Wrong Clicks", "Reject non-solution and duplicate clicks while a terminal is open.",
                         () -> blockWrongClicks, v -> blockWrongClicks = v),
                 new Setting.Toggle("Simon Says", "Highlight the next button on the in-world light board.",
-                        SimonSays::enabled, SimonSays::setEnabled)));
+                        SimonSays::enabled, SimonSays::setEnabled),
+                new Setting.Toggle("Arrow Align", "Clicks each arrow still needs; extra clicks are blocked.",
+                        ArrowAlign::enabled, ArrowAlign::setEnabled)));
     }
 
     static boolean enabledForSimon() { return enabled; }
@@ -84,6 +86,7 @@ public final class TerminalSolver {
 
     public static void init() {
         SimonSays.init();
+        ArrowAlign.init();
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
             String line = Zealots.strip(message.getString()).trim();

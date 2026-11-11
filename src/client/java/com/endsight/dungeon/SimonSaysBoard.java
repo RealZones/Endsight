@@ -70,20 +70,35 @@ final class SimonSaysBoard {
     }
 
     /**
-     * Some boards replay the full prefix each round; others flash only the new tile.
-     * Keep the previous prefix until enough flashes distinguish the two, so a
-     * replayed first light cannot be mistaken for the next answer.
+     * What the board has flashed, and how far into it the presses have got.
+     *
+     * Dragsim's board replays the whole sequence every round: A; then A, B; then A, B, C
+     * (the 2026-11-09 recording). So what a round flashes is the sequence, whole. This
+     * once also allowed for a board that flashes only the new tile, and added a lone
+     * flash onto what it knew. That broke on a restart: a teammate's wrong press is never
+     * seen here - Dragsim sends no button change for anyone's press, only our own client
+     * shows ours - so the board restarting with one flash was taken as the next tile, and
+     * the hints asked for three buttons where the board wanted one. Fear hit it in a run.
+     *
+     * A round that grows what was known by its next tile is taken at once. Anything else
+     * - shorter, or different - is a restart, but only once the board has been dark for
+     * RESTART_QUIET ticks: a replay can pause between its lamps (240 ms was the longest
+     * gap recorded) and a half-seen replay must not be taken for a new sequence.
      */
     static final class Sequence {
         private enum Phase { WATCH, INPUT, NEXT }
+        /** Dark ticks before a round is read: 350 ms, past every gap inside a replay seen. */
+        private static final int SETTLE_QUIET = 7;
+        /** Dark ticks before a round that is not the next one is read as a restart. */
+        private static final int RESTART_QUIET = 12;
         private final List<Integer> known = new ArrayList<>();
         private final List<Integer> shown = new ArrayList<>();
         private Phase phase = Phase.WATCH;
-        private int priorLights, priorPressed, quietTicks, inputIndex;
+        private int priorLights, priorPressed, quietTicks, inputIndex, darkTicks;
 
         void reset() {
             known.clear(); shown.clear(); phase = Phase.WATCH;
-            priorLights = priorPressed = quietTicks = inputIndex = 0;
+            priorLights = priorPressed = quietTicks = inputIndex = darkTicks = 0;
         }
 
         int target() {
@@ -98,6 +113,8 @@ final class SimonSaysBoard {
             int freshPresses = pressed & ~priorPressed;
             priorLights = lights;
             priorPressed = pressed;
+            int wasDark = darkTicks;
+            darkTicks = lights == 0 ? darkTicks + 1 : 0;
 
             if (freshLights != 0) {
                 if (phase != Phase.WATCH) {
@@ -105,7 +122,13 @@ final class SimonSaysBoard {
                 }
                 // A packet exposing several lights at once has no reliable order.
                 if (Integer.bitCount(freshLights) != 1) { reset(); return; }
-                shown.add(Integer.numberOfTrailingZeros(freshLights));
+                int lamp = Integer.numberOfTrailingZeros(freshLights);
+                // Dragsim resends the whole board every tick, every lamp dark and then the
+                // lit one. Should one tick's batch be split, the lamp reads dark for a tick
+                // and lit again: the same flash, not a second one. A real repeat of the
+                // same tile has a gap of several ticks between.
+                boolean flicker = wasDark <= 1 && !shown.isEmpty() && shown.getLast() == lamp;
+                if (!flicker) shown.add(lamp);
                 quietTicks = 0;
             } else if (phase == Phase.WATCH && !shown.isEmpty()) {
                 // Count darkness, not the time a lamp remains on. Otherwise a
@@ -125,22 +148,14 @@ final class SimonSaysBoard {
         }
 
         private void settle() {
-            if (quietTicks < 7) return;
-            if (known.isEmpty()) {
-                known.addAll(shown);
-            } else if (shown.size() > known.size() && shown.subList(0, known.size()).equals(known)) {
-                known.clear(); known.addAll(shown);
-            } else if (shown.size() == 1 && !shown.getFirst().equals(known.getFirst())) {
-                known.add(shown.getFirst());
-            } else if (quietTicks < 25) {
-                // A prefix replay can pause between lights. Do not offer an old hint.
-                return;
-            } else if (shown.size() == 1) {
-                // The newly chosen tile may equal the first tile.
-                known.add(shown.getFirst());
-            } else if (!shown.equals(known)) {
-                known.clear(); known.addAll(shown);
-            }
+            if (quietTicks < SETTLE_QUIET) return;
+            boolean grows = shown.size() > known.size() && shown.subList(0, known.size()).equals(known);
+            // Only the next round is read early. The same round again, or a shorter one, may
+            // still be a replay that has paused before its newest lamp.
+            if (!grows && quietTicks < RESTART_QUIET) return;
+            // The next round, the same round again after a slip, or a restart: in every
+            // case what the board just flashed is the whole sequence.
+            known.clear(); known.addAll(shown);
             shown.clear(); quietTicks = 0; inputIndex = 0; phase = Phase.INPUT;
         }
     }

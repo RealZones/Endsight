@@ -87,6 +87,15 @@ public final class QuizLogic {
     /** The live option a stored answer names; an old lettered answer finds its bare option. */
     public static String resolve(String stored, List<String> options) {
         if (stored == null || options == null || options.contains(stored)) return stored;
+        // "A|B": a question whose right answer depends on which options are shown (the Spider's
+        // Den outsider is Wither Skeleton against one pair, Night Spider against another).
+        if (stored.indexOf('|') > 0) {
+            for (String one : stored.split(java.util.regex.Pattern.quote("|"))) {
+                String found = resolve(one.strip(), options);
+                if (options.contains(found)) return found;
+            }
+            return stored;
+        }
         String bare = option(stored);
         return options.contains(bare) ? bare : stored;
     }

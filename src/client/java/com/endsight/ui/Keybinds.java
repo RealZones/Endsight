@@ -52,7 +52,7 @@ public final class Keybinds {
      * nobody turns on and off by key.
      */
     private static final Set<String> SWITCHES = Set.of("module.qol.autoclicker", "module.visual.fullbright",
-            "module.visual.explosionParticles", "module.dragon.hitboxes", "module.visual.perspective");
+            "module.visual.explosionParticles", "module.dragon.hitboxes", "module.visual.perspective", "module.visual.camera");
 
     /**
      * Whether a key belongs on the pages. A real action always does; a module's switch only if

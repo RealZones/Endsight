@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Gives the mouse's turn to the camera while Perspective Mode is on.
+ * Gives the mouse's turn to the camera while Free Look is on.
  *
  * On the turn itself rather than on MouseHandler's call to it: only one redirect can hold a
  * call, and a second one from any other mod stops the game at startup.

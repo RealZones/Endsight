@@ -79,6 +79,18 @@ public final class QuizChecks {
         check(bundled.deduce("Which of these enemies does not spawn in the Spider's Den?",
                 List.of("Zombie Spider", "Voracious Spider", "Splitter Spider")) == null,
                 "a stored answer the room is not showing names nothing");
+        // Either of two answers, whichever the room shows.
+        check("Wither Skeleton".equals(bundled.deduce("Which of these enemies does not spawn in the Spider's Den?",
+                List.of("Wither Skeleton", "Voracious Spider", "Splitter Spider"))), "first of two answers when shown");
+        check("Night Spider".equals(bundled.deduce("Which of these enemies does not spawn in the Spider's Den?",
+                List.of("Night Spider", "Dasher Spider", "Splitter Spider"))), "second of two answers when shown");
+        // The answers learned in play on 2026-11-10, now in every install, letters taken off.
+        check("The Blood Room".equals(bundled.deduce("Which room hides the Wither Lords' portal?",
+                List.of("The Entrance", "The Blood Room", "The Fairy Room"))), "a learned answer ships bundled");
+        check("2".equals(bundled.deduce("How much score does a death cost?", List.of("2", "5", "10"))), "a bare number answer");
+        check("A chest".equals(bundled.deduce("What does the Mimic pretend to be?", List.of("A zombie", "A chest", "A sign"))),
+                "an answer that itself starts with A");
+        check(bundled.answer("What SkyBlock year is it?") == null, "the year is never stored");
 
         // -- learning ------------------------------------------------------------------
         QuizLogic.Book book = new QuizLogic.Book();

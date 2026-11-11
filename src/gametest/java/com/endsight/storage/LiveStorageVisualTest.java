@@ -253,17 +253,17 @@ public final class LiveStorageVisualTest implements FabricClientGameTest {
             var view = mc.options.getCameraType();
             perspective.setEnabled().accept(true);
             mc.player.turn(600, 0);
-            require(mc.player.getYRot() == head[0], "Perspective Mode turned the player");
-            require(com.endsight.visual.Perspective.yaw() != head[0], "Perspective Mode did not turn the camera");
-            require(mc.options.getCameraType() != view, "Perspective Mode stayed in first person");
+            require(mc.player.getYRot() == head[0], "Free Look turned the player");
+            require(com.endsight.visual.Perspective.yaw() != head[0], "Free Look did not turn the camera");
+            require(mc.options.getCameraType() != view, "Free Look stayed in first person");
         });
         context.waitTicks(3);
         context.takeScreenshot("perspective-mode");
         context.runOnClient(mc -> {
             perspective.setEnabled().accept(false);
-            require(mc.options.getCameraType() == net.minecraft.client.CameraType.FIRST_PERSON, "Perspective Mode did not put the view back");
+            require(mc.options.getCameraType() == net.minecraft.client.CameraType.FIRST_PERSON, "Free Look did not put the view back");
             mc.player.turn(600, 0);
-            require(mc.player.getYRot() != head[0], "The mouse stayed off the player after Perspective Mode");
+            require(mc.player.getYRot() != head[0], "The mouse stayed off the player after Free Look");
             com.endsight.dragons.DropPricesScreen.openCache();
         });
         context.waitTicks(4);

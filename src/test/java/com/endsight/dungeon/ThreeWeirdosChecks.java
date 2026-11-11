@@ -110,6 +110,14 @@ public final class ThreeWeirdosChecks {
             model.accept("[NPC] Virginia: " + line);
             check("Virginia".equals(model.solution()), "answer line: " + line);
         }
+        // -- Dragsim words one answer line its own way: the 2026-11-10 room -------------
+        model = new ThreeWeirdosLogic();
+        model.accept("§e[NPC] §r§cHope§r§f: §rWe are all telling the truth!");
+        model.accept("§e[NPC] §r§cCarver§r§f: §r§cHope§r§f is telling the truth and the reward is in his chest.");
+        check(model.solution() == null, "two lying weirdos mark nobody");
+        model.accept("§e[NPC] §r§cEveleth§r§f: §rAt least one of them is lying, and the reward is not in §r§cCarver's§r§f chest!");
+        check("Eveleth".equals(model.solution()), "Dragsim's \"them is lying\" is an answer line like Hypixel's \"them's lying\"");
+
         model = new ThreeWeirdosLogic();
         model.accept("[NPC] Mort: Good luck.");
         check(!model.active(), "Mort's lines still open nothing");

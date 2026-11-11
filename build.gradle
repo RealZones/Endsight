@@ -474,6 +474,20 @@ tasks.register('browserPresentationChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'browserPresentationChecks' }
 
+tasks.register('roomGlowChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.RoomGlowChecks'
+}
+tasks.named('check') { dependsOn 'roomGlowChecks' }
+
+tasks.register('arrowAlignChecks', JavaExec) {
+    dependsOn 'testClasses', 'clientClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.endsight.dungeon.ArrowAlignChecks'
+}
+tasks.named('check') { dependsOn 'arrowAlignChecks' }
+
 if (providers.gradleProperty('menuPreview').isPresent()) {
     loom.runs.client.vmArg '-Dendsight.menuPreview=true'
 }
@@ -532,7 +546,8 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
         || providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
         || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
         || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
-        || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()) {
+        || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()
+        || providers.gradleProperty('recipesVisualTest').isPresent() || providers.gradleProperty('cameraVisualTest').isPresent() || providers.gradleProperty('roomGlowVisualTest').isPresent()) {
     fabricApi.configureTests {
         createSourceSet = true
         modId = 'endsight-profile-tests'
@@ -554,6 +569,9 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
             : providers.gradleProperty('mapVisualTest').isPresent() ? '"com.endsight.dungeon.DungeonMapVisualTest"'
             : providers.gradleProperty('keyVisualTest').isPresent() ? '"com.endsight.dungeon.KeyAlertVisualTest"'
             : providers.gradleProperty('puzzleVisualTest').isPresent() ? '"com.endsight.dungeon.PuzzleVisualTest"'
+            : providers.gradleProperty('recipesVisualTest').isPresent() ? '"com.endsight.storage.RecipesVisualTest"'
+            : providers.gradleProperty('cameraVisualTest').isPresent() ? '"com.endsight.visual.CameraVisualTest", "com.endsight.visual.HeldItemVisualTest"'
+            : providers.gradleProperty('roomGlowVisualTest').isPresent() ? '"com.endsight.dungeon.RoomGlowVisualTest"'
             : '"com.endsight.profile.ProfileVisualTest"'
     tasks.named('processGametestResources') {
         inputs.property('only', only)
@@ -564,8 +582,12 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     if (providers.gradleProperty('commandVisualTest').isPresent() || providers.gradleProperty('performanceVisualTest').isPresent()
             || providers.gradleProperty('dragonHitboxesVisualTest').isPresent() || providers.gradleProperty('rarityVisualTest').isPresent()
             || providers.gradleProperty('menuVisualTest').isPresent() || providers.gradleProperty('goopVisualTest').isPresent()
-            || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()) {
+            || providers.gradleProperty('storageVisualTest').isPresent() || providers.gradleProperty('puzzleVisualTest').isPresent()
+            || providers.gradleProperty('recipesVisualTest').isPresent() || providers.gradleProperty('cameraVisualTest').isPresent() || providers.gradleProperty('roomGlowVisualTest').isPresent()) {
         def testDirectory = providers.gradleProperty('storageVisualTest').isPresent() ? 'run/storage-live-test'
+                : providers.gradleProperty('recipesVisualTest').isPresent() ? 'run/recipes-test'
+                : providers.gradleProperty('cameraVisualTest').isPresent() ? 'run/camera-test'
+                : providers.gradleProperty('roomGlowVisualTest').isPresent() ? 'run/room-glow-test'
                 : providers.gradleProperty('puzzleVisualTest').isPresent() ? 'run/puzzle-test'
                 : providers.gradleProperty('goopVisualTest').isPresent() ? 'run/goop-test'
                 : providers.gradleProperty('menuVisualTest').isPresent() ? 'run/menu-test'

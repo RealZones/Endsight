@@ -155,10 +155,8 @@ public final class IceFill {
         for (int i = 1; i < points.size(); i++) {
             Vec3 from = points.get(i - 1), to = points.get(i);
             int colour = i == 1 ? 0xFF55FF55 : 0xFF55FFFF;            // the next step stands out
-            // On top, as Ice Path's route is: andesite between you and a far cell would
-            // otherwise cut the walk into pieces.
-            Gizmos.line(from, to, (colour & 0x00FFFFFF) | 0x40000000, 6f).setAlwaysOnTop();
-            Gizmos.line(from, to, colour, 2f).setAlwaysOnTop();
+            Gizmos.line(from, to, (colour & 0x00FFFFFF) | 0x40000000, 6f);
+            Gizmos.line(from, to, colour, 2f);
         }
     }
 }

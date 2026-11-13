@@ -138,7 +138,7 @@ public final class SimonSays {
         var shape = state.getShape(mc.level, buttonPos);
         if (shape.isEmpty()) return;
         Gizmos.cuboid(shape.bounds().move(buttonPos).inflate(.065),
-                GizmoStyle.strokeAndFill(0xFF55FF55, 3f, 0x6655FF55)).setAlwaysOnTop();
+                GizmoStyle.strokeAndFill(0xFF55FF55, 3f, 0x6655FF55));
     }
 
     private static SimonSaysBoard.Point point(BlockPos pos) {

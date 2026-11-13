@@ -31,7 +31,7 @@ import java.util.Map;
 public final class ThreeWeirdos {
     private static final String ID = "dungeon.threeWeirdos";
     private static final ThreeWeirdosLogic clues = new ThreeWeirdosLogic();
-    private static boolean enabled = true, announce = true, highlight = true, throughWalls = true;
+    private static boolean enabled = true, announce = true, highlight = true;
     private static String announced;   // the answer already said, so it is said once per room
     private static ClientLevel world;
     private static Vec3 entryOrigin, npcCenter;
@@ -46,8 +46,7 @@ public final class ThreeWeirdos {
         return new Module(ID, "Three Weirdos", "Solve the room's three clues and mark the correct chest.", "Dungeons",
                 () -> enabled, value -> { enabled = value; if (!value) reset(); },
                 List.of(new Setting.Toggle("Say the answer", "Name the chest in chat once all three NPCs have spoken.", () -> announce, value -> announce = value),
-                        new Setting.Toggle("Highlight chest", "Only marks a nearby chest matched to the correct named NPC.", () -> highlight, value -> highlight = value),
-                        new Setting.Toggle("Through walls", "Keep the chest outline visible through nearby blocks.", () -> throughWalls, value -> throughWalls = value)));
+                        new Setting.Toggle("Highlight chest", "Only marks a nearby chest matched to the correct named NPC.", () -> highlight, value -> highlight = value)));
     }
 
     public static void init() {
@@ -179,7 +178,6 @@ public final class ThreeWeirdos {
         if (!highlight || correctChest == null || !visible(mc) || !mc.level.hasChunkAt(correctChest)) return;
         var state = mc.level.getBlockState(correctChest);
         if (!state.is(Blocks.CHEST) && !state.is(Blocks.TRAPPED_CHEST)) return;
-        var shape = Gizmos.cuboid(new AABB(correctChest).inflate(.02), GizmoStyle.strokeAndFill(0xFF55FF55, 2.5f, 0x4055FF55));
-        if (throughWalls) shape.setAlwaysOnTop();
+        Gizmos.cuboid(new AABB(correctChest).inflate(.02), GizmoStyle.strokeAndFill(0xFF55FF55, 2.5f, 0x4055FF55));
     }
 }

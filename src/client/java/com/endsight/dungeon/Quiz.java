@@ -44,7 +44,7 @@ public final class Quiz {
     private static final QuizLogic.Book BOOK = new QuizLogic.Book();
     private static final QuizLogic.Asking ASKING = new QuizLogic.Asking();
 
-    private static boolean enabled = true, announce = true, highlight = true, tracer = true, throughWalls = true;
+    private static boolean enabled = true, announce = true, highlight = true, tracer = true;
     private static boolean active, loaded, unsaid;
     private static ClientLevel world;
     private static String question;                     // being asked now, or null between questions
@@ -65,9 +65,7 @@ public final class Quiz {
                 new Setting.Toggle("Highlight the answer", "Box the block to click.",
                         () -> highlight, value -> highlight = value),
                 new Setting.Toggle("Tracer", "Draw a line to the block to click.",
-                        () -> tracer, value -> tracer = value),
-                new Setting.Toggle("Through walls", "Keep the box and tracer visible through blocks.",
-                        () -> throughWalls, value -> throughWalls = value)));
+                        () -> tracer, value -> tracer = value)));
     }
 
     public static void init() {
@@ -200,9 +198,8 @@ public final class Quiz {
         // The labels can arrive a moment after the chat lines; look again four times a second.
         if (marked == null || ++ticks % 5 == 0) marked = blockUnder(mc, answer);
         if (!highlight || marked == null) return;
-        var box = Gizmos.cuboid(new AABB(marked).inflate(.02),
+        Gizmos.cuboid(new AABB(marked).inflate(.02),
                 GizmoStyle.strokeAndFill(0xFF55FF55, 2.5f, 0x5055FF55));
-        if (throughWalls) box.setAlwaysOnTop();
     }
 
     /** The label standing over this option's block, nearest you, or null. */
@@ -263,9 +260,8 @@ public final class Quiz {
         var forward = camera.forwardVector();
         Vec3 from = eye.add(forward.x() * .8, forward.y() * .8 - .45, forward.z() * .8);
         Vec3 to = Vec3.atCenterOf(marked);
-        var wide = Gizmos.line(from, to, 0x3055FF55, 6f);
-        var thin = Gizmos.line(from, to, 0xCC55FF55, 1.8f);
-        if (throughWalls) { wide.setAlwaysOnTop(); thin.setAlwaysOnTop(); }
+        Gizmos.line(from, to, 0x3055FF55, 6f);
+        Gizmos.line(from, to, 0xCC55FF55, 1.8f);
     }
 
     private static Path file() {

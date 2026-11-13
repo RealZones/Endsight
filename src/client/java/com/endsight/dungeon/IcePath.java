@@ -1,7 +1,6 @@
 package com.endsight.dungeon;
 
 import com.endsight.ui.Module;
-import com.endsight.ui.Setting;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
@@ -44,7 +43,7 @@ import java.util.Set;
  */
 public final class IcePath {
     private static final String ID = "dungeon.icePath";
-    private static boolean enabled = true, throughWalls = true;
+    private static boolean enabled = true;
     private static ClientLevel world;
     private static List<Vec3> points = List.of();
     private static BlockPos goalBlock;
@@ -57,9 +56,7 @@ public final class IcePath {
 
     public static Module module() {
         return new Module(ID, "Ice Path", "Draws the full silverfish route, highlighting the next slide.",
-                "Dungeons", () -> enabled, value -> { enabled = value; if (!value) reset(); }, List.of(
-                new Setting.Toggle("Through walls", "Keep the line visible through blocks.",
-                        () -> throughWalls, value -> throughWalls = value)));
+                "Dungeons", () -> enabled, value -> { enabled = value; if (!value) reset(); }, List.of());
     }
 
     public static void init() {
@@ -214,18 +211,16 @@ public final class IcePath {
         Minecraft mc = Minecraft.getInstance();
         if (!visible(mc) || mc.level != world || !atTheIce(mc)) return;
         if (goalBlock != null) {
-            var outline = Gizmos.cuboid(new AABB(goalBlock).inflate(.02),
+            Gizmos.cuboid(new AABB(goalBlock).inflate(.02),
                     GizmoStyle.strokeAndFill(0xFF55FFFF, 2f, 0x3055FFFF));
-            if (throughWalls) outline.setAlwaysOnTop();
         }
         for (int i = 1; i < points.size(); i++) {
             Vec3 from = points.get(i - 1), to = points.get(i);
             int colour = i == 1 ? 0xFF55FF55 : 0xFF55FFFF;
-            var wide = Gizmos.line(from, to, (colour & 0x00FFFFFF) | 0x40000000, 6f);
-            var thin = Gizmos.line(from, to, colour, 2f);
-            var lands = Gizmos.cuboid(new AABB(to.x - .12, to.y - .08, to.z - .12,
+            Gizmos.line(from, to, (colour & 0x00FFFFFF) | 0x40000000, 6f);
+            Gizmos.line(from, to, colour, 2f);
+            Gizmos.cuboid(new AABB(to.x - .12, to.y - .08, to.z - .12,
                     to.x + .12, to.y + .08, to.z + .12), GizmoStyle.stroke(colour, 2f));
-            if (throughWalls) { wide.setAlwaysOnTop(); thin.setAlwaysOnTop(); lands.setAlwaysOnTop(); }
         }
     }
 }

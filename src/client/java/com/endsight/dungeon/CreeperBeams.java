@@ -143,17 +143,15 @@ public final class CreeperBeams {
             boolean litA = mc.level.getBlockState(a).is(Blocks.PRISMARINE), litB = mc.level.getBlockState(b).is(Blocks.PRISMARINE);
             if (litA && litB) continue;                                    // linked
             int colour = COLOURS[i % COLOURS.length];
-            var wide = Gizmos.line(Vec3.atCenterOf(a), Vec3.atCenterOf(b), (colour & 0x00FFFFFF) | 0x40000000, 6f);
-            var thin = Gizmos.line(Vec3.atCenterOf(a), Vec3.atCenterOf(b), colour, 2f);
-            wide.setAlwaysOnTop(); thin.setAlwaysOnTop();                  // the lanterns are set in the walls
+            Gizmos.line(Vec3.atCenterOf(a), Vec3.atCenterOf(b), (colour & 0x00FFFFFF) | 0x40000000, 6f);
+            Gizmos.line(Vec3.atCenterOf(a), Vec3.atCenterOf(b), colour, 2f);
             for (BlockPos end : new BlockPos[]{a, b}) {
                 boolean lit = end == a ? litA : litB;
                 // One end lit means its partner is due before the hit wears off: fill it.
                 boolean next = !lit && (litA || litB);
-                var box = Gizmos.cuboid(new AABB(end).inflate(.02), next
+                Gizmos.cuboid(new AABB(end).inflate(.02), next
                         ? GizmoStyle.strokeAndFill(colour, 3f, (colour & 0x00FFFFFF) | 0x70000000)
                         : GizmoStyle.stroke(lit ? (colour & 0x00FFFFFF) | 0x60000000 : colour, 2f));
-                box.setAlwaysOnTop();
             }
         }
     }

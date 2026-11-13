@@ -36,7 +36,7 @@ public final class TicTacToe {
     // matched on the prefix, so this was inconsistent as well as fragile.
     private static final String ENTRY = "PUZZLE! Tic Tac Toe";
     private static final TicTacToeBoard.Stabilizer SAMPLES = new TicTacToeBoard.Stabilizer();
-    private static boolean enabled = true, highlight = true, throughWalls = true, active;
+    private static boolean enabled = true, highlight = true, active;
     private static ClientLevel world;
     private static Vec3 entryOrigin;
     private static TicTacToeBoard.Grid grid;
@@ -55,9 +55,7 @@ public final class TicTacToe {
         return new Module(ID, "Tic Tac Toe", "Marks your best move after the machine plays.", "Dungeons",
                 () -> enabled, value -> { enabled = value; if (!value) reset(); }, List.of(
                 new Setting.Toggle("Highlight button", "Outline the recommended button without clicking it.",
-                        () -> highlight, value -> highlight = value),
-                new Setting.Toggle("Through walls", "Keep the nearby button outline visible through blocks.",
-                        () -> throughWalls, value -> throughWalls = value)));
+                        () -> highlight, value -> highlight = value)));
     }
 
     public static void init() {
@@ -330,8 +328,7 @@ public final class TicTacToe {
         if (mc.level.getBlockState(support).isAir()) return;
         var shape = state.getShape(mc.level, recommended);
         if (shape.isEmpty()) return;
-        var outline = Gizmos.cuboid(shape.bounds().move(recommended).inflate(.015),
+        Gizmos.cuboid(shape.bounds().move(recommended).inflate(.015),
                 GizmoStyle.strokeAndFill(0xFF55FF55, 2.5f, 0x6055FF55));
-        if (throughWalls) outline.setAlwaysOnTop();
     }
 }

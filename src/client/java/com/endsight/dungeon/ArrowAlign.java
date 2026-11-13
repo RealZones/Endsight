@@ -125,8 +125,7 @@ public final class ArrowAlign {
             int left = count.remaining(target(frame));
             // A little off the wall, toward whoever is looking, so the arrow does not hide it.
             Vec3 at = frame.position().add(frame.getDirection().getStepX() * .12, .02, frame.getDirection().getStepZ() * .12);
-            Gizmos.billboardText(String.valueOf(left), at, TextGizmo.Style.forColorAndCentered(colour(left)).withScale(.55f))
-                    .setAlwaysOnTop();
+            Gizmos.billboardText(String.valueOf(left), at, TextGizmo.Style.forColorAndCentered(colour(left)).withScale(.55f));
         }
     }
 }

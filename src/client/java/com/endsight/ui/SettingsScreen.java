@@ -48,8 +48,6 @@ public class SettingsScreen extends Screen {
     private TextFieldHelper commandInput;
     /** The colour picker; open when a Color row's swatch was clicked. */
     private final ColorPicker picker = new ColorPicker();
-    /** Draws a pets or wardrobe page, and remembers which swap side is being chosen. */
-    private final LoadoutView loadouts = new LoadoutView();
     private final KeybindsView keys = new KeybindsView();
 
     private final Map<String, Anim> anims = new HashMap<>();
@@ -186,7 +184,7 @@ public class SettingsScreen extends Screen {
     }
 
     void cancelInteractions() {
-        dragging = null; binding = null; editing = null; suppressCharacter = false; picker.close(); loadouts.stopChoosing();
+        dragging = null; binding = null; editing = null; suppressCharacter = false; picker.close();
     }
 
     /** The id of the settings page that was open when the GUI last closed, or null. */
@@ -228,7 +226,6 @@ public class SettingsScreen extends Screen {
             Setting s = entry.setting();
             int h = s instanceof Setting.Section ? (embedded ? 20 : SECTION_ROW_H)
                     : s instanceof Setting.Note n ? noteH(n, w)
-                    : s instanceof Setting.Loadout l ? LoadoutView.height(w, l.swaps().get().size(), loadouts.shown(l, settingsQuery).size())
                     : s instanceof Setting.Binds b ? keys.height(b, w, settingsQuery)
                     : embedded && (!(s instanceof Setting.Slider) || inline(w)) ? 34 : ROW_H;
             if (FeatureCatalog.head(s) && y != start) y += HEAD_GAP;
@@ -419,10 +416,6 @@ public class SettingsScreen extends Screen {
                 continue;
             }
 
-            if (r.setting instanceof Setting.Loadout l) {
-                loadouts.draw(g, font, l, r.x, r.y, r.w, binding, settingsQuery, top, bottom, mouseX, mouseY);
-                continue;
-            }
             if (r.setting instanceof Setting.Binds b) {
                 keys.draw(g, font, b, r.x, r.y, r.w, binding, settingsQuery, top, bottom, mouseX, mouseY);
                 continue;
@@ -710,10 +703,6 @@ public class SettingsScreen extends Screen {
             if (r.y + r.h <= contentTop() || r.y >= contentBottom()) continue;
             if (!contains(r.x - 8, r.y, r.w + 16, r.h, mx, my)) continue;
             if (r.setting instanceof Setting.Note) return true;
-            if (r.setting instanceof Setting.Loadout l) {
-                String key = loadouts.click(l, r.x, r.y, r.w, settingsQuery, mx, my, event.button());
-                return key == null || listen(key, event);
-            }
             if (r.setting instanceof Setting.Binds b) {
                 String key = keys.click(b, r.x, r.y, r.w, settingsQuery, mx, my);
                 return key == null || listen(key, event);
@@ -853,7 +842,6 @@ public class SettingsScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (picker.keyPressed(event.key())) return true;
         if (event.key() == 256 && picker.open()) { picker.close(); return true; }
-        if (event.key() == 256 && binding == null && loadouts.choosing()) { loadouts.stopChoosing(); return true; }
         if (editing != null) {
             if (event.key() == 257 || event.key() == 256 || event.key() == 335) {   // enter, escape, numpad enter
                 editing = null;

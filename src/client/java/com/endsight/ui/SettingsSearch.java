@@ -37,8 +37,6 @@ final class SettingsSearch {
             case Setting.Action action -> action.button();
             case Setting.KeyAction action -> action.button();
             case Setting.Command command -> command.command();
-            case Setting.Loadout loadout -> "swap " + loadout.tiles().get().stream().map(tile -> tile.name() + " " + tile.detail())
-                    .collect(java.util.stream.Collectors.joining(" "));
             case Setting.Binds binds -> binds.binds().get().stream().map(bind -> bind.name() + " " + bind.where() + " " + bind.group())
                     .collect(java.util.stream.Collectors.joining(" "));
             default -> "";

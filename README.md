@@ -1,7 +1,7 @@
 <h1 align="center">Endsight</h1>
 
 <p align="center">
-  <b>Trackers, storage, loadouts and dungeon tools for Dragsim, all in one clean menu.</b>
+  <b>Trackers, storage and dungeon tools for Dragsim, all in one clean menu.</b>
 </p>
 
 <p align="center">
@@ -48,12 +48,7 @@ Endsight is on [Modrinth](https://modrinth.com/mod/endsight) too.
 
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <img src="docs/loadouts.png" width="100%" alt="The Loadouts page with a picture and key for each pet">
-      <h3>Loadouts</h3>
-      A key for each pet and outfit, and one key that flips between two. Duplicate pets work, skins included.
-    </td>
-    <td width="50%" valign="top">
+    <td colspan="2" width="100%" valign="top">
       <img src="docs/profile.png" width="100%" alt="A player's profile: net worth, gear, skills and slayers">
       <h3>Profile viewer</h3>
       <code>/pv &lt;player&gt;</code> shows anyone's net worth, gear, pets, storage, progress and bestiary.
@@ -152,15 +147,6 @@ Click a section to open it.
 - **Rarity Outlines:** rarity colour around every item, in menus and on the hotbar.
 - **Glass Inventory:** see-through menus with an opacity control.
 - **Item protection:** slot locking, and no armor swaps by accident.
-
-</details>
-
-<details>
-<summary><b>Loadouts</b></summary>
-<br>
-
-- **Pets:** a key for each pet, and one that flips between two.
-- **Wardrobe:** a key for each outfit, and one that flips between two.
 
 </details>
 

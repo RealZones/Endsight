@@ -11,9 +11,6 @@ import java.util.function.Supplier;
 public final class FeatureCatalog {
     private FeatureCatalog() { }
 
-    /** A sidebar entry that opens on its first page, because a row to click first only hides the pictures. */
-    static final String LOADOUTS = "Loadouts";
-
     /**
      * The switches that head each feature on a grouped page. Drawn alike, "Slayer Profit"
      * read as one more setting of the Slayer Tracker above it, so the page sets these apart.
@@ -40,7 +37,6 @@ public final class FeatureCatalog {
         c.single("qol.math", "The End", "Golden Dragon math", "Answers the Golden Dragon's sum.");
         c.single("dungeon.map", "Dungeons");
         c.single("dungeon.keys", "Dungeons");
-        c.single("dungeon.doors", "Dungeons");
         c.single("dungeon.roomGlow", "Dungeons");
         c.group("page.roomPuzzles", "Room puzzles", "Six independently controlled room solvers.", "Dungeons",
                 "dungeon.threeWeirdos", "dungeon.ticTacToe", "dungeon.quiz", "dungeon.icePath", "dungeon.iceFill",
@@ -53,8 +49,6 @@ public final class FeatureCatalog {
         c.single("storage.recipes", "Inventory");
         c.group("page.itemAppearance", "Item appearance", "Rarity outlines and glass inventory backgrounds.", "Inventory", "visual.rarity", "visual.inventoryGlass");
         c.group("page.itemProtection", "Item protection", "Slot locking and armor-swap protection.", "Inventory", "qol.slotLock", "qol.armorguard");
-        c.single("qol.pets", LOADOUTS, "Pets", "A key for each pet, and one that flips between two.");
-        c.single("qol.wardrobe", LOADOUTS, "Wardrobe", "A key for each outfit, and one that flips between two.");
         c.single("qol.lootChat", "Chat");
         c.single("qol.abilityspam", "Chat");
         c.single("qol.copychat", "Chat");

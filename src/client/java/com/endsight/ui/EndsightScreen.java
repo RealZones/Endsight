@@ -166,18 +166,6 @@ public class EndsightScreen extends Screen {
                     out.add(new Setting.Bind(action.id(), name, name.equals(module.title()) ? "" : module.title(), group.getKey()));
                 } else if (setting instanceof Setting.Command command && seen.add(command.id())) {
                     out.add(new Setting.Bind(command.id(), command.command().isBlank() ? "Empty command" : command.command(), module.title(), group.getKey()));
-                } else if (setting instanceof Setting.Loadout loadout) {
-                    int number = 0;
-                    for (Setting.Swap swap : loadout.swaps().get()) {
-                        number++;
-                        if (seen.add(swap.key()))
-                            out.add(new Setting.Bind(swap.key(), number == 1 ? "Swap key" : "Swap key " + number, module.title(), group.getKey()));
-                    }
-                    // Once it has a key: each is set on its own picture, and hundreds of pets
-                    // would otherwise be hundreds of rows here.
-                    for (Setting.Tile tile : loadout.tiles().get())
-                        if (Keybinds.get(tile.id()) != Keybinds.NONE && seen.add(tile.id()))
-                            out.add(new Setting.Bind(tile.id(), tile.name(), module.title(), group.getKey()));
                 }
             }
         }
@@ -510,8 +498,6 @@ public class EndsightScreen extends Screen {
             category = item.category(); query = ""; scroll = 0; binding = null;
             if (editor != null) editor.cancelInteractions();
             results();
-            if (FeatureCatalog.LOADOUTS.equals(category) && visibleModule(expandedId) == null)
-                expandedId = groups.values().iterator().next().getFirst().id();
             layout(); return true;
         }
         if (!contains(contentX(), contentTop(), contentW(), contentBottom() - contentTop(), mx, my))

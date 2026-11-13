@@ -6,7 +6,6 @@ import com.endsight.dragons.DragonTimer;
 import com.endsight.dragons.Protector;
 import com.endsight.dungeon.DungeonContext;
 import com.endsight.dungeon.DungeonMap;
-import com.endsight.dungeon.DoorHighlight;
 import com.endsight.dungeon.KeyAlert;
 import com.endsight.dungeon.BloodRoom;
 import com.endsight.dungeon.CreeperBeams;
@@ -160,7 +159,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(Quiz.module());
             registry.replace(BloodRoom.module());
             registry.add(KeyAlert.module());
-            registry.add(DoorHighlight.module());
             registry.add(com.endsight.dungeon.RoomGlow.module());
             registry.replace(IcePath.module());
             registry.replace(IceFill.module());
@@ -195,8 +193,6 @@ public class EndsightClient implements ClientModInitializer {
             registry.replace(ServerStats.module());
             registry.replace(MathSolver.module());
             registry.replace(CommandBinds.module());
-            registry.add(com.endsight.qol.WardrobeBinds.module());
-            registry.add(com.endsight.qol.PetBinds.module());
             registry.replace(MenuButton.module());
             registry.replace(com.endsight.profile.ProfileClient.module());
             // Keep the old modules registered for their config and keybind ids. Their
@@ -222,7 +218,6 @@ public class EndsightClient implements ClientModInitializer {
         Drops.init();
         DungeonContext.init();
         KeyAlert.init();
-        DoorHighlight.init();
         HudLayout.init();
         com.endsight.hud.ChatHudDrag.init();
         StoragePreview.init();
@@ -284,8 +279,6 @@ public class EndsightClient implements ClientModInitializer {
         CreeperBeams.init();
         TerminalSolver.init();
         StorageOverview.init();
-        com.endsight.qol.WardrobeBinds.init();
-        com.endsight.qol.PetBinds.init();
 
         // One popup for the whole mod, drawn last so it sits over every readout. Any
         // module can raise it; only one shows at a time, because two things shouting
@@ -414,13 +407,6 @@ public class EndsightClient implements ClientModInitializer {
                 if (s instanceof Setting.KeyAction a && pressed(down, Keybinds.get(a.id()))) {
                     a.run().run();
                 }
-            }
-        }
-        // Apart from the loop above: a loadout has no on/off, so it is a group there and skipped.
-        for (Module m : registry().all()) {
-            if (!m.hasSettings()) continue;
-            for (Setting s : m.settings()) {
-                if (s instanceof Setting.Loadout l) l.fire(id -> pressed(down, Keybinds.get(id)));
             }
         }
         for (Setting.Command c : CommandBinds.all()) {

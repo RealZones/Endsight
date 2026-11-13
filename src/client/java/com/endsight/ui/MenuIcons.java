@@ -29,7 +29,6 @@ final class MenuIcons {
             case "Dungeons" -> 4;
             case "Mining" -> 5;
             case "Storage", "Inventory" -> 6;
-            case FeatureCatalog.LOADOUTS -> 13;
             case "Chat" -> 7;
             case "General", "Quality of Life" -> 8;
             case "Edit HUD" -> 9;

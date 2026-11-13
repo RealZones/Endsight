@@ -13,8 +13,8 @@ public final class BrowserPresentationChecks {
         List<Module> originals = registry.all();
         FeatureCatalog.publicLayout(registry);
         yes(registry.all() == originals, "presentation replaced the backend snapshot");
-        yes(registry.count(null, "") == 39, "expected thirty-nine complete browser entries");
-        yes(registry.categories().equals(List.of("Slayers", "The End", "Dungeons", "Mining", "Inventory", "Loadouts", "Chat", "General")), "activity order changed");
+        yes(registry.count(null, "") == 36, "expected thirty-six complete browser entries");
+        yes(registry.categories().equals(List.of("Slayers", "The End", "Dungeons", "Mining", "Inventory", "Chat", "General")), "activity order changed");
         yes(registry.favorites().values().stream().mapToInt(List::size).sum() == 4, "priority favorites missing");
         Module tracking = find(registry, "page.slayerTracking");
         Module timer = originals.stream().filter(m -> m.id().equals("slayer.timer")).findFirst().orElseThrow();
@@ -43,12 +43,10 @@ public final class BrowserPresentationChecks {
         // Every grouped page carries a Keybinds heading and "X key" rows; those must not make
         // a search for "key" list the whole menu.
         yes(SettingsSearch.matchingLabels(tracking, "key").isEmpty(), "keybind rows matched a browser search");
-        long otherKeyMatches = registry.grouped(null, "key").values().stream().flatMap(List::stream)
-                .filter(module -> !module.id().equals("qol.wardrobe") && !module.id().equals("qol.pets")).count();
+        long otherKeyMatches = registry.grouped(null, "key").values().stream().flatMap(List::stream).count();
         yes(otherKeyMatches <= 2, "a search for key listed pages only for their keybinds");
-        yes(registry.categories().contains("Loadouts"), "Loadouts is missing from the sidebar");
-        yes(registry.count("Loadouts", "") == 2, "Loadouts holds pets and wardrobe");
-        loadoutGeometry();
+        yes(!registry.categories().contains("Loadouts"), "removed category remained visible");
+        yes(registry.count(null, "Door Highlight") == 0, "removed feature remained searchable");
 
         registry.toggleFavorite("page.slayerTracking");
         registry.browserView("Slayers");
@@ -74,56 +72,15 @@ public final class BrowserPresentationChecks {
     }
 
     private static ModuleRegistry fixture() {
-        String ids = "slayer.timer slayer.profit slayer.boss slayer.spawnMarker slayer.revenantTiles zealot.tracker dragon.bossdrops dragon.timer qol.eyeguard dragon.protector goop.timer tracker.goop visual.beacon visual.shinyNodes tracker.caches qol.math dungeon.map dungeon.keys dungeon.doors dungeon.threeWeirdos dungeon.ticTacToe dungeon.quiz dungeon.icePath dungeon.iceFill dungeon.creeperBeams dungeon.bloodRoom dungeon.terminals mining.session mining.powder storage.forge storage.preview hud.inventoryPreview storage.recipes visual.rarity visual.inventoryGlass qol.slotLock qol.armorguard qol.lootChat qol.abilityspam qol.copychat hud.armor hud.activePet hud.stats visual.cooldowns visual.fullbright visual.perspective visual.camera visual.animations dungeon.roomGlow visual.explosionParticles qol.damage visual.etherwarp alerts dragon.loot qol.commands qol.hotdButton social.discord";
+        String ids = "slayer.timer slayer.profit slayer.boss slayer.spawnMarker slayer.revenantTiles zealot.tracker dragon.bossdrops dragon.timer qol.eyeguard dragon.protector goop.timer tracker.goop visual.beacon visual.shinyNodes tracker.caches qol.math dungeon.map dungeon.keys dungeon.threeWeirdos dungeon.ticTacToe dungeon.quiz dungeon.icePath dungeon.iceFill dungeon.creeperBeams dungeon.bloodRoom dungeon.terminals mining.session mining.powder storage.forge storage.preview hud.inventoryPreview storage.recipes visual.rarity visual.inventoryGlass qol.slotLock qol.armorguard qol.lootChat qol.abilityspam qol.copychat hud.armor hud.activePet hud.stats visual.cooldowns visual.fullbright visual.perspective visual.camera visual.animations dungeon.roomGlow visual.explosionParticles qol.damage visual.etherwarp alerts dragon.loot qol.commands qol.hotdButton social.discord";
         ModuleRegistry registry = new ModuleRegistry();
-        for (String id : (ids + " dragon.hitboxes qol.autoclicker qol.wardrobe qol.pets").split(" ")) registry.add(stub(id));
+        for (String id : (ids + " dragon.hitboxes qol.autoclicker").split(" ")) registry.add(stub(id));
         return registry;
     }
 
     private static void yes(boolean condition, String message) {
         checks++;
         if (!condition) throw new AssertionError(message);
-    }
-
-    /** Two tiles to a row in the usual window, one where the panel is narrow, and never overlapping. */
-    private static void loadoutGeometry() {
-        var wide = LoadoutView.Geometry.of(10, 20, 386, 1, 9);
-        yes(wide.tiles().get(1).y() == wide.tiles().get(0).y(), "tiles share a row at normal width");
-        yes(wide.tiles().get(2).y() > wide.tiles().get(1).y(), "a third tile wraps");
-        yes(wide.tiles().get(0).x() + wide.tiles().get(0).w() <= wide.tiles().get(1).x(), "tiles in a row do not touch");
-        var last = wide.tiles().getLast();
-        yes(last.y() + last.h() <= 20 + wide.height(), "the page is tall enough for its last tile");
-        var bar = wide.bars().getFirst();
-        yes(bar.first().x() + bar.first().w() <= bar.second().x(), "swap sides do not overlap");
-        yes(bar.second().x() + bar.second().w() <= bar.key().x(), "swap key clears the second side");
-        yes(bar.remove() == null, "the first swap cannot be taken away");
-        yes(wide.add().y() + wide.add().h() <= bar.row().y(), "the add button stays on the caption line");
-        var two = LoadoutView.Geometry.of(10, 20, 386, 2, 9);
-        var more = two.bars().get(1);
-        yes(more.row().y() >= bar.row().y() + bar.row().h(), "a second swap sits under the first");
-        yes(more.remove().y() + more.remove().h() <= more.key().y(), "the remove button clears the key");
-        yes(two.tiles().getFirst().y() > more.row().y() + more.row().h(), "the tiles move down for a second swap");
-        for (int swaps = 1; swaps <= Setting.Loadout.MAX_SWAPS; swaps++)
-            yes(LoadoutView.height(386, swaps, 9) == LoadoutView.Geometry.of(10, 20, 386, swaps, 9).height(), "height agrees with the placement");
-        var narrow = LoadoutView.Geometry.of(10, 20, 230, 1, 3);
-        var thin = narrow.bars().getFirst();
-        yes(narrow.tiles().get(0).w() == 230 && narrow.tiles().get(1).x() == 10, "one column when two would crush the text");
-        yes(thin.second().x() + thin.second().w() <= thin.key().x(), "swap key clears the second side when narrow");
-        var empty = LoadoutView.Geometry.of(10, 20, 386, 1, 0);
-        yes(empty.tiles().isEmpty() && empty.empty() != null, "no tiles shows the empty card");
-        yes(empty.empty().contains(empty.load().x(), empty.load().y()), "the load button sits in the empty card");
-        yes(LoadoutView.height(386, 1, 0) == empty.height(), "empty height agrees with the placement");
-
-        List<Setting.Tile> tiles = new java.util.ArrayList<>();
-        for (String name : List.of("Warden", "Golem", "Black Cat", "Bal"))
-            tiles.add(new Setting.Tile(name, name, 0, name.equals("Golem") ? "Lucky Clover" : "", List.of(), false, () -> { }));
-        Setting.Loadout page = new Setting.Loadout("Your pets", "pet", () -> tiles, List::of, () -> { }, () -> { });
-        LoadoutView view = new LoadoutView();
-        yes(view.shown(page, "").size() == 4, "no search shows every pet");
-        yes(view.shown(page, "warden").size() == 1, "a search narrows the pets");
-        yes(view.shown(page, "clover").size() == 1, "a search reads the held item too");
-        yes(view.shown(page, "swap").size() == 4, "a search for the page itself leaves the pets up");
-        yes(view.shown(page, "").size() == 4, "clearing the search brings them back");
     }
 
     private static void keysWorthHaving() {

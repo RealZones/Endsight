@@ -251,13 +251,6 @@ tasks.register('liveStorageChecks', JavaExec) {
 	mainClass = 'com.endsight.storage.LiveStorageChecks'
 }
 tasks.named('check') { dependsOn 'liveStorageChecks' }
-tasks.register('manualEquipmentBindsChecks', JavaExec) {
-	dependsOn 'testClasses', 'clientClasses'
-	classpath = sourceSets.test.runtimeClasspath
-	mainClass = 'com.endsight.qol.ManualEquipmentBindsChecks'
-}
-tasks.named('check') { dependsOn 'manualEquipmentBindsChecks' }
-
 tasks.register('goopFightChecks', JavaExec) {
 	dependsOn 'testClasses', 'clientClasses'
 	classpath = sourceSets.test.runtimeClasspath
@@ -488,13 +481,6 @@ tasks.register('arrowAlignChecks', JavaExec) {
 }
 tasks.named('check') { dependsOn 'arrowAlignChecks' }
 
-tasks.register('doorHighlightChecks', JavaExec) {
-    dependsOn 'testClasses', 'clientClasses'
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'com.endsight.dungeon.DoorHighlightChecks'
-}
-tasks.named('check') { dependsOn 'doorHighlightChecks' }
-
 tasks.register('eyeGuardChecks', JavaExec) {
     dependsOn 'testClasses', 'clientClasses'
     classpath = sourceSets.test.runtimeClasspath
@@ -572,7 +558,7 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
     sourceSets.gametest.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
     sourceSets.gametest.runtimeClasspath += sourceSets.client.runtimeClasspath
     // One suite per run: each opens its own world and screenshots, and the others are slow.
-    def only = providers.gradleProperty('storageVisualTest').isPresent() ? '"com.endsight.storage.LiveStorageVisualTest", "com.endsight.qol.ManualEquipmentBindsVisualTest"'
+    def only = providers.gradleProperty('storageVisualTest').isPresent() ? '"com.endsight.storage.LiveStorageVisualTest"'
             : providers.gradleProperty('goopVisualTest').isPresent() ? '"com.endsight.goop.GoopVisualTest"'
             : providers.gradleProperty('menuVisualTest').isPresent() ? '"com.endsight.ui.MenuVisualTest"'
             : providers.gradleProperty('rarityVisualTest').isPresent() ? '"com.endsight.visual.RarityOutlineVisualTest"'
@@ -585,7 +571,7 @@ if (providers.gradleProperty('profileVisualTest').isPresent() || providers.gradl
             : providers.gradleProperty('puzzleVisualTest').isPresent() ? '"com.endsight.dungeon.PuzzleVisualTest"'
             : providers.gradleProperty('recipesVisualTest').isPresent() ? '"com.endsight.storage.RecipesVisualTest"'
             : providers.gradleProperty('cameraVisualTest').isPresent() ? '"com.endsight.visual.CameraVisualTest", "com.endsight.visual.HeldItemVisualTest"'
-            : providers.gradleProperty('roomGlowVisualTest').isPresent() ? '"com.endsight.dungeon.RoomGlowVisualTest", "com.endsight.dungeon.DoorHighlightVisualTest"'
+            : providers.gradleProperty('roomGlowVisualTest').isPresent() ? '"com.endsight.dungeon.RoomGlowVisualTest"'
             : '"com.endsight.profile.ProfileVisualTest"'
     tasks.named('processGametestResources') {
         inputs.property('only', only)

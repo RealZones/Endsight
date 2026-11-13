@@ -14,9 +14,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Keeps our own pages up through a close for a menu that is already gone.
  *
  * Vanilla answers any close from the server by shutting whatever is on screen, menu or not.
- * Refresh on Loadouts ends by closing the server's menu and going back to our page, and on
- * Dragsim that page then vanished a moment later. Nothing in the mod closes it and this
- * packet is the one thing that can; the test server never sent one, so it passed there.
+ * A delayed close for a previous container must not dismiss an Endsight page opened since.
+ * The inventory-menu check limits this protection to cases where no server menu remains.
  *
  * Injected at the close and not at the head: the head also runs on the network thread,
  * before the packet is handed over to the game.

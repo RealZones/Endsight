@@ -51,7 +51,6 @@ public final class MenuVisualTest implements FabricClientGameTest {
                 String size = window[0] + "x" + window[1] + "-gui" + window[2];
                 view(context, size + "-favorites", ModuleRegistry.FAVORITES, null);
                 view(context, size + "-inventory", "Inventory", "page.previews");
-                view(context, size + "-loadouts", "Loadouts", "qol.pets");
                 if (window == WINDOWS[0]) {
                     view(context, size + "-appearance", "@appearance", "ui.appearance");
                     // The bottom of the opacity slider, over a bright sky: still has to read.
@@ -59,7 +58,7 @@ public final class MenuVisualTest implements FabricClientGameTest {
                     view(context, size + "-opacity-60", "Inventory", "page.previews");
                     context.runOnClient(mc -> Theme.panelOpacity(Theme.DEFAULT_OPACITY));
                     context.runOnClient(mc -> {
-                        for (var bind : java.util.Map.of("module.zealot.tracker", 90, "qol.pets.swap", 82, "qol.wardrobe.swap", 71, "module.dragon.bossdrops", 293).entrySet())
+                        for (var bind : java.util.Map.of("module.zealot.tracker", 90, "module.dragon.bossdrops", 293).entrySet())
                             Keybinds.set(bind.getKey(), bind.getValue());
                     });
                     view(context, size + "-keybinds", "@keybinds", "ui.keybinds");
@@ -79,7 +78,7 @@ public final class MenuVisualTest implements FabricClientGameTest {
         context.getInput().resizeWindow(WINDOWS[0][0], WINDOWS[0][1]);
         context.runOnClient(mc -> { mc.options.guiScale().set(WINDOWS[0][2]); mc.resizeGui(); });
         context.waitTicks(4);
-        for (String[] page : new String[][]{{ModuleRegistry.FAVORITES, null}, {"Inventory", "page.previews"}, {"Loadouts", "qol.pets"}, {"Loadouts", "qol.wardrobe"}}) {
+        for (String[] page : new String[][]{{ModuleRegistry.FAVORITES, null}, {"Inventory", "page.previews"}}) {
             context.runOnClient(mc -> {
                 open(mc, page[0], page[1]);
                 mc.setScreen(new Timed());
@@ -88,19 +87,6 @@ public final class MenuVisualTest implements FabricClientGameTest {
             context.runOnClient(mc -> System.out.println("COST frame " + page[0] + "/" + page[1] + ": " + ((Timed) mc.screen).report()));
         }
         context.runOnClient(mc -> mc.setScreen(null));
-        context.runOnClient(mc -> {
-            for (String name : new String[]{"com.endsight.qol.PetBinds", "com.endsight.qol.WardrobeBinds"}) {
-                try {
-                    var tick = Class.forName(name).getDeclaredMethod("tick", Minecraft.class);
-                    tick.setAccessible(true);
-                    for (int i = 0; i < 40_000; i++) tick.invoke(null, mc);
-                    long bytes = allocated(), start = System.nanoTime();
-                    int runs = 100_000;
-                    for (int i = 0; i < runs; i++) tick.invoke(null, mc);
-                    System.out.println("COST idle tick " + name + ": " + (System.nanoTime() - start) / runs + " ns, " + (allocated() - bytes) / runs + " bytes");
-                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
-            }
-        });
     }
 
     private static long allocated() {
